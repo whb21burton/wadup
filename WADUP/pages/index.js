@@ -32,7 +32,6 @@ export default function WadUp() {
   const tmEventsRef  = useRef([]);
   const venuesRef    = useRef([...DEFAULT_VENUES]);
 
-  const [locLabel,       setLocLabel]       = useState('Detecting location…');
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('all');
   const [activeDate,     setActiveDate]     = useState(new Date().toISOString().slice(0,10));
@@ -42,13 +41,46 @@ export default function WadUp() {
   const [showSplash,     setShowSplash]     = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [zoomClass,      setZoomClass]      = useState('zoom-near');
-  const [debugLines,     setDebugLines]     = useState([]);
+  const [showAddBanner,  setShowAddBanner]  = useState(false);
+  const [sheetExpanded,  setSheetExpanded]  = useState(false);
+
+  const sheetTouchStartY = useRef(null);
+  const sheetTouchDeltaY = useRef(0);
 
   const days = buildDays();
 
-  const dbg = useCallback((msg) => {
-    console.log('[WadUp]', msg);
-    setDebugLines(prev => [...prev.slice(-20), new Date().toISOString().slice(11,19)+' '+msg]);
+  // ── Add-to-home-screen banner (mobile, not already installed, not dismissed) ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const dismissed  = localStorage.getItem('wadup_hide_add_banner') === '1';
+      const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches
+        || window.navigator.standalone === true;
+      if (!dismissed && !standalone) setShowAddBanner(true);
+    } catch (e) { /* localStorage unavailable */ }
+  }, []);
+
+  const dismissAddBanner = useCallback(() => {
+    setShowAddBanner(false);
+    try { localStorage.setItem('wadup_hide_add_banner', '1'); } catch (e) {}
+  }, []);
+
+  // ── Swipeable trending sheet ──
+  const onSheetTouchStart = useCallback((e) => {
+    sheetTouchStartY.current = e.touches[0].clientY;
+    sheetTouchDeltaY.current = 0;
+  }, []);
+  const onSheetTouchMove = useCallback((e) => {
+    if (sheetTouchStartY.current == null) return;
+    sheetTouchDeltaY.current = e.touches[0].clientY - sheetTouchStartY.current;
+  }, []);
+  const onSheetTouchEnd = useCallback(() => {
+    if (sheetTouchStartY.current == null) return;
+    const delta = sheetTouchDeltaY.current;
+    if (delta < -30) setSheetExpanded(true);
+    else if (delta > 30) setSheetExpanded(false);
+    sheetTouchStartY.current = null;
+    sheetTouchDeltaY.current = 0;
   }, []);
 
   // ── Build trending list ──
@@ -279,8 +311,6 @@ export default function WadUp() {
     let completed = 0;
     const total = TM_REGIONS.length;
 
-    dbg(`Fetching ${total} regions...`);
-
     const parseAndDrop = (data) => {
       const events = data._embedded?.events || [];
       const today  = new Date();
@@ -334,11 +364,9 @@ export default function WadUp() {
       try {
         const res  = await fetch(`/api/tm?${qs}`);
         const data = await res.json();
-        const n = data._embedded?.events?.length || 0;
-        dbg(`✅ ${region.lat.toFixed(1)}: ${n} events`);
         parseAndDrop(data);
       } catch (e) {
-        dbg(`❌ ${region.lat.toFixed(1)}: ${e.message}`);
+        /* region fetch failed — skip */
       } finally {
         completed++;
         if (completed === total || completed === 1) {
@@ -352,7 +380,7 @@ export default function WadUp() {
     // Stagger all regions
     tmEventsRef.current = [];
     TM_REGIONS.forEach((r, i) => fetchRegion(r, i));
-  }, [userPos, dbg, dropTMPin, renderTrending, filterPins]);
+  }, [userPos, dropTMPin, renderTrending, filterPins]);
 
   // ── Init Google Maps ──
   useEffect(() => {
@@ -400,19 +428,6 @@ export default function WadUp() {
       });
 
       setMapReady(true);
-
-      // Geocode city name
-      const gc = new window.google.maps.Geocoder();
-      gc.geocode({ location: { lat: userPos.lat, lng: userPos.lng }}, (results, status) => {
-        if (status === 'OK' && results?.length) {
-          for (const r of results) {
-            if (r.types.includes('locality') || r.types.includes('sublocality')) {
-              setLocLabel(r.address_components[0].long_name);
-              break;
-            }
-          }
-        }
-      });
 
       // Drop venue pins
       venuesRef.current.forEach(v => { if (v.live) dropVenuePin(v); });
@@ -579,8 +594,16 @@ export default function WadUp() {
         </div>
       </div>
 
+      {/* ── Add to home screen banner (mobile) ── */}
+      {showAddBanner && (
+        <div className="add-banner">
+          <span className="add-banner-text">Add WadUp to your home screen for the best experience</span>
+          <button className="add-banner-close" onClick={dismissAddBanner} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+
       {/* ── App shell ── */}
-      <div className="app-root">
+      <div className={`app-root${showAddBanner ? ' banner-open' : ''}`}>
 
         {/* Desktop sidebar */}
         <aside
@@ -630,32 +653,25 @@ export default function WadUp() {
           {/* Mobile HUD */}
           <div className="hud">
 
-            <div className="search-bar">
-              <div className="search-input-wrap">
-                <span className="search-icon">🔍</span>
-                <input type="text" placeholder={locLabel} readOnly />
-              </div>
-              <div className="avatar">JD</div>
-            </div>
-
             {renderChips('chips')}
             {renderDayStrip('day-strip')}
 
-            {debugLines.length > 0 && (
-              <div id="debug-panel">
-                {debugLines.map((l,i) => <div key={i}>{l}</div>)}
-              </div>
-            )}
-
-            <div className="trending-panel">
-              <div className="panel-handle" />
-              <div className="panel-header">
-                <div className="panel-title">
-                  <div className="panel-title-dot" />
-                  Trending Near You
-                </div>
-                <div className="panel-radius">
-                  📍 Near you{tmLoading ? ' · Loading…' : ` · ${trending.length} found`}
+            <div className={`trending-panel${sheetExpanded ? ' expanded' : ''}`}>
+              <div
+                className="panel-drag-zone"
+                onTouchStart={onSheetTouchStart}
+                onTouchMove={onSheetTouchMove}
+                onTouchEnd={onSheetTouchEnd}
+              >
+                <div className="panel-handle" onClick={() => setSheetExpanded(v => !v)} />
+                <div className="panel-header">
+                  <div className="panel-title">
+                    <div className="panel-title-dot" />
+                    Trending Near You
+                  </div>
+                  <div className="panel-radius">
+                    📍 Near you{tmLoading ? ' · Loading…' : ` · ${trending.length} found`}
+                  </div>
                 </div>
               </div>
               <div className="trending-list">
