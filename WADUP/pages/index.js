@@ -52,17 +52,27 @@ export default function WadUp() {
   // ── Add-to-home-screen banner (mobile, not already installed, not dismissed) ──
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    try {
-      const dismissed  = localStorage.getItem('wadup_hide_add_banner') === '1';
-      const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches
-        || window.navigator.standalone === true;
-      if (!dismissed && !standalone) setShowAddBanner(true);
-    } catch (e) { /* localStorage unavailable */ }
+
+    let dismissed = false;
+    try { dismissed = window.localStorage.getItem('wadup_hide_add_banner') === '1'; }
+    catch (e) { dismissed = false; }
+
+    let iosStandalone = false;
+    try { iosStandalone = window.navigator.standalone === true; }
+    catch (e) { iosStandalone = false; }
+
+    let displayModeStandalone = false;
+    try { displayModeStandalone = window.matchMedia('(display-mode: standalone)').matches; }
+    catch (e) { displayModeStandalone = false; }
+
+    // Equivalent to: window.navigator.standalone !== true && !window.matchMedia('(display-mode: standalone)').matches
+    const shouldShow = !dismissed && !iosStandalone && !displayModeStandalone;
+    setShowAddBanner(shouldShow);
   }, []);
 
   const dismissAddBanner = useCallback(() => {
     setShowAddBanner(false);
-    try { localStorage.setItem('wadup_hide_add_banner', '1'); } catch (e) {}
+    try { window.localStorage.setItem('wadup_hide_add_banner', '1'); } catch (e) { /* localStorage unavailable */ }
   }, []);
 
   // ── Swipeable trending sheet ──
@@ -597,7 +607,7 @@ export default function WadUp() {
       {/* ── Add to home screen banner (mobile) ── */}
       {showAddBanner && (
         <div className="add-banner">
-          <span className="add-banner-text">Add WadUp to your home screen for the best experience</span>
+          <span className="add-banner-text">Add WadUp to your home screen for the best experience 📲</span>
           <button className="add-banner-close" onClick={dismissAddBanner} aria-label="Dismiss">✕</button>
         </div>
       )}
