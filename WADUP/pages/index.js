@@ -32,15 +32,17 @@ export default function WadUp() {
   const tmEventsRef  = useRef([]);
   const venuesRef    = useRef([...DEFAULT_VENUES]);
 
-  const [locLabel,     setLocLabel]     = useState('Detecting location…');
-  const [userPos,      setUserPos]      = useState({lat:35.0456, lng:-85.3096});
-  const [activeChip,   setActiveChip]   = useState('all');
-  const [activeDate,   setActiveDate]   = useState(new Date().toISOString().slice(0,10));
-  const [trending,     setTrending]     = useState([]);
-  const [tmLoading,    setTmLoading]    = useState(true);
-  const [coverVisible, setCoverVisible] = useState(true);
-  const [zoomClass,    setZoomClass]    = useState('zoom-near');
-  const [debugLines,   setDebugLines]   = useState([]);
+  const [locLabel,       setLocLabel]       = useState('Detecting location…');
+  const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
+  const [activeChip,     setActiveChip]     = useState('all');
+  const [activeDate,     setActiveDate]     = useState(new Date().toISOString().slice(0,10));
+  const [trending,       setTrending]       = useState([]);
+  const [tmLoading,      setTmLoading]      = useState(true);
+  const [mapReady,       setMapReady]       = useState(false);
+  const [showSplash,     setShowSplash]     = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [zoomClass,      setZoomClass]      = useState('zoom-near');
+  const [debugLines,     setDebugLines]     = useState([]);
 
   const days = buildDays();
 
@@ -397,30 +399,27 @@ export default function WadUp() {
         });
       });
 
-      // Reveal map
-      setTimeout(() => {
-        setCoverVisible(false);
+      setMapReady(true);
 
-        // Geocode city name
-        const gc = new window.google.maps.Geocoder();
-        gc.geocode({ location: { lat: userPos.lat, lng: userPos.lng }}, (results, status) => {
-          if (status === 'OK' && results?.length) {
-            for (const r of results) {
-              if (r.types.includes('locality') || r.types.includes('sublocality')) {
-                setLocLabel(r.address_components[0].long_name);
-                break;
-              }
+      // Geocode city name
+      const gc = new window.google.maps.Geocoder();
+      gc.geocode({ location: { lat: userPos.lat, lng: userPos.lng }}, (results, status) => {
+        if (status === 'OK' && results?.length) {
+          for (const r of results) {
+            if (r.types.includes('locality') || r.types.includes('sublocality')) {
+              setLocLabel(r.address_components[0].long_name);
+              break;
             }
           }
-        });
+        }
+      });
 
-        // Drop venue pins
-        venuesRef.current.forEach(v => { if (v.live) dropVenuePin(v); });
-        renderTrending();
+      // Drop venue pins
+      venuesRef.current.forEach(v => { if (v.live) dropVenuePin(v); });
+      renderTrending();
 
-        // Fetch TM events
-        setTimeout(() => fetchTM(), 300);
-      }, 1200);
+      // Fetch TM events
+      setTimeout(() => fetchTM(), 300);
     };
 
     // Load Google Maps script
@@ -444,6 +443,25 @@ export default function WadUp() {
       );
     }
   }, []);  // eslint-disable-line
+
+  // ── Keep the map correctly sized when the sidebar / viewport changes ──
+  const nudgeMap = useCallback(() => {
+    const map = mapObj.current;
+    if (!map || !window.google?.maps) return;
+    const center = map.getCenter();
+    window.google.maps.event.trigger(map, 'resize');
+    if (center) map.setCenter(center);
+  }, []);
+
+  useEffect(() => {
+    let t;
+    const onResize = () => {
+      clearTimeout(t);
+      t = setTimeout(nudgeMap, 200);
+    };
+    window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('resize', onResize); clearTimeout(t); };
+  }, [nudgeMap]);
 
   // ── Chip change ──
   const onChipClick = (chip) => {
@@ -473,6 +491,72 @@ export default function WadUp() {
     { id:'sports',    label:'🏋️ Sports' },
   ];
 
+  // ── Shared render helpers (used by both desktop sidebar & mobile HUD) ──
+  const renderChips = (containerClass) => (
+    <div className={containerClass}>
+      {chips.map(c => (
+        <button
+          key={c.id}
+          className={`chip${activeChip === c.id ? ' active' : ''}`}
+          onClick={() => onChipClick(c.id)}
+        >
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderDayStrip = (containerClass) => (
+    <div className={containerClass}>
+      {days.map(d => (
+        <button
+          key={d.iso}
+          className={`day-btn${activeDate === d.iso ? ' active' : ''}`}
+          onClick={() => onDayClick(d.iso)}
+        >
+          <span className="day-name">{d.label}</span>
+          <span className="day-num">{d.num}</span>
+          {d.isToday && <div className="day-dot" />}
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderTrendingItems = () => (
+    trending.length === 0 ? (
+      <div className="t-empty">
+        {tmLoading ? '🎟️ Loading events…' : 'Nothing found — try another category or date'}
+      </div>
+    ) : trending.map((item, idx) => {
+      const level  = item._level || 0;
+      const flames = getFlamesHtml(level);
+      const rankClass = idx === 0 ? 'gold' : idx === 1 ? 'silver' : idx === 2 ? 'bronze' : '';
+      return (
+        <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
+          <div className={`t-rank ${rankClass}`}>#{idx+1}</div>
+          <div className="t-flames">{flames || item.emoji}</div>
+          <div className="t-info">
+            <div className="t-name">{item.name}</div>
+            <div className="t-sub">{item.cat} · {item.city}, {item.state}</div>
+            {item._isTM && item.dateStr && (
+              <div className="t-date">
+                📅 {new Date(item.dateStr+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}
+                {item.timeStr ? ' · '+item.timeStr.slice(0,5) : ''}
+              </div>
+            )}
+          </div>
+          <div className="t-meta">
+            <div className="t-dist">{item._dist?.toFixed(1)} mi</div>
+            {item._isTM && item.price
+              ? <div className="t-date">{item.price}</div>
+              : <div className="t-score">{item._score}pts</div>
+            }
+          </div>
+        </div>
+      );
+    })
+  );
+
   return (
     <>
       <Head>
@@ -482,119 +566,106 @@ export default function WadUp() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      {/* Full-screen map */}
-      <div style={{ position:'fixed', inset:0 }}>
-        <div ref={mapRef} id="map" />
-
-        {/* Loading cover */}
-        <div className={`map-cover${coverVisible ? '' : ' fade'}`}
-             style={{ display: coverVisible ? 'flex' : 'flex' }}>
-          <div className="cover-logo">WadUp</div>
-          <div className="cover-sub">What&apos;s up near you</div>
-          <div className="cover-spin" />
+      {/* ── Splash screen ── */}
+      <div className={`splash${showSplash ? '' : ' splash-hidden'}`}>
+        <div className="splash-rays" />
+        <div className="splash-orb" />
+        <div className="splash-content">
+          <h1 className="splash-logo">WadUp</h1>
+          <p className="splash-subtitle">Events · Nightlife · Sports</p>
+          <button className="splash-btn" onClick={() => setShowSplash(false)}>
+            Explore the Map
+          </button>
         </div>
+      </div>
 
-        {/* HUD */}
-        <div className="hud">
+      {/* ── App shell ── */}
+      <div className="app-root">
 
-          {/* Search bar */}
-          <div className="search-bar">
-            <div className="search-input-wrap">
-              <span className="search-icon">🔍</span>
-              <input
-                type="text"
-                placeholder={locLabel}
-                readOnly
-              />
-            </div>
-            <div className="avatar">JD</div>
+        {/* Desktop sidebar */}
+        <aside
+          className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}
+          onTransitionEnd={(e) => { if (e.propertyName === 'width') nudgeMap(); }}
+        >
+          <div className="sidebar-header">
+            <div className="sidebar-logo">WadUp</div>
+            <button
+              className="sidebar-toggle"
+              onClick={() => setSidebarCollapsed(v => !v)}
+              aria-label="Toggle sidebar"
+            >
+              {sidebarCollapsed ? '›' : '‹'}
+            </button>
           </div>
 
-          {/* Category chips */}
-          <div className="chips">
-            {chips.map(c => (
-              <button
-                key={c.id}
-                className={`chip${activeChip === c.id ? ' active' : ''}`}
-                onClick={() => onChipClick(c.id)}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
+          {renderChips('sidebar-chips')}
+          {renderDayStrip('sidebar-days')}
 
-          {/* Day strip */}
-          <div className="day-strip">
-            {days.map(d => (
-              <button
-                key={d.iso}
-                className={`day-btn${activeDate === d.iso ? ' active' : ''}`}
-                onClick={() => onDayClick(d.iso)}
-              >
-                <span className="day-name">{d.label}</span>
-                <span className="day-num">{d.num}</span>
-                {d.isToday && <div className="day-dot" />}
-              </button>
-            ))}
-          </div>
-
-          {/* Debug panel */}
-          {debugLines.length > 0 && (
-            <div id="debug-panel">
-              {debugLines.map((l,i) => <div key={i}>{l}</div>)}
-            </div>
-          )}
-
-          {/* Trending panel */}
-          <div className="trending-panel">
-            <div className="panel-handle" />
+          <div className="sidebar-trending">
             <div className="panel-header">
               <div className="panel-title">
                 <div className="panel-title-dot" />
                 Trending Near You
               </div>
               <div className="panel-radius">
-                📍 Near you{tmLoading ? ' · Loading…' : ` · ${trending.length} found`}
+                {tmLoading ? 'Loading…' : `${trending.length} found`}
               </div>
             </div>
             <div className="trending-list">
-              {trending.length === 0 ? (
-                <div className="t-empty">
-                  {tmLoading ? '🎟️ Loading events…' : 'Nothing found — try another category or date'}
+              {renderTrendingItems()}
+            </div>
+          </div>
+        </aside>
+
+        {/* Map stage — full screen on desktop, phone mockup on mobile */}
+        <div className="map-frame">
+          <div ref={mapRef} id="map" />
+
+          {!mapReady && !showSplash && (
+            <div className="map-loading">
+              <div className="cover-spin" />
+            </div>
+          )}
+
+          {/* Mobile HUD */}
+          <div className="hud">
+
+            <div className="search-bar">
+              <div className="search-input-wrap">
+                <span className="search-icon">🔍</span>
+                <input type="text" placeholder={locLabel} readOnly />
+              </div>
+              <div className="avatar">JD</div>
+            </div>
+
+            {renderChips('chips')}
+            {renderDayStrip('day-strip')}
+
+            {debugLines.length > 0 && (
+              <div id="debug-panel">
+                {debugLines.map((l,i) => <div key={i}>{l}</div>)}
+              </div>
+            )}
+
+            <div className="trending-panel">
+              <div className="panel-handle" />
+              <div className="panel-header">
+                <div className="panel-title">
+                  <div className="panel-title-dot" />
+                  Trending Near You
                 </div>
-              ) : trending.map((item, idx) => {
-                const level  = item._level || 0;
-                const flames = getFlamesHtml(level);
-                const rankClass = idx === 0 ? 'gold' : idx === 1 ? 'silver' : idx === 2 ? 'bronze' : '';
-                return (
-                  <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
-                    <div className={`t-rank ${rankClass}`}>#{idx+1}</div>
-                    <div className="t-flames">{flames || item.emoji}</div>
-                    <div className="t-info">
-                      <div className="t-name">{item.name}</div>
-                      <div className="t-sub">{item.cat} · {item.city}, {item.state}</div>
-                      {item._isTM && item.dateStr && (
-                        <div className="t-date">
-                          📅 {new Date(item.dateStr+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}
-                          {item.timeStr ? ' · '+item.timeStr.slice(0,5) : ''}
-                        </div>
-                      )}
-                    </div>
-                    <div className="t-meta">
-                      <div className="t-dist">{item._dist?.toFixed(1)} mi</div>
-                      {item._isTM && item.price
-                        ? <div className="t-date">{item.price}</div>
-                        : <div className="t-score">{item._score}pts</div>
-                      }
-                    </div>
-                  </div>
-                );
-              })}
+                <div className="panel-radius">
+                  📍 Near you{tmLoading ? ' · Loading…' : ` · ${trending.length} found`}
+                </div>
+              </div>
+              <div className="trending-list">
+                {renderTrendingItems()}
+              </div>
             </div>
           </div>
 
-        </div>{/* /hud */}
-      </div>
+        </div>{/* /map-frame */}
+      </div>{/* /app-root */}
     </>
   );
 }
