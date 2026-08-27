@@ -43,9 +43,12 @@ export default function WadUp() {
   const [zoomClass,      setZoomClass]      = useState('zoom-near');
   const [showAddBanner,  setShowAddBanner]  = useState(false);
   const [sheetExpanded,  setSheetExpanded]  = useState(false);
+  const [installPlatform, setInstallPlatform] = useState('other'); // 'ios' | 'android' | 'other'
+  const [showInstallModal, setShowInstallModal] = useState(false);
 
   const sheetTouchStartY = useRef(null);
   const sheetTouchDeltaY = useRef(0);
+  const deferredInstallPrompt = useRef(null);
 
   const days = buildDays();
 
@@ -74,6 +77,41 @@ export default function WadUp() {
     setShowAddBanner(false);
     try { window.localStorage.setItem('wadup_hide_add_banner', '1'); } catch (e) { /* localStorage unavailable */ }
   }, []);
+
+  // ── Detect iOS vs Android so tapping the banner can show the right instructions ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const ua = window.navigator.userAgent || '';
+    const isIOS     = /iPad|iPhone|iPod/.test(ua)
+      || (ua.includes('Macintosh') && (window.navigator.maxTouchPoints || 0) > 1);
+    const isAndroid = /Android/.test(ua);
+    setInstallPlatform(isIOS ? 'ios' : isAndroid ? 'android' : 'other');
+  }, []);
+
+  // ── Capture Chrome's native "Add to Home Screen" prompt for later use ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      deferredInstallPrompt.current = e;
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+  }, []);
+
+  // ── Banner tap: trigger native Chrome install prompt, or show instructions ──
+  const onAddBannerTap = useCallback(async () => {
+    if (installPlatform === 'android' && deferredInstallPrompt.current) {
+      const promptEvent = deferredInstallPrompt.current;
+      deferredInstallPrompt.current = null;
+      try {
+        promptEvent.prompt();
+        await promptEvent.userChoice;
+      } catch (e) { /* user dismissed or prompt unavailable */ }
+      return;
+    }
+    setShowInstallModal(true);
+  }, [installPlatform]);
 
   // ── Swipeable trending sheet ──
   const onSheetTouchStart = useCallback((e) => {
@@ -606,9 +644,70 @@ export default function WadUp() {
 
       {/* ── Add to home screen banner (mobile) ── */}
       {showAddBanner && (
-        <div className="add-banner">
-          <span className="add-banner-text">Add WadUp to your home screen for the best experience 📲</span>
-          <button className="add-banner-close" onClick={dismissAddBanner} aria-label="Dismiss">✕</button>
+        <div
+          className="add-banner"
+          role="button"
+          tabIndex={0}
+          onClick={onAddBannerTap}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onAddBannerTap(); }}
+        >
+          <span className="add-banner-text">Add WadUp to your home screen 📲 — Tap for instructions</span>
+          <button
+            className="add-banner-close"
+            onClick={(e) => { e.stopPropagation(); dismissAddBanner(); }}
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* ── Add to home screen instructions modal ── */}
+      {showInstallModal && (
+        <div className="install-modal-backdrop" onClick={() => setShowInstallModal(false)}>
+          <div className="install-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="install-modal-header">
+              <span>Add WadUp to Your Home Screen</span>
+              <button
+                className="install-modal-close"
+                onClick={() => setShowInstallModal(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="install-modal-body">
+              {installPlatform === 'ios' ? (
+                <>
+                  <div className="install-step">
+                    <span className="install-step-icon">📤</span>
+                    <span>Tap the <strong>Share</strong> button (⎋↑) at the bottom of your browser</span>
+                  </div>
+                  <div className="install-arrow">⬇️</div>
+                  <div className="install-step">
+                    <span className="install-step-icon">➕</span>
+                    <span>Then tap <strong>Add to Home Screen</strong></span>
+                  </div>
+                </>
+              ) : installPlatform === 'android' ? (
+                <>
+                  <div className="install-step">
+                    <span className="install-step-icon">⋮</span>
+                    <span>Tap the <strong>three dots menu</strong> in the top right</span>
+                  </div>
+                  <div className="install-step">
+                    <span className="install-step-icon">➕</span>
+                    <span>Then tap <strong>Add to Home Screen</strong></span>
+                  </div>
+                </>
+              ) : (
+                <div className="install-step">
+                  <span className="install-step-icon">📲</span>
+                  <span>Open your browser menu and look for <strong>Add to Home Screen</strong></span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
