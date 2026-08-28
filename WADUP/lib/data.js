@@ -120,22 +120,38 @@ export function getVenueBadges(v, isTrending) {
   return badges;
 }
 
+const SPORT_KEYWORDS = [
+  'volleyball','basketball','football','baseball','soccer','hockey',
+  'tennis','golf','wrestling','boxing','mma','ufc','nfl','nba','mlb',
+  'nhl','mls','nascar','racing','gymnastics','swimming','track',
+  'lacrosse','softball','rugby','cricket','polo','rodeo','marathon',
+  'triathlon','cycling','skiing','snowboard','bowl','championship',
+  'tournament','league','vs.','versus','game','match','playoff','series'
+];
+
+function nameIsSport(name) {
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return SPORT_KEYWORDS.some(k => n.includes(k));
+}
+
 // ── Ticketmaster classification → chip mapping ──
 // Music/Arts/Comedy/Family all land on the Events chip; Sports gets its own.
 // Checks every classification level (segment/type/genre/subGenre) because a
-// "sport" signal can show up in any of them depending on the event — e.g.
-// Vanderbilt Commodores Women's Volleyball reports segment "Sports" but that
-// alone was getting lost when only the segment name was checked.
-export function tmSegmentToCat(classifications) {
-  if (!classifications || !classifications.length) return 'events';
+// "sport" signal can show up in any of them depending on the event. Some
+// listings (e.g. certain Vanderbilt Commodores Women's Volleyball games) come
+// back from Ticketmaster with no useful classification data at all — segment
+// "Undefined" and no type/genre/subGenre — so as a last resort, fall back to
+// scanning the event name itself for sport keywords.
+export function tmSegmentToCat(classifications, eventName) {
+  if (!classifications || !classifications.length) {
+    return nameIsSport(eventName) ? 'sports' : 'events';
+  }
   const c = classifications[0];
-  const fields = [
-    c.segment?.name,
-    c.type?.name,
-    c.genre?.name,
-    c.subGenre?.name
-  ].filter(Boolean).join(' ').toLowerCase();
+  const fields = [c.segment?.name, c.type?.name, c.genre?.name, c.subGenre?.name]
+    .filter(Boolean).join(' ').toLowerCase();
   if (fields.includes('sport')) return 'sports';
+  if (fields === 'undefined' || fields.trim() === '') return nameIsSport(eventName) ? 'sports' : 'events';
   return 'events';
 }
 
