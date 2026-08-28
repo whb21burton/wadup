@@ -479,7 +479,7 @@ export default function WadUp() {
         const segment    = classification.segment?.name || '';
         const genre      = classification.genre?.name || '';
         const subGenre   = classification.subGenre?.name || '';
-        const cat        = tmSegmentToCat(segment);
+        const cat        = tmSegmentToCat(ev.classifications);
         const img        = (ev.images?.find(i => i.ratio==='16_9' && i.width>500) || ev.images?.[0])?.url || '';
         let price = '';
         if (ev.priceRanges?.[0]) {

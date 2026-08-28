@@ -120,11 +120,23 @@ export function getVenueBadges(v, isTrending) {
   return badges;
 }
 
-// ── Ticketmaster segment → chip mapping ──
+// ── Ticketmaster classification → chip mapping ──
 // Music/Arts/Comedy/Family all land on the Events chip; Sports gets its own.
-export function tmSegmentToCat(seg) {
-  if (!seg) return 'events';
-  return seg.toLowerCase().includes('sport') ? 'sports' : 'events';
+// Checks every classification level (segment/type/genre/subGenre) because a
+// "sport" signal can show up in any of them depending on the event — e.g.
+// Vanderbilt Commodores Women's Volleyball reports segment "Sports" but that
+// alone was getting lost when only the segment name was checked.
+export function tmSegmentToCat(classifications) {
+  if (!classifications || !classifications.length) return 'events';
+  const c = classifications[0];
+  const fields = [
+    c.segment?.name,
+    c.type?.name,
+    c.genre?.name,
+    c.subGenre?.name
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (fields.includes('sport')) return 'sports';
+  return 'events';
 }
 
 const SPORT_EMOJI_RULES = [
