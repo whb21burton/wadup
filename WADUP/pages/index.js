@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Head from 'next/head';
-import { MarkerClusterer, GridAlgorithm } from '@googlemaps/markerclusterer';
 import {
   DEFAULT_VENUES, CATEGORY_CHIPS, CATEGORY_LABELS,
   isVenueEligible, getVenueBadges,
@@ -82,11 +81,8 @@ export default function WadUp() {
   const boundsDebounceRef = useRef(null);
   const renderTrendingRef = useRef(null);
 
-  // Clustering / spiderfy
+  // Spider fan-out (overlapping pins)
   const pinRegistry   = useRef(new Map());  // id -> { id, type, marker, overlay, el, lat, lng, chipVisible, openPopup }
-  const markerToEntry = useRef(new Map());  // google.maps.Marker -> registry entry (reverse lookup for cluster members)
-  const clustererRef  = useRef(null);
-  const clusterBubbles = useRef({});        // "lat,lng" key -> { el, overlay, cluster }
   const spiderStateRef = useRef(null);      // { ids: Set, entries, legsOverlay, onCollapse } | null
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
@@ -246,7 +242,7 @@ export default function WadUp() {
   // closure holding an outdated activeChip/activeDate.
   useEffect(() => { renderTrendingRef.current = renderTrending; }, [renderTrending]);
 
-  // ── Filter map pins — flags feed the clusterer, which owns marker visibility ──
+  // ── Filter map pins — flags drive direct marker/overlay visibility ──
   const filterPins = useCallback((chipOverride, dateOverride) => {
     const chip = chipOverride ?? activeChip;
     const date = dateOverride ?? activeDate;
@@ -274,7 +270,7 @@ export default function WadUp() {
       entry.chipVisible = catOk && dateOk;
     });
 
-    recomputeClusters();
+    applyPinVisibility();
   }, [activeChip, activeDate]);
 
   // ── WuOverlay class factory ── anchor 'bottom' = pin (tail points at the
@@ -314,10 +310,10 @@ export default function WadUp() {
     const clickedPt = proj.fromLatLngToDivPixel(new window.google.maps.LatLng(clickedEntry.lat, clickedEntry.lng));
     const nearby = [];
     pinRegistry.current.forEach((entry) => {
-      if (entry.marker.getMap() !== map) return; // hidden (chip-filtered or folded into a cluster)
+      if (entry.marker.getMap() !== map) return; // hidden by the active chip/date filter
       const pt = proj.fromLatLngToDivPixel(new window.google.maps.LatLng(entry.lat, entry.lng));
       const dx = pt.x - clickedPt.x, dy = pt.y - clickedPt.y;
-      if (Math.sqrt(dx * dx + dy * dy) <= 30) nearby.push(entry);
+      if (Math.sqrt(dx * dx + dy * dy) <= 40) nearby.push(entry);
     });
     return nearby;
   }
@@ -365,17 +361,15 @@ export default function WadUp() {
     });
     state.legsOverlay.setMap(null);
     spiderStateRef.current = null;
-    if (state.onCollapse) state.onCollapse();
-    recomputeClusters();
   }
 
-  function spiderfy(entries, onCollapse) {
+  function spiderfy(entries) {
     const map = mapObj.current;
     if (!map || entries.length < 2) return;
     collapseSpiderfy();
 
     const n = entries.length;
-    const radius = Math.max(70, 30 / Math.sin(Math.PI / n));
+    const radius = 80; // every fan-out leg is exactly the same length
     const legs = [];
 
     entries.forEach((entry, i) => {
@@ -395,7 +389,6 @@ export default function WadUp() {
       ids: new Set(entries.map(e => e.id)),
       entries,
       legsOverlay,
-      onCollapse: onCollapse || null,
     };
   }
 
@@ -411,104 +404,25 @@ export default function WadUp() {
 
     const nearby = findNearbyPins(entry);
     if (nearby.length > 1) {
-      spiderfy(nearby, null);
+      spiderfy(nearby);
       return;
     }
     entry.openPopup();
   }
 
-  // ── Clustering ──
-  function recomputeClusters() {
+  // ── Apply chip/date visibility directly to each pin's marker + overlay ──
+  function applyPinVisibility() {
     const map = mapObj.current;
-    if (!map || !clustererRef.current) return;
+    if (!map) return;
     if (spiderStateRef.current) return; // don't reflow mid-spiderfy
 
-    const eligible = [];
     pinRegistry.current.forEach(entry => {
       if (entry.chipVisible) {
-        eligible.push(entry);
+        entry.marker.setMap(map);
+        entry.overlay.setMap(map);
       } else {
         entry.marker.setMap(null);
         entry.overlay.setMap(null);
-      }
-    });
-
-    clustererRef.current.clearMarkers();
-    if (eligible.length) clustererRef.current.addMarkers(eligible.map(e => e.marker));
-  }
-
-  function upsertClusterBubble(key, cluster, count) {
-    const map = mapObj.current;
-    let bubble = clusterBubbles.current[key];
-    if (!bubble) {
-      const el = document.createElement('div');
-      el.className = 'wu-cluster';
-      const overlay = makeOverlay(cluster.position, el, map, 'center');
-      bubble = { el, overlay };
-      clusterBubbles.current[key] = bubble;
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        onClusterBubbleClick(bubble);
-      });
-      el.addEventListener('mouseenter', () => {
-        if (!window.matchMedia('(hover: hover)').matches) return;
-        onClusterBubbleClick(bubble);
-      });
-    } else {
-      bubble.overlay.setMap(map);
-    }
-    bubble.cluster = cluster;
-    bubble.el.textContent = String(count);
-    bubble.el.classList.toggle('wu-cluster-lg', count >= 10);
-  }
-
-  function onClusterBubbleClick(bubble) {
-    const map = mapObj.current;
-    const members = bubble.cluster.markers || [];
-    const bounds = new window.google.maps.LatLngBounds();
-    members.forEach(m => bounds.extend(m.getPosition()));
-    const ne = bounds.getNorthEast(), sw = bounds.getSouthWest();
-    const negligible = Math.abs(ne.lat() - sw.lat()) < 0.0004 && Math.abs(ne.lng() - sw.lng()) < 0.0004;
-
-    if (map.getZoom() >= 20 || negligible) {
-      // Already at (or effectively at) max zoom — zooming further won't
-      // separate these pins, so fan them out instead.
-      const entries = members.map(m => markerToEntry.current.get(m)).filter(Boolean);
-      if (!entries.length) return;
-      entries.forEach(entry => { entry.overlay.setMap(map); entry.overlay.draw(); });
-      bubble.overlay.setMap(null);
-      spiderfy(entries, () => { bubble.overlay.setMap(map); });
-    } else {
-      map.fitBounds(bounds, 60);
-    }
-  }
-
-  function onClusteringEnd(clusters) {
-    const map = mapObj.current;
-    if (!map) return;
-    const activeKeys = new Set();
-
-    clusters.forEach(cluster => {
-      const members = cluster.markers || [];
-      if (members.length > 1) {
-        members.forEach(m => {
-          const entry = markerToEntry.current.get(m);
-          if (entry) entry.overlay.setMap(null);
-        });
-        const pos = cluster.position;
-        const key = pos.lat().toFixed(5) + ',' + pos.lng().toFixed(5);
-        activeKeys.add(key);
-        upsertClusterBubble(key, cluster, members.length);
-      } else if (members.length === 1) {
-        const entry = markerToEntry.current.get(members[0]);
-        if (entry) entry.overlay.setMap(map);
-      }
-    });
-
-    Object.keys(clusterBubbles.current).forEach(key => {
-      if (!activeKeys.has(key)) {
-        clusterBubbles.current[key].overlay.setMap(null);
-        delete clusterBubbles.current[key];
       }
     });
   }
@@ -524,7 +438,6 @@ export default function WadUp() {
       if (overlays.current[v.id]) overlays.current[v.id].setMap(null);
     }
     if (pinRegistry.current.has(v.id)) {
-      markerToEntry.current.delete(pinRegistry.current.get(v.id).marker);
       pinRegistry.current.delete(v.id);
     }
     if (!v.live) return;
@@ -614,7 +527,6 @@ export default function WadUp() {
 
     const entry = { id: v.id, type: 'venue', marker, overlay, el, lat: v.lat, lng: v.lng, chipVisible: true, openPopup };
     pinRegistry.current.set(v.id, entry);
-    markerToEntry.current.set(marker, entry);
   }, [zoomClass]);
 
   // ── Drop a TM pin ──
@@ -627,7 +539,6 @@ export default function WadUp() {
       if (tmMarkers.current[ev.id].overlay) tmMarkers.current[ev.id].overlay.setMap(null);
     }
     if (pinRegistry.current.has(ev.id)) {
-      markerToEntry.current.delete(pinRegistry.current.get(ev.id).marker);
       pinRegistry.current.delete(ev.id);
     }
 
@@ -704,7 +615,6 @@ export default function WadUp() {
 
     const entry = { id: ev.id, type: 'tm', marker, overlay, el, lat: ev.lat, lng: ev.lng, chipVisible: true, openPopup };
     pinRegistry.current.set(ev.id, entry);
-    markerToEntry.current.set(marker, entry);
   }, [zoomClass]);
 
   // ── Fetch Ticketmaster (server-side proxy) ──
@@ -853,32 +763,6 @@ export default function WadUp() {
         }, 300);
       });
 
-      // Pins within ~60px of each other fold into a single navy/cyan count
-      // bubble; MarkerClusterer recomputes automatically on its own as the
-      // map pans/zooms (idle), and we trigger it manually via recomputeClusters()
-      // whenever the underlying marker set or chip/date filter changes.
-      clustererRef.current = new MarkerClusterer({
-        map,
-        markers: [],
-        algorithm: new GridAlgorithm({ maxZoom: 19, gridSize: 60 }),
-        renderer: {
-          render: ({ position }) => new window.google.maps.Marker({
-            position,
-            icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
-            zIndex: 1,
-          }),
-        },
-        onClusterClick: () => {}, // handled by our own cluster bubble overlay instead
-      });
-
-      // MarkerClusterer's constructor does NOT accept an `onClusteringEnd` option —
-      // it fires 'clusteringend' as a regular gmaps event instead. Passing it above
-      // was silently ignored, so overlays hidden by a chip filter (recomputeClusters)
-      // were never re-shown by onClusteringEnd's `entry.overlay.setMap(map)` branch.
-      window.google.maps.event.addListener(clustererRef.current, 'clusteringend', () => {
-        onClusteringEnd(clustererRef.current.clusters);
-      });
-
       setMapReady(true);
 
       // Top 10 by rating, area-wide — independent of whichever chip is active
@@ -893,7 +777,6 @@ export default function WadUp() {
 
       // Drop venue pins — ineligible venues (e.g. a restaurant with nothing on today) never get one
       venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
-      recomputeClusters();
       renderTrending();
 
       // Fetch TM events

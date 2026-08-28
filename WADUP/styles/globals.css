@@ -587,7 +587,7 @@ html, body {
 .zoom-mid  .wu-name   { font-size: 0.56rem; max-width: 84px; }
 .zoom-near .wu-name   { font-size: 0.66rem; max-width: 130px; }
 
-/* Smooth fan-out/collapse when a clustered pin is spiderfied */
+/* Smooth fan-out/collapse when overlapping pins are spiderfied */
 .wu-pin-spiderfied {
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   z-index: 600;
@@ -605,36 +605,7 @@ html, body {
   height: 2px;
   background: rgba(17,17,17,0.35);
   transform-origin: 0 50%;
-}
-
-/* ── CLUSTER BUBBLE (many pins folded together) ──
-   Position/transform is set inline by the overlay (see makeOverlay in
-   pages/index.js, anchor='center') so hover feedback here uses box-shadow/
-   border instead of transform, which an inline style would always win over. */
-.wu-cluster {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px; height: 44px;
-  border-radius: 50%;
-  background: linear-gradient(180deg, var(--navy), var(--navy-deep));
-  border: 2px solid var(--cyan);
-  box-shadow: 0 0 0 3px rgba(0,229,255,0.18), 0 4px 14px rgba(0,0,0,0.4);
-  color: #fff;
-  font-family: 'Exo 2', sans-serif;
-  font-size: 0.85rem;
-  font-weight: 800;
-  cursor: pointer;
-  transition: box-shadow 0.15s, border-color 0.15s;
-}
-.wu-cluster:hover {
-  border-color: #fff;
-  box-shadow: 0 0 0 5px rgba(0,229,255,0.3), 0 6px 18px rgba(0,0,0,0.5);
-}
-.wu-cluster-lg {
-  width: 54px; height: 54px;
-  font-size: 0.95rem;
-  border-width: 3px;
+  transition: width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* ── INFO WINDOW ── */
