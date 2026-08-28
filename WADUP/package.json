@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@googlemaps/markerclusterer": "^2.6.2",
     "@supabase/supabase-js": "^2.112.4",
     "next": "14.2.3",
     "react": "^18",
