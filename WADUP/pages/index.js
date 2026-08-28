@@ -84,6 +84,7 @@ export default function WadUp() {
   // Spider fan-out (overlapping pins)
   const pinRegistry   = useRef(new Map());  // id -> { id, type, marker, overlay, el, lat, lng, chipVisible, openPopup }
   const spiderStateRef = useRef(null);      // { ids: Set, entries, legsOverlay, onCollapse } | null
+  const popupCloseTimer = useRef(null);     // desktop hover: pending delayed-close timeout for the InfoWindow
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('all');
@@ -392,6 +393,22 @@ export default function WadUp() {
     };
   }
 
+  // ── Desktop hover popup: delayed close so the mouse can travel from the
+  // pin into the popup itself without it flickering shut. ──
+  function cancelPopupClose() {
+    if (popupCloseTimer.current) {
+      clearTimeout(popupCloseTimer.current);
+      popupCloseTimer.current = null;
+    }
+  }
+  function schedulePopupClose() {
+    cancelPopupClose();
+    popupCloseTimer.current = setTimeout(() => {
+      infoWindow.current?.close();
+      popupCloseTimer.current = null;
+    }, 150);
+  }
+
   // Shared entry point for both click and (desktop) hover on any pin.
   function handlePinInteraction(id) {
     const entry = pinRegistry.current.get(id);
@@ -519,7 +536,12 @@ export default function WadUp() {
     });
     el.addEventListener('mouseenter', () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
+      cancelPopupClose();
       handlePinInteraction(v.id);
+    });
+    el.addEventListener('mouseleave', () => {
+      if (!window.matchMedia('(hover: hover)').matches) return;
+      schedulePopupClose();
     });
 
     mapMarkers.current[v.id] = { marker };
@@ -608,7 +630,12 @@ export default function WadUp() {
     });
     el.addEventListener('mouseenter', () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
+      cancelPopupClose();
       handlePinInteraction(ev.id);
+    });
+    el.addEventListener('mouseleave', () => {
+      if (!window.matchMedia('(hover: hover)').matches) return;
+      schedulePopupClose();
     });
 
     tmMarkers.current[ev.id] = { marker, overlay };
@@ -724,6 +751,16 @@ export default function WadUp() {
 
       mapObj.current     = map;
       infoWindow.current = new window.google.maps.InfoWindow({ maxWidth: 240 });
+
+      // Desktop hover: keep the popup open while the mouse is over the popup
+      // itself (not just the pin), and close it on a delay when it leaves both.
+      window.google.maps.event.addListener(infoWindow.current, 'domready', () => {
+        if (!window.matchMedia('(hover: hover)').matches) return;
+        const bubble = document.querySelector('.gm-style-iw-a');
+        if (!bubble) return;
+        bubble.addEventListener('mouseenter', cancelPopupClose);
+        bubble.addEventListener('mouseleave', schedulePopupClose);
+      });
 
       // User dot
       new window.google.maps.Marker({
