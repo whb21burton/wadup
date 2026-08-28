@@ -253,6 +253,13 @@ export default function WadUp() {
     const map  = mapObj.current;
     if (!map) return;
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[filterPins] chip =', chip, '| sample venue cats:',
+        venuesRef.current.slice(0, 5).map(v => v.cat),
+        '| sample TM event cats:',
+        tmEventsRef.current.slice(0, 5).map(ev => ev.cat));
+    }
+
     venuesRef.current.forEach(v => {
       const entry = pinRegistry.current.get(v.id);
       if (!entry) return;
@@ -862,7 +869,14 @@ export default function WadUp() {
           }),
         },
         onClusterClick: () => {}, // handled by our own cluster bubble overlay instead
-        onClusteringEnd,
+      });
+
+      // MarkerClusterer's constructor does NOT accept an `onClusteringEnd` option —
+      // it fires 'clusteringend' as a regular gmaps event instead. Passing it above
+      // was silently ignored, so overlays hidden by a chip filter (recomputeClusters)
+      // were never re-shown by onClusteringEnd's `entry.overlay.setMap(map)` branch.
+      window.google.maps.event.addListener(clustererRef.current, 'clusteringend', () => {
+        onClusteringEnd(clustererRef.current.clusters);
       });
 
       setMapReady(true);
