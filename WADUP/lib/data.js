@@ -1,38 +1,86 @@
-// lib/data.js — venue data and heat scoring
+// lib/data.js — venue data, category chips, and Ticketmaster helpers
 
 export const DEFAULT_VENUES = [
-  { id:'v1', name:'Tootsies Orchid Lounge', cat:'nightlife', emoji:'🍺', address:'422 Broadway, Nashville, TN 37203', state:'TN', city:'Nashville', phone:'(615) 726-0463', website:'tootsies.net', ig:'@tootsies', style:'hot', lng:-86.7816, lat:36.1591, live:true, hours:{sun:false,mon:false,tue:false,wed:true,thu:true,fri:true,sat:true}, events:[{date:'Mar 7',name:'Live Band Night'},{date:'Mar 14',name:'St. Patricks Special'}], signals:{checkin:8,ig:14,event:5,view:22} },
-  { id:'v2', name:'Honest Pint',            cat:'nightlife', emoji:'🍺', address:'102 Tremont St, Chattanooga, TN 37405', state:'TN', city:'Chattanooga', phone:'(423) 648-7446', website:'honestpint.com', ig:'@honestpint', style:'cyan', lng:-85.3096, lat:35.0456, live:true, hours:{sun:false,mon:false,tue:true,wed:true,thu:true,fri:true,sat:true}, events:[{date:'Mar 8',name:'Trivia Night'}], signals:{checkin:3,ig:6,event:2,view:11} },
-  { id:'v3', name:'Top Golf Chattanooga',   cat:'sports',    emoji:'⛳', address:'2020 Gunbarrel Rd, Chattanooga, TN 37421', state:'TN', city:'Chattanooga', phone:'(423) 531-0000', website:'topgolf.com', ig:'@topgolf', style:'cyan', lng:-85.2480, lat:35.0527, live:true, hours:{sun:true,mon:true,tue:true,wed:true,thu:true,fri:true,sat:true}, events:[], signals:{checkin:1,ig:2,view:8} },
-  { id:'v4', name:'Punchline Comedy Club',  cat:'events',    emoji:'🎭', address:'280 Elizabeth St NE, Atlanta, GA 30307', state:'GA', city:'Atlanta', phone:'(404) 555-0101', website:'punchlinecomedy.com', ig:'@punchline_atl', style:'purple', lng:-84.3880, lat:33.7490, live:false, hours:{sun:false,mon:false,tue:false,wed:true,thu:true,fri:true,sat:true}, events:[{date:'Mar 15',name:'Comedy Showcase'},{date:'Mar 22',name:'Open Mic Night'}], signals:{checkin:5,ig:9,event:4,view:18} },
+  {
+    id: 'v1', name: 'Tootsies Orchid Lounge', cat: 'nightlife', subcategory: 'Live Music Bar',
+    address: '422 Broadway, Nashville, TN 37203', city: 'Nashville', state: 'TN',
+    phone: '(615) 726-0463', website: 'tootsies.net',
+    lat: 36.1591, lng: -86.7816, live: true,
+    average_rating: 4.6, total_ratings: 312,
+    is_local_favorite: true, is_restaurant: false,
+    has_live_music_today: true, has_trivia_today: false, has_specials_today: false, has_happy_hour_today: true,
+    created_at: '2024-01-15',
+  },
+  {
+    id: 'v2', name: 'Honest Pint', cat: 'nightlife', subcategory: 'Craft Beer Bar',
+    address: '102 Tremont St, Chattanooga, TN 37405', city: 'Chattanooga', state: 'TN',
+    phone: '(423) 648-7446', website: 'honestpint.com',
+    lat: 35.0456, lng: -85.3096, live: true,
+    average_rating: 4.3, total_ratings: 128,
+    is_local_favorite: false, is_restaurant: false,
+    has_live_music_today: false, has_trivia_today: true, has_specials_today: false, has_happy_hour_today: false,
+    created_at: '2026-08-24',
+  },
+  {
+    id: 'v3', name: 'Top Golf Chattanooga', cat: 'activities', subcategory: 'Golf Entertainment',
+    address: '2020 Gunbarrel Rd, Chattanooga, TN 37421', city: 'Chattanooga', state: 'TN',
+    phone: '(423) 531-0000', website: 'topgolf.com',
+    lat: 35.0527, lng: -85.2480, live: true,
+    average_rating: 4.5, total_ratings: 540,
+    is_local_favorite: false, is_restaurant: false,
+    has_live_music_today: false, has_trivia_today: false, has_specials_today: true, has_happy_hour_today: false,
+    created_at: '2023-06-01',
+  },
+  {
+    id: 'v4', name: 'Punchline Comedy Club', cat: 'nightlife', subcategory: 'Comedy Club',
+    address: '280 Elizabeth St NE, Atlanta, GA 30307', city: 'Atlanta', state: 'GA',
+    phone: '(404) 555-0101', website: 'punchlinecomedy.com',
+    lat: 33.7490, lng: -84.3880, live: true,
+    average_rating: 4.1, total_ratings: 96,
+    is_local_favorite: false, is_restaurant: false,
+    has_live_music_today: false, has_trivia_today: false, has_specials_today: false, has_happy_hour_today: false,
+    created_at: '2022-11-20',
+  },
+  {
+    id: 'v5', name: 'Bluegrass Grill', cat: 'activities', subcategory: 'Restaurant',
+    address: '55 Patten Pkwy, Chattanooga, TN 37402', city: 'Chattanooga', state: 'TN',
+    phone: '(423) 555-0199', website: 'bluegrassgrill.example',
+    lat: 35.0490, lng: -85.3080, live: true,
+    average_rating: 4.7, total_ratings: 210,
+    is_local_favorite: true, is_restaurant: true,
+    has_live_music_today: false, has_trivia_today: false, has_specials_today: false, has_happy_hour_today: false,
+    created_at: '2021-04-02',
+  },
+  {
+    id: 'v6', name: 'Generic Diner', cat: 'activities', subcategory: 'Restaurant',
+    address: '10 Main St, Chattanooga, TN 37402', city: 'Chattanooga', state: 'TN',
+    phone: '(423) 555-0100', website: '',
+    lat: 35.0420, lng: -85.3120, live: true,
+    average_rating: 3.4, total_ratings: 12,
+    is_local_favorite: false, is_restaurant: true,
+    has_live_music_today: false, has_trivia_today: false, has_specials_today: false, has_happy_hour_today: false,
+    created_at: '2020-02-02',
+  },
 ];
 
-export function calcHeatScore(v) {
-  if (!v.signals) return 0;
-  const s = v.signals;
-  let score = 0;
-  score += (s.checkin || 0) * 12;
-  score += (s.event   || 0) * 8;
-  score += (s.ig      || 0) * 5;
-  score += (s.view    || 0) * 2;
-  score += (s.override || 0);
-  if (v.events  && v.events.length)  score += v.events.length * 6;
-  const openDays = v.hours ? Object.values(v.hours).filter(Boolean).length : 0;
-  score += openDays * 3;
-  return Math.min(score, 200);
-}
+// ── Category chips shown on the map screen ──
+export const CATEGORY_CHIPS = [
+  { id: 'all',        label: 'All' },
+  { id: 'events',     label: '🎵 Events' },
+  { id: 'nightlife',  label: '🍸 Bars & Nightlife' },
+  { id: 'sports',     label: '🏟️ Sports' },
+  { id: 'outdoors',   label: '🌳 Outdoors' },
+  { id: 'activities', label: '🎳 Activities' },
+];
 
-export function calcHeatLevel(v) {
-  const s = calcHeatScore(v);
-  if (s >= 65) return 3;
-  if (s >= 35) return 2;
-  if (s >= 10) return 1;
-  return 0;
-}
-
-export function getFlamesHtml(level) {
-  return ['', '🔥', '🔥🔥', '🔥🔥🔥'][level] || '';
-}
+// Business categories offered on venue-owner signup — mirrors the map's
+// database-backed chips. Events/Sports are Ticketmaster-only on the map, so
+// they aren't real self-serve business categories.
+export const VENUE_CATEGORIES = [
+  { id: 'nightlife',  label: 'Bars & Nightlife' },
+  { id: 'outdoors',   label: 'Outdoors' },
+  { id: 'activities', label: 'Activities' },
+];
 
 export function distanceMiles(lat1, lng1, lat2, lng2) {
   const R = 3958.8;
@@ -43,38 +91,58 @@ export function distanceMiles(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// Business categories offered on venue-owner signup — mirrors the app's filter chips
-export const VENUE_CATEGORIES = [
-  { id: 'nightlife', label: 'Nightlife' },
-  { id: 'events',    label: 'Events' },
-  { id: 'sports',    label: 'Sports' },
-];
+// ── Venue visibility rule: restaurants only surface if something's actually
+// happening there today (or they're a certified local favorite); every other
+// database category (bars/nightlife, outdoors, activities) always appears. ──
+export function isVenueEligible(v) {
+  if (v.is_restaurant) {
+    return !!(v.is_local_favorite || v.has_live_music_today || v.has_trivia_today || v.has_specials_today);
+  }
+  return true;
+}
 
+export function isVenueNew(v) {
+  if (!v.created_at) return false;
+  const days = (Date.now() - new Date(v.created_at).getTime()) / 864e5;
+  return days >= 0 && days <= 7;
+}
+
+// Status badges for a venue, highest-priority first. `isTrending` is computed
+// externally (top 10 by rating among currently loaded venues) since it depends
+// on the whole set, not just this one venue.
+export function getVenueBadges(v, isTrending) {
+  const badges = [];
+  if (v.has_live_music_today) badges.push({ id: 'live',       icon: '🔴', label: 'Live Now' });
+  if (v.has_happy_hour_today) badges.push({ id: 'happy_hour', icon: '⏰', label: 'Happy Hour' });
+  if (v.has_specials_today)   badges.push({ id: 'specials',   icon: '🏷️', label: 'Specials' });
+  if (isVenueNew(v))          badges.push({ id: 'new',        icon: '🆕', label: 'New' });
+  if (isTrending)             badges.push({ id: 'trending',   icon: '🔥', label: 'Trending' });
+  return badges;
+}
+
+// ── Ticketmaster segment → chip mapping ──
+// Music/Arts/Comedy/Family all land on the Events chip; Sports gets its own.
 export function tmSegmentToCat(seg) {
   if (!seg) return 'events';
-  const s = seg.toLowerCase();
-  if (s.includes('sport')) return 'sports';
-  if (s.includes('music') || s.includes('concert') || s.includes('festival')) return 'events';
-  if (s.includes('arts') || s.includes('theatre') || s.includes('comedy') || s.includes('family')) return 'events';
-  return 'events';
+  return seg.toLowerCase().includes('sport') ? 'sports' : 'events';
 }
 
-export function tmHeatScore(ev) {
-  let score = 20;
-  score += Math.max(0, 30 - ev._rank * 0.15);
-  if      (ev._daysAway <= 1)  score += 30;
-  else if (ev._daysAway <= 3)  score += 20;
-  else if (ev._daysAway <= 7)  score += 12;
-  else if (ev._daysAway <= 14) score += 6;
-  if (ev.img) score += 5;
-  return Math.min(Math.round(score), 100);
-}
+const SPORT_EMOJI_RULES = [
+  { test: /\bnfl\b|football(?!\s*club)/i, emoji: '🏈' },
+  { test: /\bmlb\b|baseball/i,            emoji: '⚾' },
+  { test: /\bnba\b|basketball/i,          emoji: '🏀' },
+  { test: /\bnhl\b|hockey/i,              emoji: '🏒' },
+  { test: /\bmls\b|soccer|football club/i, emoji: '⚽' },
+];
 
-export function tmHeatLevel(score) {
-  if (score >= 65) return 3;
-  if (score >= 35) return 2;
-  if (score >= 10) return 1;
-  return 0;
+// Detects a sport-specific emoji from a Ticketmaster event's segment/genre
+// fields, falling back to a generic stadium icon for other sports.
+export function tmSportEmoji(ev) {
+  const haystack = [ev.genre, ev.subGenre, ev.segment, ev.name].filter(Boolean).join(' ');
+  for (const rule of SPORT_EMOJI_RULES) {
+    if (rule.test.test(haystack)) return rule.emoji;
+  }
+  return '🏟️';
 }
 
 export const TM_REGIONS = [

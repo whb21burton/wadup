@@ -471,10 +471,7 @@ html, body {
   min-width: 18px;
   color: #bbb;
 }
-.t-rank.gold   { color: #f4a000; }
-.t-rank.silver { color: #888; }
-.t-rank.bronze { color: #b87333; }
-.t-flames { font-size: 0.75rem; letter-spacing: -1px; min-width: 28px; }
+.t-icon { font-size: 0.85rem; min-width: 28px; text-align: center; }
 .t-info { flex: 1; min-width: 0; }
 .t-name {
   font-family: 'Exo 2', sans-serif;
@@ -497,10 +494,11 @@ html, body {
   font-weight: 700;
   color: #ff4500;
 }
-.t-score {
+.t-rating {
   font-family: 'Exo 2', sans-serif;
-  font-size: 0.58rem;
-  color: #bbb;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #d99a00;
 }
 .t-date {
   font-family: 'Exo 2', sans-serif;
@@ -509,7 +507,7 @@ html, body {
   color: #f4a000;
 }
 
-/* ── MAP PINS ── */
+/* ── MAP PINS (clean white pill) ── */
 .wu-pin {
   position: relative;
   display: inline-flex;
@@ -519,58 +517,108 @@ html, body {
   transition: transform 0.15s;
 }
 .wu-pin:hover { transform: scale(1.08); }
-.wu-bubble {
+
+.wu-pill {
+  position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 3px 7px 3px 4px;
-  border-radius: 20px;
-  white-space: nowrap;
+  gap: 1px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1.5px solid #e4e4e4;
   box-shadow: 0 2px 8px rgba(0,0,0,0.18);
-  max-width: 150px;
-  border: 1.5px solid transparent;
+  white-space: nowrap;
+  max-width: 160px;
 }
-.wu-bubble.heat-0 { background:#fff; border-color:#ddd; }
-.wu-bubble.heat-1 { background:#fff; border-color:#0066cc; }
-.wu-bubble.heat-2 { background:#fff; border-color:#cc4400; }
-.wu-bubble.heat-3 { background:var(--yellow); border-color:var(--yellow-dark); animation: pinPulse 1.8s ease-in-out infinite; }
-@keyframes pinPulse { 0%,100%{box-shadow:0 2px 8px rgba(255,252,0,0.4)} 50%{box-shadow:0 2px 20px rgba(255,252,0,0.8)} }
-.wu-flames { font-size: 0.7rem; }
+.wu-pill-tm { border-color: rgba(0,229,255,0.55); }
+
+.wu-badge {
+  position: absolute;
+  top: -8px; left: -8px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #eee;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+.wu-badge-live { animation: wuLivePulse 1.6s ease-in-out infinite; }
+@keyframes wuLivePulse {
+  0%, 100% { box-shadow: 0 1px 4px rgba(255,69,0,0.45); }
+  50%      { box-shadow: 0 1px 12px rgba(255,69,0,0.9); }
+}
+
+.wu-pill-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+}
 .wu-name {
   font-family: 'Exo 2', sans-serif;
   font-weight: 700;
+  color: #171717;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 140px;
 }
+.wu-rating {
+  font-family: 'Exo 2', sans-serif;
+  font-weight: 700;
+  font-size: 0.55rem;
+  color: #d99a00;
+}
+
 .wu-tail {
   width: 0; height: 0;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
-  border-top: 7px solid;
+  border-top: 7px solid #fff;
 }
-.wu-tail.heat-0 { border-top-color: #ddd; }
-.wu-tail.heat-1 { border-top-color: #0066cc; }
-.wu-tail.heat-2 { border-top-color: #cc4400; }
-.wu-tail.heat-3 { border-top-color: var(--yellow-dark); }
 
 /* Zoom levels */
-.zoom-far  .wu-bubble { padding: 2px 4px 2px 3px; border-radius:12px; }
-.zoom-far  .wu-name   { font-size: 0.42rem; max-width: 40px; }
-.zoom-far  .wu-flames { font-size: 0.5rem; }
-.zoom-mid  .wu-name   { font-size: 0.54rem; max-width: 72px; }
-.zoom-near .wu-name   { font-size: 0.64rem; max-width: 110px; }
+.zoom-far  .wu-pill   { padding: 3px 6px; border-radius: 10px; }
+.zoom-far  .wu-name   { font-size: 0.42rem; max-width: 46px; }
+.zoom-far  .wu-rating { font-size: 0.4rem; }
+.zoom-far  .wu-badge  { width: 14px; height: 14px; font-size: 0.5rem; top: -5px; left: -5px; }
+.zoom-mid  .wu-name   { font-size: 0.56rem; max-width: 84px; }
+.zoom-near .wu-name   { font-size: 0.66rem; max-width: 130px; }
 
 /* ── INFO WINDOW ── */
 .gm-style .gm-style-iw-c { border-radius: 16px !important; padding: 0 !important; box-shadow: 0 4px 24px rgba(0,0,0,0.2) !important; }
 .gm-style .gm-style-iw-d { overflow: hidden !important; }
 .gm-style .gm-style-iw-t::after { display: none !important; }
 .gm-style .gm-ui-hover-effect { top: 4px !important; right: 4px !important; }
-.gm-iw { padding: 14px 16px; font-family: 'Rajdhani', sans-serif; color: #222; min-width: 160px; max-width: 220px; }
+.gm-iw { padding: 14px 16px; font-family: 'Rajdhani', sans-serif; color: #222; min-width: 170px; max-width: 240px; }
 .gm-iw .popup-name { font-family: 'Exo 2', sans-serif; font-size: 0.9rem; font-weight: 800; color: #111; margin-bottom: 3px; }
 .gm-iw .popup-type { font-size: 0.65rem; color: #999; margin-bottom: 6px; letter-spacing: 0.06em; text-transform: uppercase; }
+.gm-iw .popup-rating { font-size: 0.72rem; font-weight: 700; color: #d99a00; margin-bottom: 6px; }
+.gm-iw .popup-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.gm-iw .popup-badge { font-size: 0.6rem; font-weight: 700; background: #f5f5f5; border-radius: 10px; padding: 3px 8px; color: #444; }
+.gm-iw .popup-address { font-size: 0.65rem; color: #999; margin-top: 2px; }
+.gm-iw .popup-view-reviews {
+  display: block;
+  margin-top: 10px;
+  text-align: center;
+  background: var(--yellow);
+  color: var(--black);
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
 .gm-iw .popup-row  { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .gm-iw .popup-stat { font-size: 0.7rem; color: #ff4500; font-weight: 700; }
+.gm-iw .popup-price { color: #d99a00; }
 .gm-iw .popup-link { display: inline-block; margin-top: 6px; font-family: 'Exo 2', sans-serif; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #1a73e8; text-decoration: none; }
+.gm-iw .popup-source { margin-top: 5px; font-size: 0.55rem; color: #bbb; }
 
 /* ── SPLASH SCREEN ── */
 .splash {

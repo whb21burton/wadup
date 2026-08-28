@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Head from 'next/head';
 import {
-  DEFAULT_VENUES, calcHeatScore, calcHeatLevel, getFlamesHtml,
-  distanceMiles, tmSegmentToCat, tmHeatScore, tmHeatLevel, TM_REGIONS
+  DEFAULT_VENUES, CATEGORY_CHIPS, distanceMiles,
+  isVenueEligible, getVenueBadges,
+  tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
 import { supabase } from '../lib/supabase';
 import AuthSidebar from '../components/AuthSidebar';
@@ -21,6 +22,27 @@ function withTMAffiliateTracking(url) {
     const sep = url.includes('?') ? '&' : '?';
     return `${url}${sep}camefrom=${encodeURIComponent(TM_AFFILIATE_ID)}`;
   }
+}
+
+// Database venues never populate the Ticketmaster-only Events/Sports chips.
+function venueMatchesChip(v, chip) {
+  if (v.cat === 'events' || v.cat === 'sports') return false;
+  return chip === 'all' || v.cat === chip;
+}
+
+const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CHIPS.map(c => [c.id, c.label]));
+const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
+
+// Popups are built as raw HTML strings for Google's InfoWindow — escape any
+// text that ultimately comes from an API response or (eventually) user input.
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ── Day strip helpers ──
@@ -47,6 +69,8 @@ export default function WadUp() {
   const overlays     = useRef({});
   const tmEventsRef  = useRef([]);
   const venuesRef    = useRef([...DEFAULT_VENUES]);
+  const trendingVenueIds = useRef(new Set());
+  const mapInitStarted = useRef(false);
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('all');
@@ -182,9 +206,9 @@ export default function WadUp() {
     const tmEvs  = tmEventsRef.current;
 
     const liveVenues = venues
-      .filter(v => v.live && (chip === 'all' || v.cat === chip))
+      .filter(v => v.live && isVenueEligible(v) && venueMatchesChip(v, chip))
       .map(v => ({
-        ...v, _score: calcHeatScore(v), _level: calcHeatLevel(v),
+        ...v,
         _dist: distanceMiles(userPos.lat, userPos.lng, v.lat, v.lng),
         _isTM: false,
       }));
@@ -194,8 +218,9 @@ export default function WadUp() {
       (!date || ev.dateStr === date)
     );
 
+    // "Near you" ordering: closest first — no score/points involved.
     const all = [...liveVenues, ...filteredTM]
-      .sort((a,b) => b._score - a._score)
+      .sort((a,b) => a._dist - b._dist)
       .slice(0, 20);
 
     setTrending(all);
@@ -211,7 +236,7 @@ export default function WadUp() {
     venuesRef.current.forEach(v => {
       const m = mapMarkers.current[v.id];
       if (!m) return;
-      const show = chip === 'all' || v.cat === chip;
+      const show = venueMatchesChip(v, chip);
       m.marker.setMap(show ? map : null);
       if (overlays.current[v.id]) overlays.current[v.id].setMap(show ? map : null);
     });
@@ -262,50 +287,68 @@ export default function WadUp() {
     }
     if (!v.live) return;
 
-    const level  = calcHeatLevel(v);
-    const flames = getFlamesHtml(level);
-    const zc     = zoomClass;
+    const badges   = getVenueBadges(v, trendingVenueIds.current.has(v.id));
+    const topBadge = badges[0];
+    const hasRating = v.total_ratings > 0;
 
     const el = document.createElement('div');
-    el.className = `wu-pin ${zc}`;
+    el.className = `wu-pin ${zoomClass}`;
 
-    const bubble = document.createElement('div');
-    bubble.className = `wu-bubble heat-${level}`;
+    const pill = document.createElement('div');
+    pill.className = 'wu-pill';
 
-    const flameSpan = document.createElement('span');
-    flameSpan.className = 'wu-flames';
-    flameSpan.textContent = flames || v.emoji;
+    if (topBadge) {
+      const badgeEl = document.createElement('span');
+      badgeEl.className = topBadge.id === 'live' ? 'wu-badge wu-badge-live' : 'wu-badge';
+      badgeEl.textContent = topBadge.icon;
+      pill.appendChild(badgeEl);
+    }
+
+    const textWrap = document.createElement('div');
+    textWrap.className = 'wu-pill-text';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'wu-name';
     nameSpan.textContent = v.name;
+    textWrap.appendChild(nameSpan);
 
-    bubble.appendChild(flameSpan);
-    bubble.appendChild(nameSpan);
+    if (hasRating) {
+      const ratingSpan = document.createElement('span');
+      ratingSpan.className = 'wu-rating';
+      ratingSpan.textContent = `⭐ ${v.average_rating.toFixed(1)}`;
+      textWrap.appendChild(ratingSpan);
+    }
+
+    pill.appendChild(textWrap);
 
     const tail = document.createElement('div');
-    tail.className = `wu-tail heat-${level}`;
+    tail.className = 'wu-tail';
 
-    el.appendChild(bubble);
+    el.appendChild(pill);
     el.appendChild(tail);
 
-    const heatTag = ['','🔥 Rising','🔥🔥 Hot','🔥🔥🔥 On Fire!'][level] || '';
+    const ratingHtml = hasRating
+      ? `<div class="popup-rating">⭐ ${v.average_rating.toFixed(1)} (${v.total_ratings} review${v.total_ratings === 1 ? '' : 's'})</div>`
+      : '';
+    const badgesHtml = badges.length
+      ? `<div class="popup-badges">${badges.map(b => `<span class="popup-badge">${b.icon} ${escapeHtml(b.label)}</span>`).join('')}</div>`
+      : '';
+
     const iwHtml = `
       <div class="gm-iw">
-        <div class="popup-name">${v.name}</div>
-        <div class="popup-type">${v.cat} · ${v.city}, ${v.state}</div>
-        <div class="popup-row">
-          <span class="popup-stat">${heatTag}</span>
-          <span class="popup-stat" style="color:#888">Score: ${calcHeatScore(v)}</span>
-        </div>
-        <div class="popup-row"><span style="font-size:0.65rem;color:#999">📍 ${v.address}</span></div>
+        <div class="popup-name">${escapeHtml(v.name)}</div>
+        <div class="popup-type">${escapeHtml(CATEGORY_LABELS[v.cat] || v.cat)}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
+        ${ratingHtml}
+        ${badgesHtml}
+        <div class="popup-address">📍 ${escapeHtml(v.address)}</div>
+        <a class="popup-view-reviews" href="/venue/${encodeURIComponent(v.id)}">View Reviews</a>
       </div>`;
 
     const pos    = new window.google.maps.LatLng(v.lat, v.lng);
     const marker = new window.google.maps.Marker({
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
-      zIndex: 10 + level,
+      zIndex: topBadge ? 15 : 10,
     });
 
     const overlay = makeOverlay(pos, el, map);
@@ -330,31 +373,34 @@ export default function WadUp() {
       if (tmMarkers.current[ev.id].overlay) tmMarkers.current[ev.id].overlay.setMap(null);
     }
 
-    const level  = ev._level || 0;
-    const flames = getFlamesHtml(level) || '🎟️';
+    const isSports = ev.cat === 'sports';
+    const icon = isSports ? (ev.sportEmoji || '🏟️') : '🎟️';
 
     const el = document.createElement('div');
     el.className = `wu-pin ${zoomClass}`;
 
-    const bubble = document.createElement('div');
-    bubble.className = `wu-bubble heat-${level}`;
-    bubble.style.borderStyle = 'dashed';
+    const pill = document.createElement('div');
+    pill.className = 'wu-pill wu-pill-tm';
 
-    const flameSpan = document.createElement('span');
-    flameSpan.className = 'wu-flames';
-    flameSpan.textContent = flames;
+    const textWrap = document.createElement('div');
+    textWrap.className = 'wu-pill-text';
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'wu-name';
     nameSpan.textContent = ev.name;
+    textWrap.appendChild(nameSpan);
 
-    bubble.appendChild(flameSpan);
-    bubble.appendChild(nameSpan);
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'wu-rating';
+    metaSpan.textContent = `${icon}${ev.price ? ' ' + ev.price : ''}`;
+    textWrap.appendChild(metaSpan);
+
+    pill.appendChild(textWrap);
 
     const tail = document.createElement('div');
-    tail.className = `wu-tail heat-${level}`;
+    tail.className = 'wu-tail wu-tail-tm';
 
-    el.appendChild(bubble);
+    el.appendChild(pill);
     el.appendChild(tail);
 
     const dateDisplay = ev.dateStr
@@ -363,21 +409,21 @@ export default function WadUp() {
 
     const iwHtml = `
       <div class="gm-iw">
-        <div class="popup-name">${ev.emoji} ${ev.name}</div>
-        <div class="popup-type">${ev.cat} · ${ev.city}, ${ev.state}</div>
+        <div class="popup-name">${icon} ${escapeHtml(ev.name)}</div>
+        <div class="popup-type">${escapeHtml(CATEGORY_LABELS[ev.cat] || ev.cat)}${ev.city ? ' · ' + escapeHtml(ev.city) + ', ' + escapeHtml(ev.state) : ''}</div>
         <div class="popup-row">
           <span class="popup-stat">📅 ${dateDisplay}${ev.timeStr ? ' · '+ev.timeStr.slice(0,5) : ''}</span>
-          ${ev.price ? `<span class="popup-stat" style="color:#f4a000">${ev.price}</span>` : ''}
+          ${ev.price ? `<span class="popup-stat popup-price">${escapeHtml(ev.price)}</span>` : ''}
         </div>
         ${ev.url ? `<a class="popup-link" href="${withTMAffiliateTracking(ev.url)}" target="_blank">🎟️ Get Tickets →</a>` : ''}
-        <div style="margin-top:5px;font-size:0.55rem;color:#bbb">via Ticketmaster</div>
+        <div class="popup-source">via Ticketmaster</div>
       </div>`;
 
     const pos    = new window.google.maps.LatLng(ev.lat, ev.lng);
     const marker = new window.google.maps.Marker({
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
-      zIndex: 5 + level,
+      zIndex: 5,
     });
 
     const overlay = makeOverlay(pos, el, map);
@@ -404,8 +450,7 @@ export default function WadUp() {
 
     const parseAndDrop = (data) => {
       const events = data._embedded?.events || [];
-      const today  = new Date();
-      events.forEach((ev, idx) => {
+      events.forEach((ev) => {
         if (seen[ev.id]) return;
         seen[ev.id] = true;
 
@@ -415,12 +460,14 @@ export default function WadUp() {
         const elat    = parseFloat(loc.latitude);
         if (isNaN(elng) || isNaN(elat)) return;
 
-        const dateStr  = ev.dates?.start?.localDate || '';
-        const timeStr  = ev.dates?.start?.localTime || '';
-        const daysAway = dateStr ? Math.round((new Date(dateStr) - today) / 864e5) : 99;
-        const seg      = ev.classifications?.[0]?.segment?.name;
-        const cat      = tmSegmentToCat(seg);
-        const img      = (ev.images?.find(i => i.ratio==='16_9' && i.width>500) || ev.images?.[0])?.url || '';
+        const dateStr    = ev.dates?.start?.localDate || '';
+        const timeStr    = ev.dates?.start?.localTime || '';
+        const classification = ev.classifications?.[0] || {};
+        const segment    = classification.segment?.name || '';
+        const genre      = classification.genre?.name || '';
+        const subGenre   = classification.subGenre?.name || '';
+        const cat        = tmSegmentToCat(segment);
+        const img        = (ev.images?.find(i => i.ratio==='16_9' && i.width>500) || ev.images?.[0])?.url || '';
         let price = '';
         if (ev.priceRanges?.[0]) {
           const pr = ev.priceRanges[0];
@@ -428,17 +475,16 @@ export default function WadUp() {
         }
 
         const norm = {
-          id: 'tm_'+ev.id, _isTM: true, _rank: idx, _daysAway: daysAway,
-          name: ev.name, cat, emoji: cat==='sports'?'🏟️':cat==='nightlife'?'🍺':'🎟️',
+          id: 'tm_'+ev.id, _isTM: true,
+          name: ev.name, cat, segment, genre, subGenre,
           address: ven.address?.line1 || '',
           city: ven.city?.name || '', state: ven.state?.stateCode || '',
           lng: elng, lat: elat,
           _dist: distanceMiles(userPos.lat, userPos.lng, elat, elng),
           dateStr, timeStr, price, img, url: ev.url || '',
-          live: true, signals: {},
+          live: true,
         };
-        norm._score = tmHeatScore(norm);
-        norm._level = tmHeatLevel(norm._score);
+        if (cat === 'sports') norm.sportEmoji = tmSportEmoji(norm);
 
         tmEventsRef.current.push(norm);
         dropTMPin(norm);
@@ -476,6 +522,11 @@ export default function WadUp() {
   // ── Init Google Maps ──
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // React Strict Mode double-invokes mount effects in dev; this work (script
+    // injection, TM fetches, geolocation) isn't idempotent, so only run it once
+    // per real component lifetime.
+    if (mapInitStarted.current) return;
+    mapInitStarted.current = true;
 
     const initMap = () => {
       if (!mapRef.current) return;
@@ -520,8 +571,18 @@ export default function WadUp() {
 
       setMapReady(true);
 
-      // Drop venue pins
-      venuesRef.current.forEach(v => { if (v.live) dropVenuePin(v); });
+      // Top 10 by rating, area-wide — independent of whichever chip is active
+      trendingVenueIds.current = new Set(
+        venuesRef.current
+          .filter(v => v.live && isVenueEligible(v))
+          .slice()
+          .sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0))
+          .slice(0, 10)
+          .map(v => v.id)
+      );
+
+      // Drop venue pins — ineligible venues (e.g. a restaurant with nothing on today) never get one
+      venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
       renderTrending();
 
       // Fetch TM events
@@ -590,17 +651,10 @@ export default function WadUp() {
     mapObj.current.setZoom(15);
   };
 
-  const chips = [
-    { id:'all', label:'ALL' },
-    { id:'nightlife', label:'🍺 Nightlife' },
-    { id:'events',    label:'🎵 Events' },
-    { id:'sports',    label:'🏋️ Sports' },
-  ];
-
   // ── Shared render helpers (used by both desktop sidebar & mobile HUD) ──
   const renderChips = (containerClass) => (
     <div className={containerClass}>
-      {chips.map(c => (
+      {CATEGORY_CHIPS.map(c => (
         <button
           key={c.id}
           className={`chip${activeChip === c.id ? ' active' : ''}`}
@@ -634,16 +688,16 @@ export default function WadUp() {
         {tmLoading ? '🎟️ Loading events…' : 'Nothing found — try another category or date'}
       </div>
     ) : trending.map((item, idx) => {
-      const level  = item._level || 0;
-      const flames = getFlamesHtml(level);
-      const rankClass = idx === 0 ? 'gold' : idx === 1 ? 'silver' : idx === 2 ? 'bronze' : '';
+      const icon = item._isTM
+        ? (item.cat === 'sports' ? (item.sportEmoji || '🏟️') : '🎟️')
+        : (getVenueBadges(item, trendingVenueIds.current.has(item.id))[0]?.icon || CATEGORY_ICONS[item.cat] || '📍');
       return (
         <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
-          <div className={`t-rank ${rankClass}`}>#{idx+1}</div>
-          <div className="t-flames">{flames || item.emoji}</div>
+          <div className="t-rank">#{idx+1}</div>
+          <div className="t-icon">{icon}</div>
           <div className="t-info">
             <div className="t-name">{item.name}</div>
-            <div className="t-sub">{item.cat} · {item.city}, {item.state}</div>
+            <div className="t-sub">{item.subcategory || CATEGORY_LABELS[item.cat] || item.cat} · {item.city}, {item.state}</div>
             {item._isTM && item.dateStr && (
               <div className="t-date">
                 📅 {new Date(item.dateStr+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}
@@ -653,9 +707,9 @@ export default function WadUp() {
           </div>
           <div className="t-meta">
             <div className="t-dist">{item._dist?.toFixed(1)} mi</div>
-            {item._isTM && item.price
-              ? <div className="t-date">{item.price}</div>
-              : <div className="t-score">{item._score}pts</div>
+            {item._isTM
+              ? (item.price && <div className="t-date">{item.price}</div>)
+              : (item.total_ratings > 0 && <div className="t-rating">⭐ {item.average_rating.toFixed(1)}</div>)
             }
           </div>
         </div>
