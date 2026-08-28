@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Head from 'next/head';
 import {
-  DEFAULT_VENUES, CATEGORY_CHIPS, distanceMiles,
+  DEFAULT_VENUES, CATEGORY_CHIPS,
   isVenueEligible, getVenueBadges,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
@@ -28,6 +28,13 @@ function withTMAffiliateTracking(url) {
 function venueMatchesChip(v, chip) {
   if (v.cat === 'events' || v.cat === 'sports') return false;
   return chip === 'all' || v.cat === chip;
+}
+
+// No bounds yet (map hasn't fired its first bounds_changed) — don't hide everything.
+function isInBounds(bounds, lat, lng) {
+  if (!bounds) return true;
+  if (lat == null || lng == null) return false;
+  return bounds.contains(new window.google.maps.LatLng(lat, lng));
 }
 
 const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CHIPS.map(c => [c.id, c.label]));
@@ -71,6 +78,9 @@ export default function WadUp() {
   const venuesRef    = useRef([...DEFAULT_VENUES]);
   const trendingVenueIds = useRef(new Set());
   const mapInitStarted = useRef(false);
+  const mapBoundsRef = useRef(null);
+  const boundsDebounceRef = useRef(null);
+  const renderTrendingRef = useRef(null);
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('all');
@@ -198,33 +208,36 @@ export default function WadUp() {
     sheetTouchDeltaY.current = 0;
   }, []);
 
-  // ── Build trending list ──
-  const renderTrending = useCallback((chipOverride, dateOverride) => {
-    const chip = chipOverride ?? activeChip;
-    const date = dateOverride ?? activeDate;
+  // ── Build trending list — scoped to what's currently in view on the map ──
+  const renderTrending = useCallback((chipOverride, dateOverride, boundsOverride) => {
+    const chip   = chipOverride ?? activeChip;
+    const date   = dateOverride ?? activeDate;
+    const bounds = boundsOverride ?? mapBoundsRef.current;
     const venues = venuesRef.current;
     const tmEvs  = tmEventsRef.current;
 
     const liveVenues = venues
-      .filter(v => v.live && isVenueEligible(v) && venueMatchesChip(v, chip))
-      .map(v => ({
-        ...v,
-        _dist: distanceMiles(userPos.lat, userPos.lng, v.lat, v.lng),
-        _isTM: false,
-      }));
+      .filter(v => v.live && isVenueEligible(v) && venueMatchesChip(v, chip) && isInBounds(bounds, v.lat, v.lng))
+      .map(v => ({ ...v, _isTM: false }))
+      .sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0));
 
-    const filteredTM = tmEvs.filter(ev =>
-      (chip === 'all' || ev.cat === chip) &&
-      (!date || ev.dateStr === date)
-    );
+    const filteredTM = tmEvs
+      .filter(ev =>
+        (chip === 'all' || ev.cat === chip) &&
+        (!date || ev.dateStr === date) &&
+        isInBounds(bounds, ev.lat, ev.lng)
+      )
+      .sort((a, b) => (a.dateStr || '').localeCompare(b.dateStr || ''));
 
-    // "Near you" ordering: closest first — no score/points involved.
-    const all = [...liveVenues, ...filteredTM]
-      .sort((a,b) => a._dist - b._dist)
-      .slice(0, 20);
+    const all = [...liveVenues, ...filteredTM].slice(0, 20);
 
     setTrending(all);
-  }, [activeChip, activeDate, userPos]);
+  }, [activeChip, activeDate]);
+
+  // Keep a stable ref to the latest renderTrending so the one-time
+  // bounds_changed listener (registered at map-mount) never calls a stale
+  // closure holding an outdated activeChip/activeDate.
+  useEffect(() => { renderTrendingRef.current = renderTrending; }, [renderTrending]);
 
   // ── Filter map pins ──
   const filterPins = useCallback((chipOverride, dateOverride) => {
@@ -480,7 +493,6 @@ export default function WadUp() {
           address: ven.address?.line1 || '',
           city: ven.city?.name || '', state: ven.state?.stateCode || '',
           lng: elng, lat: elat,
-          _dist: distanceMiles(userPos.lat, userPos.lng, elat, elng),
           dateStr, timeStr, price, img, url: ev.url || '',
           live: true,
         };
@@ -517,7 +529,7 @@ export default function WadUp() {
     // Stagger all regions
     tmEventsRef.current = [];
     TM_REGIONS.forEach((r, i) => fetchRegion(r, i));
-  }, [userPos, dropTMPin, renderTrending, filterPins]);
+  }, [dropTMPin, renderTrending, filterPins]);
 
   // ── Init Google Maps ──
   useEffect(() => {
@@ -567,6 +579,16 @@ export default function WadUp() {
           el.classList.remove('zoom-far','zoom-mid','zoom-near');
           el.classList.add(zc);
         });
+      });
+
+      // Trending list tracks the current viewport — debounced so a drag/zoom
+      // gesture doesn't re-filter on every intermediate frame.
+      map.addListener('bounds_changed', () => {
+        mapBoundsRef.current = map.getBounds();
+        clearTimeout(boundsDebounceRef.current);
+        boundsDebounceRef.current = setTimeout(() => {
+          renderTrendingRef.current?.();
+        }, 300);
       });
 
       setMapReady(true);
@@ -706,7 +728,7 @@ export default function WadUp() {
             )}
           </div>
           <div className="t-meta">
-            <div className="t-dist">{item._dist?.toFixed(1)} mi</div>
+            <div className="t-city">{item.city}{item.state ? ', ' + item.state : ''}</div>
             {item._isTM
               ? (item.price && <div className="t-date">{item.price}</div>)
               : (item.total_ratings > 0 && <div className="t-rating">⭐ {item.average_rating.toFixed(1)}</div>)
@@ -834,10 +856,10 @@ export default function WadUp() {
             <div className="panel-header">
               <div className="panel-title">
                 <div className="panel-title-dot" />
-                Trending Near You
+                Trending In View
               </div>
               <div className="panel-radius">
-                {tmLoading ? 'Loading…' : `${trending.length} found`}
+                🗺️ {tmLoading ? 'Loading…' : `${trending.length} found`}
               </div>
             </div>
             <div className="trending-list">
@@ -881,10 +903,10 @@ export default function WadUp() {
                 <div className="panel-header">
                   <div className="panel-title">
                     <div className="panel-title-dot" />
-                    Trending Near You
+                    Trending In View
                   </div>
                   <div className="panel-radius">
-                    📍 Near you{tmLoading ? ' · Loading…' : ` · ${trending.length} found`}
+                    🗺️ In View{tmLoading ? ' · Loading…' : ` · ${trending.length} found`}
                   </div>
                 </div>
               </div>
