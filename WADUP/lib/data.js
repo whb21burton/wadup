@@ -43,6 +43,13 @@ export function distanceMiles(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// Business categories offered on venue-owner signup — mirrors the app's filter chips
+export const VENUE_CATEGORIES = [
+  { id: 'nightlife', label: 'Nightlife' },
+  { id: 'events',    label: 'Events' },
+  { id: 'sports',    label: 'Sports' },
+];
+
 export function tmSegmentToCat(seg) {
   if (!seg) return 'events';
   const s = seg.toLowerCase();

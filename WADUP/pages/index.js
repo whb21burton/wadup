@@ -4,6 +4,8 @@ import {
   DEFAULT_VENUES, calcHeatScore, calcHeatLevel, getFlamesHtml,
   distanceMiles, tmSegmentToCat, tmHeatScore, tmHeatLevel, TM_REGIONS
 } from '../lib/data';
+import { supabase } from '../lib/supabase';
+import AuthSidebar from '../components/AuthSidebar';
 
 const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY || 'AIzaSyBoXf6UAa_SckH9gxfbiOK9OPpaySNH76w';
 const TM_AFFILIATE_ID = process.env.NEXT_PUBLIC_TM_AFFILIATE_ID || 'YOUR_AFFILIATE_ID';
@@ -59,6 +61,9 @@ export default function WadUp() {
   const [sheetExpanded,  setSheetExpanded]  = useState(false);
   const [installPlatform, setInstallPlatform] = useState('other'); // 'ios' | 'android' | 'other'
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [session,         setSession]         = useState(null);
+  const [profile,         setProfile]         = useState(null);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
 
   const sheetTouchStartY = useRef(null);
   const sheetTouchDeltaY = useRef(0);
@@ -101,6 +106,30 @@ export default function WadUp() {
     const isAndroid = /Android/.test(ua);
     setInstallPlatform(isIOS ? 'ios' : isAndroid ? 'android' : 'other');
   }, []);
+
+  // ── Auth session — persisted across reloads via Supabase ──
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // ── Fetch the profile row whenever the logged-in user changes ──
+  useEffect(() => {
+    if (!session?.user) { setProfile(null); return; }
+    let cancelled = false;
+    supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .single()
+      .then(({ data, error }) => {
+        if (!cancelled && !error) setProfile(data);
+      });
+    return () => { cancelled = true; };
+  }, [session]);
 
   // ── Capture Chrome's native "Add to Home Screen" prompt for later use ──
   useEffect(() => {
@@ -773,6 +802,14 @@ export default function WadUp() {
             </div>
           )}
 
+          <button
+            className="right-sidebar-toggle"
+            onClick={() => setRightSidebarOpen(v => !v)}
+            aria-label="Account"
+          >
+            {profile ? (profile.username || '?').slice(0, 1).toUpperCase() : '👤'}
+          </button>
+
           {/* Mobile HUD */}
           <div className="hud">
 
@@ -805,6 +842,13 @@ export default function WadUp() {
 
         </div>{/* /map-frame */}
       </div>{/* /app-root */}
+
+      <AuthSidebar
+        open={rightSidebarOpen}
+        onClose={() => setRightSidebarOpen(false)}
+        session={session}
+        profile={profile}
+      />
     </>
   );
 }
