@@ -73,6 +73,8 @@ export const CATEGORY_CHIPS = [
   { id: 'activities', label: '🎳 Activities' },
 ];
 
+export const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CHIPS.map(c => [c.id, c.label]));
+
 // Business categories offered on venue-owner signup — mirrors the map's
 // database-backed chips. Events/Sports are Ticketmaster-only on the map, so
 // they aren't real self-serve business categories.

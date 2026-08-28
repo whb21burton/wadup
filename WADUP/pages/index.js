@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Head from 'next/head';
 import { MarkerClusterer, GridAlgorithm } from '@googlemaps/markerclusterer';
 import {
-  DEFAULT_VENUES, CATEGORY_CHIPS,
+  DEFAULT_VENUES, CATEGORY_CHIPS, CATEGORY_LABELS,
   isVenueEligible, getVenueBadges,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
@@ -38,7 +38,6 @@ function isInBounds(bounds, lat, lng) {
   return bounds.contains(new window.google.maps.LatLng(lat, lng));
 }
 
-const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CHIPS.map(c => [c.id, c.label]));
 const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
 
 // Popups are built as raw HTML strings for Google's InfoWindow — escape any
