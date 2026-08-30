@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '../lib/supabase';
 import { VENUE_CATEGORIES } from '../lib/data';
 
@@ -150,6 +151,25 @@ export default function AuthSidebar({ open, onClose, session, profile }) {
                     </span>
                   </div>
                 </div>
+
+                <div className="profile-quick-links">
+                  <Link href={`/profile/${profile.username}`} className="profile-quick-link" onClick={onClose}>
+                    👤 My Profile
+                  </Link>
+                  <Link href={`/profile/${profile.username}?tab=reviews`} className="profile-quick-link" onClick={onClose}>
+                    ✍️ My Reviews
+                  </Link>
+                  <Link href={`/profile/${profile.username}?tab=saved`} className="profile-quick-link" onClick={onClose}>
+                    ☆ Saved Places
+                  </Link>
+                  <Link href="/leaderboard" className="profile-quick-link" onClick={onClose}>
+                    🏆 Leaderboard
+                  </Link>
+                  <Link href="/settings" className="profile-quick-link" onClick={onClose}>
+                    ⚙️ Settings
+                  </Link>
+                </div>
+
                 <button className="auth-submit logout-btn" onClick={onLogout}>Log Out</button>
               </div>
             ) : (

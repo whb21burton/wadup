@@ -157,3 +157,42 @@ export async function getLocalFavorites(city, limit = 10) {
     .sort((a, b) => b.average_rating - a.average_rating)
     .slice(0, limit);
 }
+
+// ── Phase 3: WadUp Points ──────────────────────────────────────────────
+export const POINTS = {
+  WRITE_REVIEW: 50,
+  REVIEW_GETS_HELPFUL: 10,
+  CHECK_IN: 20,
+  FIRST_CHECKIN_VENUE: 50, // bonus for being first to check in somewhere
+  UPLOAD_PHOTO: 15,
+  BUY_TICKET: 100,
+  REFER_FRIEND: 200,
+  DAILY_LOGIN: 5,
+  LOCAL_REVIEW: 25, // bonus points for reviewing in your local city
+};
+
+// Server-only. `admin` must be the service-role client from
+// pages/api/supabase-admin.js — points_log has no INSERT policy for
+// anon/authenticated at all, and profiles.wadup_points is protected by a DB
+// trigger that silently reverts the write unless auth.role() = 'service_role'.
+// Never import/call this from client-side code (that's exactly why it takes
+// the admin client as a parameter instead of constructing one itself here —
+// this module is also imported by client pages for the read-only ranking
+// functions above, and a module-scope service-role client would either
+// break those bundles or risk the key ending up somewhere it shouldn't).
+export async function awardPoints(admin, userId, points, reason) {
+  if (!admin || !userId || !points) return null;
+
+  const { error: logError } = await admin.from('points_log').insert({ user_id: userId, points, reason });
+  if (logError) throw logError;
+
+  const { data: profile, error: fetchError } = await admin
+    .from('profiles').select('wadup_points').eq('id', userId).single();
+  if (fetchError) throw fetchError;
+
+  const newTotal = (profile?.wadup_points || 0) + points;
+  const { error: updateError } = await admin.from('profiles').update({ wadup_points: newTotal }).eq('id', userId);
+  if (updateError) throw updateError;
+
+  return newTotal;
+}

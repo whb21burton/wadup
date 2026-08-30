@@ -96,6 +96,9 @@ export default function VenuePage() {
   const [myLikes,     setMyLikes]     = useState(new Set());
   const [saved,        setSaved]       = useState(false);
   const [checkedIn,    setCheckedIn]   = useState(false);
+  const [checkinCount, setCheckinCount]= useState(0);
+  const [checkinError, setCheckinError]= useState('');
+  const [pointsToast,  setPointsToast] = useState(null);
   const [reportedIds,  setReportedIds] = useState(new Set());
   const [shareCopied,  setShareCopied] = useState(false);
 
@@ -217,6 +220,18 @@ export default function VenuePage() {
       .then(({ data }) => setSaved(!!data));
   }, [session, venue?.id]);
 
+  // Total check-ins at this venue, across everyone — checkins itself
+  // restricts SELECT to the acting user's own rows, so this reads the
+  // anonymized checkins_activity view (venue_id + when only) instead.
+  useEffect(() => {
+    if (!venue?.id) return;
+    supabase
+      .from('checkins_activity')
+      .select('venue_id', { count: 'exact', head: true })
+      .eq('venue_id', venue.id)
+      .then(({ count }) => setCheckinCount(count || 0));
+  }, [venue?.id]);
+
   const applyLikeDelta = (reviewId, delta, liked) => {
     setMyLikes(prev => {
       const next = new Set(prev);
@@ -266,8 +281,31 @@ export default function VenuePage() {
 
   const checkIn = async () => {
     if (!session) { requireLogin(); return; }
+    setCheckinError('');
+
+    let data;
+    try {
+      const res = await fetch('/api/checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ venueId: venue.id }),
+      });
+      data = await res.json();
+      if (!res.ok) {
+        setCheckinError(data.error || 'Check-in failed');
+        setTimeout(() => setCheckinError(''), 4000);
+        return;
+      }
+    } catch (e) {
+      setCheckinError('Check-in failed — try again');
+      setTimeout(() => setCheckinError(''), 4000);
+      return;
+    }
+
     setCheckedIn(true);
-    await supabase.from('checkins').insert({ user_id: session.user.id, venue_id: venue.id });
+    setCheckinCount(c => c + 1);
+    setPointsToast(`+${data.pointsAwarded} WadUp Points 🔥`);
+    setTimeout(() => setPointsToast(null), 3000);
     setTimeout(() => setCheckedIn(false), 4000);
   };
 
@@ -317,6 +355,8 @@ export default function VenuePage() {
         <meta name="description" content={venue.description || `${venue.name} on WadUp`} />
       </Head>
 
+      {pointsToast && <div className="points-toast">{pointsToast}</div>}
+
       <div className="venue-page">
         <div className="venue-header">
           <div
@@ -358,10 +398,11 @@ export default function VenuePage() {
               {CATEGORY_LABELS[venue.category] || venue.category}
               {venue.subcategory ? ` · ${venue.subcategory}` : ''}
             </div>
+            {checkinCount > 0 && <div className="venue-checkin-count">🎉 {checkinCount.toLocaleString()} check-in{checkinCount === 1 ? '' : 's'}</div>}
 
             <div className="venue-actions">
               <button className="venue-action-btn" onClick={checkIn}>
-                {checkedIn ? '✓ Checked In' : '📍 Check In'}
+                {checkedIn ? '✅ Checked in! +20 points' : '📍 Check In'}
               </button>
               <button className="venue-action-btn venue-action-primary" onClick={() => setShowReviewModal(true)}>
                 ✍️ Review
@@ -373,6 +414,7 @@ export default function VenuePage() {
                 {shareCopied ? 'Copied!' : '🔗 Share'}
               </button>
             </div>
+            {checkinError && <div className="venue-checkin-error">{checkinError}</div>}
           </div>
         </div>
 
