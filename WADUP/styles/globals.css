@@ -93,9 +93,79 @@ html, body {
   flex-shrink: 0;
 }
 .sidebar-days::-webkit-scrollbar { display: none; }
+.sidebar.collapsed .sidebar-topbar,
 .sidebar.collapsed .sidebar-chips,
+.sidebar.collapsed .sidebar-quick-filters,
 .sidebar.collapsed .sidebar-days,
 .sidebar.collapsed .sidebar-trending { display: none; }
+
+/* ── TOP BAR (search trigger + Discover nav link) ── */
+.sidebar-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 14px;
+  flex-shrink: 0;
+}
+.sidebar-search-trigger {
+  flex: 1;
+  text-align: left;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(0,229,255,0.18);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #9fc3cc;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sidebar-search-trigger:hover { background: rgba(255,255,255,0.1); }
+.sidebar-discover-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, var(--yellow), var(--yellow-dark));
+  color: var(--black);
+  border: none;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* ── QUICK FILTERS (Tonight / Weekend) — layer on top of the category chip ── */
+.sidebar-quick-filters {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 16px;
+  flex-shrink: 0;
+}
+.quick-filter-btn {
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.92);
+  border: none;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #333;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: all 0.18s;
+}
+.quick-filter-btn.active {
+  background: var(--cyan);
+  color: #04222a;
+  box-shadow: 0 4px 16px rgba(0,229,255,0.35);
+}
 
 .sidebar-trending {
   flex: 1;
@@ -273,6 +343,104 @@ html, body {
   50%      { transform: translateY(6px); }
 }
 
+/* ── SEARCH OVERLAY ── */
+.search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000000;
+  background: rgba(5,7,13,0.78);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 60px 20px;
+  backdrop-filter: blur(2px);
+}
+.search-panel {
+  width: 100%;
+  max-width: 520px;
+  max-height: 80vh;
+  background: var(--navy);
+  border: 1px solid rgba(0,229,255,0.25);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(0,229,255,0.14);
+  flex-shrink: 0;
+}
+.search-input-icon { font-size: 1rem; flex-shrink: 0; }
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #eafcff;
+}
+.search-input::placeholder { color: #5f7480; }
+.search-close {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.08);
+  color: #eafcff;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.search-close:hover { background: rgba(255,255,255,0.16); }
+.search-results { overflow-y: auto; padding: 8px 0 12px; }
+.search-hint {
+  padding: 24px 16px;
+  text-align: center;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.85rem;
+  color: #6f8992;
+}
+.search-group-title {
+  padding: 10px 16px 4px;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5f7480;
+}
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+.search-result.active, .search-result:hover { background: rgba(0,229,255,0.1); }
+.search-result-icon { font-size: 1.1rem; flex-shrink: 0; }
+.search-result-text { min-width: 0; }
+.search-result-name {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #eafcff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-result-sub {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.75rem;
+  color: #9fc3cc;
+}
+
 /* ── RIGHT SIDEBAR TOGGLE (account / auth) ── */
 .right-sidebar-toggle {
   position: absolute;
@@ -289,6 +457,24 @@ html, body {
   font-weight: 800;
   color: var(--black);
   box-shadow: var(--shadow-lg);
+  cursor: pointer;
+}
+
+/* ── MOBILE SEARCH TRIGGER ── */
+.search-trigger {
+  position: absolute;
+  top: 12px;
+  left: 12px; right: 12px;
+  background: rgba(17,17,17,0.55);
+  border: 1px solid rgba(0,229,255,0.3);
+  border-radius: 20px;
+  padding: 8px 14px;
+  text-align: left;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #eafcff;
+  backdrop-filter: blur(6px);
   cursor: pointer;
 }
 
@@ -327,10 +513,23 @@ html, body {
   box-shadow: 0 4px 16px rgba(255,252,0,0.35);
 }
 
+/* ── QUICK FILTERS (Tonight / Weekend), mobile ── */
+.quick-filters {
+  position: absolute;
+  bottom: 184px;
+  left: 0; right: 0;
+  display: flex;
+  gap: 6px;
+  padding: 0 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.quick-filters::-webkit-scrollbar { display: none; }
+
 /* ── DAY STRIP ── */
 .day-strip {
   position: absolute;
-  bottom: 72px;
+  bottom: 126px;
   left: 0; right: 0;
   display: flex;
   gap: 6px;
@@ -384,7 +583,7 @@ html, body {
 /* ── TRENDING PANEL (swipeable bottom sheet) ── */
 .trending-panel {
   position: absolute;
-  bottom: 0; left: 0; right: 0;
+  bottom: 54px; left: 0; right: 0;
   background: var(--white);
   border-radius: 20px 20px 0 0;
   box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
@@ -396,6 +595,34 @@ html, body {
   transition: height 0.28s ease;
 }
 .trending-panel.expanded { height: 220px; }
+
+/* ── BOTTOM NAV (mobile only — Map / Discover) ── */
+.bottom-nav {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 54px;
+  display: flex;
+  background: var(--navy-deep);
+  border-top: 1px solid rgba(0,229,255,0.16);
+}
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: #6f8992;
+  text-decoration: none;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.bottom-nav-item.active { color: var(--cyan); }
+.bottom-nav-icon { font-size: 1.1rem; line-height: 1; }
 .panel-drag-zone {
   flex-shrink: 0;
   touch-action: none;
@@ -1174,6 +1401,14 @@ html, body {
   color: #ffb499;
 }
 .venue-rankings-sep { margin: 0 6px; color: #5f7480; }
+.venue-local-favorite-badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #ffd700;
+}
 .venue-location, .venue-category-line {
   margin-top: 4px;
   font-family: 'Rajdhani', sans-serif;
@@ -1678,3 +1913,137 @@ html, body {
   color: #666;
 }
 .browse-card-rating { color: #f4a000; font-weight: 700; }
+
+/* ══════════════════════════════════════════════════════════
+   DISCOVERY PAGE (pages/discover.js)
+   ══════════════════════════════════════════════════════════ */
+.disco-page {
+  min-height: 100vh;
+  background: var(--gray);
+  padding: 20px 0 60px;
+}
+.disco-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  margin-bottom: 22px;
+}
+.disco-header .venue-back-btn {
+  position: static;
+  background: var(--navy);
+  flex-shrink: 0;
+}
+.disco-header h1 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.8rem;
+  letter-spacing: 0.03em;
+  color: #111;
+  line-height: 1;
+}
+.disco-subtitle {
+  margin-top: 3px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #777;
+}
+
+.disco-section { margin-bottom: 28px; }
+.disco-section-title {
+  padding: 0 16px 10px;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #111;
+}
+.disco-empty {
+  margin: 0 16px;
+  padding: 18px;
+  background: #fff;
+  border-radius: 12px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.85rem;
+  color: #999;
+  text-align: center;
+}
+.disco-scroll {
+  display: flex;
+  gap: 12px;
+  padding: 0 16px 4px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+.disco-card {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+  width: 220px;
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.disco-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+.disco-card-media {
+  position: relative;
+  height: 110px;
+  background-size: cover;
+  background-position: center;
+  background-color: #1a2230;
+}
+.disco-card-gradient {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(0,229,255,0.35) 0%, transparent 65%),
+    linear-gradient(160deg, #16324a 0%, #0a1424 100%);
+}
+.disco-card-rank {
+  position: absolute;
+  top: 8px; left: 8px;
+  background: var(--yellow);
+  color: var(--black);
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.disco-card-body { padding: 10px 12px 12px; }
+.disco-card-name {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #111;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.disco-card-sub {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.76rem;
+  color: #999;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.disco-card-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.74rem;
+  font-weight: 700;
+  flex-wrap: wrap;
+}
+.disco-card-rating { color: #d99a00; }
+.disco-card-date { color: #2b8fae; }
+.disco-card-city {
+  margin-top: 4px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.72rem;
+  color: #999;
+}

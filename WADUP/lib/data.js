@@ -109,16 +109,17 @@ export function isVenueNew(v) {
   return days >= 0 && days <= 7;
 }
 
-// Status badges for a venue, highest-priority first. `isTrending` is computed
-// externally (top 10 by rating among currently loaded venues) since it depends
-// on the whole set, not just this one venue.
-export function getVenueBadges(v, isTrending) {
+// Status badges for a venue, highest-priority first. `isTrending`/`isBestRated`
+// are computed externally (top 10 in their city, per lib/rankings.js) since
+// they depend on the whole set, not just this one venue.
+export function getVenueBadges(v, isTrending, isBestRated) {
   const badges = [];
   if (v.has_live_music_today) badges.push({ id: 'live',       icon: '🔴', label: 'Live Now' });
   if (v.has_happy_hour_today) badges.push({ id: 'happy_hour', icon: '⏰', label: 'Happy Hour' });
   if (v.has_specials_today)   badges.push({ id: 'specials',   icon: '🏷️', label: 'Specials' });
   if (isVenueNew(v))          badges.push({ id: 'new',        icon: '🆕', label: 'New' });
   if (isTrending)             badges.push({ id: 'trending',   icon: '🔥', label: 'Trending' });
+  if (isBestRated)            badges.push({ id: 'best_rated', icon: '⭐', label: 'Best Rated' });
   return badges;
 }
 

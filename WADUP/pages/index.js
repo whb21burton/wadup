@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import {
   DEFAULT_VENUES, CATEGORY_CHIPS, CATEGORY_LABELS,
   isVenueEligible, getVenueBadges,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
+import { getTrendingVenues, getBestRated } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
 import AuthSidebar from '../components/AuthSidebar';
 
@@ -66,6 +68,27 @@ function buildDays() {
   });
 }
 
+// Fri/Sat/Sun of the current (or, Mon–Thu, the upcoming) weekend.
+function weekendIsoDates() {
+  const today = new Date();
+  const day = today.getDay(); // 0=Sun..6=Sat
+  const fridayOffset = day === 5 ? 0 : day === 6 ? -1 : day === 0 ? -2 : 5 - day;
+  const fri = new Date(today);
+  fri.setDate(today.getDate() + fridayOffset);
+  return [0, 1, 2].map(i => {
+    const d = new Date(fri); d.setDate(fri.getDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+}
+
+// null (no quick filter — fall back to the day strip's single `activeDate`),
+// or the set of ISO dates a TM event's `dateStr` must fall in.
+function quickFilterDateSet(quickFilter, activeDate) {
+  if (quickFilter === 'tonight') return new Set([new Date().toISOString().slice(0, 10)]);
+  if (quickFilter === 'weekend') return new Set(weekendIsoDates());
+  return activeDate ? new Set([activeDate]) : null;
+}
+
 export default function WadUp() {
   const mapRef       = useRef(null);
   const mapObj       = useRef(null);
@@ -76,10 +99,14 @@ export default function WadUp() {
   const tmEventsRef  = useRef([]);
   const venuesRef    = useRef([...DEFAULT_VENUES]);
   const trendingVenueIds = useRef(new Set());
+  const bestRatedVenueIds = useRef(new Set());
   const mapInitStarted = useRef(false);
   const mapBoundsRef = useRef(null);
   const boundsDebounceRef = useRef(null);
   const renderTrendingRef = useRef(null);
+  const filterPinsRef = useRef(null);
+  const searchDebounceRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   // Spider fan-out (overlapping pins)
   const pinRegistry   = useRef(new Map());  // id -> { id, type, marker, overlay, el, lat, lng, chipVisible, openPopup }
@@ -102,6 +129,13 @@ export default function WadUp() {
   const [session,         setSession]         = useState(null);
   const [profile,         setProfile]         = useState(null);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  const [quickFilter,    setQuickFilter]      = useState(null); // null | 'tonight' | 'weekend'
+
+  // ── Search overlay ──
+  const [searchOpen,         setSearchOpen]         = useState(false);
+  const [searchQuery,        setSearchQuery]        = useState('');
+  const [searchResults,      setSearchResults]      = useState({ places: [], events: [], categories: [] });
+  const [activeResultIndex,  setActiveResultIndex]  = useState(0);
 
   const sheetTouchStartY = useRef(null);
   const sheetTouchDeltaY = useRef(0);
@@ -213,10 +247,12 @@ export default function WadUp() {
   }, []);
 
   // ── Build trending list — scoped to what's currently in view on the map ──
-  const renderTrending = useCallback((chipOverride, dateOverride, boundsOverride) => {
+  const renderTrending = useCallback((chipOverride, dateOverride, boundsOverride, quickFilterOverride) => {
     const chip   = chipOverride ?? activeChip;
     const date   = dateOverride ?? activeDate;
     const bounds = boundsOverride ?? mapBoundsRef.current;
+    const qf     = quickFilterOverride !== undefined ? quickFilterOverride : quickFilter;
+    const dateSet = quickFilterDateSet(qf, date);
     const venues = venuesRef.current;
     const tmEvs  = tmEventsRef.current;
 
@@ -228,7 +264,7 @@ export default function WadUp() {
     const filteredTM = tmEvs
       .filter(ev =>
         (chip === 'all' || ev.cat === chip) &&
-        (!date || ev.dateStr === date) &&
+        (!dateSet || dateSet.has(ev.dateStr)) &&
         isInBounds(bounds, ev.lat, ev.lng)
       )
       .sort((a, b) => (a.dateStr || '').localeCompare(b.dateStr || ''));
@@ -236,17 +272,19 @@ export default function WadUp() {
     const all = [...liveVenues, ...filteredTM].slice(0, 20);
 
     setTrending(all);
-  }, [activeChip, activeDate]);
+  }, [activeChip, activeDate, quickFilter]);
 
-  // Keep a stable ref to the latest renderTrending so the one-time
-  // bounds_changed listener (registered at map-mount) never calls a stale
-  // closure holding an outdated activeChip/activeDate.
+  // Keep stable refs to the latest renderTrending/filterPins so map-mount's
+  // one-time listeners (and the async ranking fetch below) never call a stale
+  // closure holding outdated activeChip/activeDate/quickFilter.
   useEffect(() => { renderTrendingRef.current = renderTrending; }, [renderTrending]);
 
   // ── Filter map pins — flags drive direct marker/overlay visibility ──
-  const filterPins = useCallback((chipOverride, dateOverride) => {
+  const filterPins = useCallback((chipOverride, dateOverride, quickFilterOverride) => {
     const chip = chipOverride ?? activeChip;
     const date = dateOverride ?? activeDate;
+    const qf   = quickFilterOverride !== undefined ? quickFilterOverride : quickFilter;
+    const dateSet = quickFilterDateSet(qf, date);
     const map  = mapObj.current;
     if (!map) return;
 
@@ -267,12 +305,14 @@ export default function WadUp() {
       const entry = pinRegistry.current.get(ev.id);
       if (!entry) return;
       const catOk  = chip === 'all' || ev.cat === chip;
-      const dateOk = !date || ev.dateStr === date;
+      const dateOk = !dateSet || dateSet.has(ev.dateStr);
       entry.chipVisible = catOk && dateOk;
     });
 
     applyPinVisibility();
-  }, [activeChip, activeDate]);
+  }, [activeChip, activeDate, quickFilter]);
+
+  useEffect(() => { filterPinsRef.current = filterPins; }, [filterPins]);
 
   // ── WuOverlay class factory ── anchor 'bottom' = pin (tail points at the
   // coordinate); anchor 'center' = bubble centered directly on the coordinate.
@@ -459,7 +499,7 @@ export default function WadUp() {
     }
     if (!v.live) return;
 
-    const badges   = getVenueBadges(v, trendingVenueIds.current.has(v.id));
+    const badges   = getVenueBadges(v, trendingVenueIds.current.has(v.id), bestRatedVenueIds.current.has(v.id));
     const topBadge = badges[0];
     const hasRating = v.total_ratings > 0;
 
@@ -816,6 +856,28 @@ export default function WadUp() {
       venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
       renderTrending();
 
+      // Phase 2: layer real, city-scoped activity-based rankings (lib/rankings.js,
+      // backed by the live Supabase venues/checkins/reviews/saved_venues tables)
+      // onto the naive same-session "top 10 by rating" badge above — additive,
+      // so pins already dropped just get re-dropped (picking up the new badge)
+      // once this async fetch resolves. Uses filterPinsRef/renderTrendingRef
+      // (not the plain closures) since this can resolve well after mount, by
+      // which point activeChip/activeDate/quickFilter may have moved on.
+      const citiesOnMap = [...new Set(venuesRef.current.map(v => v.city).filter(Boolean))];
+      Promise.all(citiesOnMap.map(city => Promise.all([getTrendingVenues(city, 10), getBestRated(city, 10)])))
+        .then(perCityResults => {
+          let changed = false;
+          perCityResults.forEach(([trendList, ratedList]) => {
+            trendList.forEach(v => { if (!trendingVenueIds.current.has(v.id)) { trendingVenueIds.current.add(v.id); changed = true; } });
+            ratedList.forEach(v => { if (!bestRatedVenueIds.current.has(v.id)) { bestRatedVenueIds.current.add(v.id); changed = true; } });
+          });
+          if (!changed) return;
+          venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
+          filterPinsRef.current?.();
+          renderTrendingRef.current?.();
+        })
+        .catch(() => { /* rankings are a nice-to-have — pins already show without them */ });
+
       // Fetch TM events
       setTimeout(() => fetchTM(), 300);
     };
@@ -882,7 +944,110 @@ export default function WadUp() {
     mapObj.current.setZoom(15);
   };
 
+  // ── Quick filter (Tonight / Weekend) — layers on top of the chip filter ──
+  const onQuickFilterClick = (kind) => {
+    const next = quickFilter === kind ? null : kind;
+    setQuickFilter(next);
+    renderTrending(activeChip, activeDate, undefined, next);
+    filterPins(activeChip, activeDate, next);
+  };
+
+  // ── Search overlay — debounced 300ms across venue names/categories/cities/event names ──
+  useEffect(() => {
+    clearTimeout(searchDebounceRef.current);
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) { setSearchResults({ places: [], events: [], categories: [] }); return; }
+    searchDebounceRef.current = setTimeout(() => {
+      const places = venuesRef.current.filter(v =>
+        v.live && (
+          v.name.toLowerCase().includes(q) ||
+          (v.city || '').toLowerCase().includes(q) ||
+          (v.subcategory || '').toLowerCase().includes(q) ||
+          (CATEGORY_LABELS[v.cat] || '').toLowerCase().includes(q)
+        )
+      ).slice(0, 8);
+      const events = tmEventsRef.current.filter(ev =>
+        ev.name.toLowerCase().includes(q) || (ev.city || '').toLowerCase().includes(q)
+      ).slice(0, 8);
+      const categories = CATEGORY_CHIPS.filter(c => c.id !== 'all' && c.label.toLowerCase().includes(q));
+      setSearchResults({ places, events, categories });
+      setActiveResultIndex(0);
+    }, 300);
+    return () => clearTimeout(searchDebounceRef.current);
+  }, [searchQuery]);
+
+  // Flattened in Places → Events → Categories order so arrow-key navigation
+  // and the visual grouping below always agree on index.
+  const flatSearchResults = useMemo(() => [
+    ...searchResults.places.map(item => ({ type: 'place', item })),
+    ...searchResults.events.map(item => ({ type: 'event', item })),
+    ...searchResults.categories.map(item => ({ type: 'category', item })),
+  ], [searchResults]);
+
+  const openSearch = () => {
+    setSearchOpen(true);
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  };
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults({ places: [], events: [], categories: [] });
+    setActiveResultIndex(0);
+  };
+
+  const selectSearchResult = (result) => {
+    if (!result) return;
+    if (result.type === 'place') {
+      flyTo(result.item.lng, result.item.lat);
+      const entry = pinRegistry.current.get(result.item.id);
+      setTimeout(() => entry?.openPopup(), 450);
+    } else if (result.type === 'event') {
+      flyTo(result.item.lng, result.item.lat);
+    } else if (result.type === 'category') {
+      onChipClick(result.item.id);
+    }
+    closeSearch();
+  };
+
+  const onSearchKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveResultIndex(i => Math.min(i + 1, flatSearchResults.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveResultIndex(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      selectSearchResult(flatSearchResults[activeResultIndex]);
+    } else if (e.key === 'Escape') {
+      closeSearch();
+    }
+  };
+
   // ── Shared render helpers (used by both desktop sidebar & mobile HUD) ──
+  const renderSearchTrigger = (containerClass) => (
+    <button className={containerClass} onClick={openSearch}>
+      🔍 Search places, events…
+    </button>
+  );
+
+  const renderQuickFilters = (containerClass) => (
+    <div className={containerClass}>
+      <button
+        className={`quick-filter-btn${quickFilter === 'tonight' ? ' active' : ''}`}
+        onClick={() => onQuickFilterClick('tonight')}
+      >
+        🌙 Tonight
+      </button>
+      <button
+        className={`quick-filter-btn${quickFilter === 'weekend' ? ' active' : ''}`}
+        onClick={() => onQuickFilterClick('weekend')}
+      >
+        📅 Weekend
+      </button>
+    </div>
+  );
+
   const renderChips = (containerClass) => (
     <div className={containerClass}>
       {CATEGORY_CHIPS.map(c => (
@@ -921,7 +1086,7 @@ export default function WadUp() {
     ) : trending.map((item, idx) => {
       const icon = item._isTM
         ? (item.cat === 'sports' ? (item.sportEmoji || '🏟️') : '🎟️')
-        : (getVenueBadges(item, trendingVenueIds.current.has(item.id))[0]?.icon || CATEGORY_ICONS[item.cat] || '📍');
+        : (getVenueBadges(item, trendingVenueIds.current.has(item.id), bestRatedVenueIds.current.has(item.id))[0]?.icon || CATEGORY_ICONS[item.cat] || '📍');
       return (
         <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
           <div className="t-rank">#{idx+1}</div>
@@ -1039,6 +1204,100 @@ export default function WadUp() {
         </div>
       )}
 
+      {/* ── Search overlay ── */}
+      {searchOpen && (
+        <div className="search-overlay" onClick={closeSearch}>
+          <div className="search-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="search-input-row">
+              <span className="search-input-icon">🔍</span>
+              <input
+                ref={searchInputRef}
+                className="search-input"
+                type="text"
+                placeholder="Search places, events, categories…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={onSearchKeyDown}
+              />
+              <button className="search-close" onClick={closeSearch} aria-label="Close search">✕</button>
+            </div>
+
+            <div className="search-results">
+              {!searchQuery.trim() ? (
+                <div className="search-hint">Start typing to search…</div>
+              ) : flatSearchResults.length === 0 ? (
+                <div className="search-hint">No matches for &ldquo;{searchQuery}&rdquo;</div>
+              ) : (
+                <>
+                  {searchResults.places.length > 0 && (
+                    <div className="search-group">
+                      <div className="search-group-title">Places</div>
+                      {searchResults.places.map((p, i) => (
+                        <div
+                          key={p.id}
+                          className={`search-result${i === activeResultIndex ? ' active' : ''}`}
+                          onMouseEnter={() => setActiveResultIndex(i)}
+                          onClick={() => selectSearchResult({ type: 'place', item: p })}
+                        >
+                          <span className="search-result-icon">📍</span>
+                          <div className="search-result-text">
+                            <div className="search-result-name">{p.name}</div>
+                            <div className="search-result-sub">{CATEGORY_LABELS[p.cat] || p.cat} · {p.city}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {searchResults.events.length > 0 && (
+                    <div className="search-group">
+                      <div className="search-group-title">Events</div>
+                      {searchResults.events.map((ev, i) => {
+                        const idx = searchResults.places.length + i;
+                        return (
+                          <div
+                            key={ev.id}
+                            className={`search-result${idx === activeResultIndex ? ' active' : ''}`}
+                            onMouseEnter={() => setActiveResultIndex(idx)}
+                            onClick={() => selectSearchResult({ type: 'event', item: ev })}
+                          >
+                            <span className="search-result-icon">{ev.cat === 'sports' ? (ev.sportEmoji || '🏟️') : '🎟️'}</span>
+                            <div className="search-result-text">
+                              <div className="search-result-name">{ev.name}</div>
+                              <div className="search-result-sub">{ev.city}{ev.state ? `, ${ev.state}` : ''}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {searchResults.categories.length > 0 && (
+                    <div className="search-group">
+                      <div className="search-group-title">Categories</div>
+                      {searchResults.categories.map((c, i) => {
+                        const idx = searchResults.places.length + searchResults.events.length + i;
+                        return (
+                          <div
+                            key={c.id}
+                            className={`search-result${idx === activeResultIndex ? ' active' : ''}`}
+                            onMouseEnter={() => setActiveResultIndex(idx)}
+                            onClick={() => selectSearchResult({ type: 'category', item: c })}
+                          >
+                            <span className="search-result-icon">🏷️</span>
+                            <div className="search-result-text">
+                              <div className="search-result-name">{c.label}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── App shell ── */}
       <div className={`app-root${showAddBanner ? ' banner-open' : ''}`}>
 
@@ -1058,7 +1317,13 @@ export default function WadUp() {
             </button>
           </div>
 
+          <div className="sidebar-topbar">
+            {renderSearchTrigger('sidebar-search-trigger')}
+            <Link href="/discover" className="sidebar-discover-btn">🔥 Discover</Link>
+          </div>
+
           {renderChips('sidebar-chips')}
+          {renderQuickFilters('sidebar-quick-filters')}
           {renderDayStrip('sidebar-days')}
 
           <div className="sidebar-trending">
@@ -1098,7 +1363,9 @@ export default function WadUp() {
           {/* Mobile HUD */}
           <div className="hud">
 
+            {renderSearchTrigger('search-trigger')}
             {renderChips('chips')}
+            {renderQuickFilters('quick-filters')}
             {renderDayStrip('day-strip')}
 
             <div className={`trending-panel${sheetExpanded ? ' expanded' : ''}`}>
@@ -1123,6 +1390,17 @@ export default function WadUp() {
                 {renderTrendingItems()}
               </div>
             </div>
+
+            <nav className="bottom-nav">
+              <div className="bottom-nav-item active" aria-current="page">
+                <span className="bottom-nav-icon">🗺️</span>
+                <span className="bottom-nav-label">Map</span>
+              </div>
+              <Link href="/discover" className="bottom-nav-item">
+                <span className="bottom-nav-icon">🔥</span>
+                <span className="bottom-nav-label">Discover</span>
+              </Link>
+            </nav>
           </div>
 
         </div>{/* /map-frame */}

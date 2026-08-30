@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
 import { CATEGORY_LABELS } from '../../lib/data';
+import { getBestRated } from '../../lib/rankings';
 import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
 
@@ -85,7 +86,7 @@ export default function VenuePage() {
   const [events,    setEvents]    = useState([]);
   const [schedule,  setSchedule]  = useState([]);
   const [sortMode,  setSortMode]  = useState('recent');
-  const [rankings,  setRankings]  = useState({ trending: null, bestRated: null });
+  const [rankings,  setRankings]  = useState({ trending: null, bestRated: null, localFavorite: false });
 
   const [session,  setSession]  = useState(null);
   const [profile,  setProfile]  = useState(null);
@@ -97,6 +98,13 @@ export default function VenuePage() {
   const [checkedIn,    setCheckedIn]   = useState(false);
   const [reportedIds,  setReportedIds] = useState(new Set());
   const [shareCopied,  setShareCopied] = useState(false);
+
+  // Snapshot of the latest session for code (like the view-tracking insert in
+  // loadVenue) that wants "whoever's logged in right now" without making
+  // loadVenue itself re-run — and therefore re-fetch everything and log a
+  // duplicate view — every time auth state changes.
+  const sessionRef = useRef(null);
+  useEffect(() => { sessionRef.current = session; }, [session]);
 
   // ── Auth session — same pattern used on the map page ──
   useEffect(() => {
@@ -153,9 +161,12 @@ export default function VenuePage() {
     // Rankings within the same city — gated on having enough peers for the
     // number to mean anything, rather than trivially always being "#1".
     if (venueData.city) {
-      const [{ data: byRating }, { data: byPopularity }] = await Promise.all([
+      const [{ data: byRating }, { data: byPopularity }, bestInCategory] = await Promise.all([
         supabase.from('venues').select('id').eq('city', venueData.city).order('average_rating', { ascending: false }),
         supabase.from('venues').select('id').eq('city', venueData.city).order('total_ratings', { ascending: false }),
+        // Local Favorite: top 10 best-rated within this exact city + category
+        // (a tighter, more meaningful peer group than city-wide bestRated above).
+        getBestRated(venueData.city, 10, venueData.category),
       ]);
       const enough = (list) => Array.isArray(list) && list.length >= 3;
       const rank = (list) => {
@@ -165,8 +176,14 @@ export default function VenuePage() {
       setRankings({
         bestRated: enough(byRating) ? rank(byRating) : null,
         trending:  enough(byPopularity) ? rank(byPopularity) : null,
+        localFavorite: bestInCategory.length >= 3 && bestInCategory.some(v => v.id === venueData.id),
       });
     }
+
+    // Fire-and-forget page view — feeds the "Views last 24h" trending signal
+    // in lib/rankings.js. Anonymous visitors are allowed to insert (RLS
+    // policy venue_views_insert_public); user_id is best-effort.
+    supabase.from('venue_views').insert({ venue_id: venueData.id, user_id: sessionRef.current?.user?.id || null });
 
     setLoading(false);
   }, [id]);
@@ -320,6 +337,7 @@ export default function VenuePage() {
           <div className="venue-header-content">
             <h1 className="venue-name">{venue.name}</h1>
             {venue.is_verified && <div className="venue-verified">✓ Verified Business</div>}
+            {rankings.localFavorite && <div className="venue-local-favorite-badge">🏆 Local Favorite</div>}
 
             <div className="venue-rating-line">
               {(venue.total_ratings || 0) < 5
