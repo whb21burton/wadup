@@ -38,6 +38,12 @@ const CHAIN_BLOCKLIST = [
   'little caesar', 'papa murphy', 'jersey mike', 'jimmy john', 'firehouse',
   'wingstop', 'raising cane', 'zaxby', 'golden corral', 'longhorn',
   'texas roadhouse', 'outback', 'red robin', 'hooters', 'dennys', 'bob evan',
+  'amc ', 'amc classic', 'amc majestic', 'amc northgate', 'amc dine-in',
+  'regal cinema', 'cinemark', 'marcus theater', 'landmark cinema',
+  'barnes & noble', "dick's sporting", 'academy sports',
+  'planet fitness', 'la fitness', 'anytime fitness', "gold's gym",
+  'great clips', 'sport clips', 'supercuts',
+  'quality inn', 'ramada',
 ];
 
 function isChain(name) {
@@ -146,9 +152,27 @@ export default async function handler(req, res) {
     }
   }
 
-  const rows = [...byPlaceId.values()];
+  const allRows = [...byPlaceId.values()];
+  if (!allRows.length) {
+    return res.status(200).json({ success: true, added: 0, updated: 0, totalFetched: 0, byCategory, skippedChains, skippedDeleted: 0, errors });
+  }
+
+  // A venue an admin has deleted must never come back through a re-sync —
+  // deleted_venues (populated by /api/admin/delete-venue) is a permanent
+  // blocklist by google_place_id, independent of the name-substring
+  // CHAIN_BLOCKLIST above.
+  const { data: deletedRows, error: deletedError } = await supabaseAdmin
+    .from('deleted_venues')
+    .select('google_place_id')
+    .in('google_place_id', allRows.map(r => r.google_place_id));
+  if (deletedError) {
+    return res.status(500).json({ error: 'Failed to read deleted_venues blocklist', detail: deletedError.message });
+  }
+  const deletedIds = new Set((deletedRows || []).map(r => r.google_place_id));
+  const skippedDeleted = allRows.filter(r => deletedIds.has(r.google_place_id)).length;
+  const rows = allRows.filter(r => !deletedIds.has(r.google_place_id));
   if (!rows.length) {
-    return res.status(200).json({ success: true, added: 0, updated: 0, totalFetched: 0, byCategory, skippedChains, errors });
+    return res.status(200).json({ success: true, added: 0, updated: 0, totalFetched: allRows.length, byCategory, skippedChains, skippedDeleted, errors });
   }
 
   const { data: existing, error: existingError } = await supabaseAdmin
@@ -223,9 +247,10 @@ export default async function handler(req, res) {
     success: true,
     added,
     updated,
-    totalFetched: rows.length,
+    totalFetched: allRows.length,
     byCategory,
     skippedChains,
+    skippedDeleted,
     errors,
   });
 }
