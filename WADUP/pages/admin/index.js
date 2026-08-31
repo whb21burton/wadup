@@ -13,10 +13,20 @@ export default function AdminOverview() {
 
   const bootstrap = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) { router.replace('/'); return; }
+    console.log('[admin] /admin bootstrap: session user id =', session?.user?.id || null);
+    if (!session?.user) {
+      console.log('[admin] /admin bootstrap: no session -> redirecting home');
+      router.replace('/');
+      return;
+    }
 
     const role = await getAdminRole(supabase, session.user.id);
-    if (!role) { router.replace('/'); return; }
+    console.log('[admin] /admin bootstrap: adminRole =', role);
+    if (!role) {
+      console.log('[admin] /admin bootstrap: no admin role -> redirecting home');
+      router.replace('/');
+      return;
+    }
 
     setAdminRole(role);
     setChecking(false);

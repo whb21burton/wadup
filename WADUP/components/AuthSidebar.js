@@ -22,9 +22,16 @@ export default function AuthSidebar({ open, onClose, session, profile }) {
   // Only shows the ⚙️ Admin link for users with an admin_roles entry —
   // everyone else never even sees the link exists.
   useEffect(() => {
-    if (!session?.user) { setAdminRole(null); return; }
+    if (!session?.user) {
+      console.log('[admin] AuthSidebar: no session, clearing adminRole');
+      setAdminRole(null);
+      return;
+    }
     let cancelled = false;
-    getAdminRole(supabase, session.user.id).then(role => { if (!cancelled) setAdminRole(role); });
+    getAdminRole(supabase, session.user.id).then(role => {
+      console.log('[admin] AuthSidebar: adminRole resolved to', role);
+      if (!cancelled) setAdminRole(role);
+    });
     return () => { cancelled = true; };
   }, [session]);
 
