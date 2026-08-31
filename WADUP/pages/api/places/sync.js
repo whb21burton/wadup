@@ -8,7 +8,13 @@ const RADIUS_METERS = 20000; // 20km covers greater Chattanooga
 
 const SEARCH_TYPES = [
   { types: ['bar', 'night_club', 'pub'],                        wadupCat: 'nightlife' },
-  { types: ['restaurant', 'food'],                              wadupCat: 'restaurant' },
+  // 'food' isn't a real Places API (New) type (it's a legacy-API-only value) —
+  // Google rejects the whole request when it's included. Split restaurant
+  // coverage across its actual New-API subtypes instead.
+  { types: ['restaurant'],                                      wadupCat: 'restaurant' },
+  { types: ['cafe'],                                            wadupCat: 'restaurant' },
+  { types: ['bakery'],                                          wadupCat: 'restaurant' },
+  { types: ['meal_takeaway'],                                   wadupCat: 'restaurant' },
   { types: ['live_music_venue', 'concert_hall'],                wadupCat: 'events' },
   { types: ['bowling_alley', 'golf_course', 'amusement_center'],wadupCat: 'activities' },
   { types: ['park', 'campground', 'hiking_area'],                wadupCat: 'outdoors' },
