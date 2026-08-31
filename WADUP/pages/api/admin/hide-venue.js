@@ -2,8 +2,11 @@
 // never actually deletes the row). Most venues have no owner (owner_id is
 // null for everything Google Places-sourced), so the regular
 // venues_update_owner RLS policy could never let anyone fix a bad listing —
-// this needs the same admin-password + service-role pattern as places/sync.
+// this goes through the service-role client, gated on a real admin_roles
+// entry (super_admin, or an ambassador scoped to this venue's city).
 import { supabaseAdmin } from '../supabase-admin';
+import { requireAdmin } from './_authAdmin';
+import { canAccessCity } from '../../../lib/admin';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -11,15 +14,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!process.env.ADMIN_SYNC_PASSWORD) {
-    return res.status(500).json({ error: 'ADMIN_SYNC_PASSWORD is not configured on the server' });
-  }
-  if (req.headers['x-admin-password'] !== process.env.ADMIN_SYNC_PASSWORD) {
-    return res.status(401).json({ error: 'Incorrect admin password' });
-  }
+  const auth = await requireAdmin(req);
+  if (!auth) return res.status(403).json({ error: 'Not authorized' });
 
   const { venueId } = req.body || {};
   if (!venueId) return res.status(400).json({ error: 'Missing venueId' });
+
+  const { data: venue, error: fetchError } = await supabaseAdmin
+    .from('venues').select('city').eq('id', venueId).single();
+  if (fetchError || !venue) return res.status(404).json({ error: 'Venue not found' });
+  if (!canAccessCity(auth.adminRole, venue.city)) {
+    return res.status(403).json({ error: 'Not authorized for this city' });
+  }
 
   const { error } = await supabaseAdmin.from('venues').update({ is_hidden: true }).eq('id', venueId);
   if (error) return res.status(500).json({ error: 'Hide failed', detail: error.message });

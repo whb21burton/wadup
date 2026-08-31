@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '../lib/supabase';
 import { VENUE_CATEGORIES } from '../lib/data';
+import { getAdminRole } from '../lib/admin';
 
 const emptyLogin  = { email: '', password: '' };
 const emptyUser   = { username: '', email: '', password: '', confirm: '', phone: '', city: '' };
@@ -16,6 +17,16 @@ export default function AuthSidebar({ open, onClose, session, profile }) {
   const [authError,        setAuthError]        = useState('');
   const [authInfo,         setAuthInfo]         = useState('');
   const [authLoading,      setAuthLoading]      = useState(false);
+  const [adminRole,        setAdminRole]        = useState(null);
+
+  // Only shows the ⚙️ Admin link for users with an admin_roles entry —
+  // everyone else never even sees the link exists.
+  useEffect(() => {
+    if (!session?.user) { setAdminRole(null); return; }
+    let cancelled = false;
+    getAdminRole(supabase, session.user.id).then(role => { if (!cancelled) setAdminRole(role); });
+    return () => { cancelled = true; };
+  }, [session]);
 
   const switchTab = (tab) => {
     setAuthTab(tab);
@@ -168,6 +179,11 @@ export default function AuthSidebar({ open, onClose, session, profile }) {
                   <Link href="/settings" className="profile-quick-link" onClick={onClose}>
                     ⚙️ Settings
                   </Link>
+                  {adminRole && (
+                    <Link href="/admin" className="profile-quick-link admin-quick-link-subtle" onClick={onClose}>
+                      ⚙️ Admin
+                    </Link>
+                  )}
                 </div>
 
                 <button className="auth-submit logout-btn" onClick={onLogout}>Log Out</button>

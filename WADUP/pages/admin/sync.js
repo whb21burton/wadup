@@ -1,26 +1,24 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { CATEGORY_LABELS } from '../../lib/data';
-import { supabase } from '../../lib/supabase';
 
 // The password prompt below is a convenience UI gate only — the real check
-// happens server-side in pages/api/places/sync.js and
-// pages/api/admin/hide-venue.js (X-Admin-Password vs
+// happens server-side in pages/api/places/sync.js (X-Admin-Password vs
 // process.env.ADMIN_SYNC_PASSWORD). A wrong password here just means every
-// sync/delete attempt gets a 401 back from the API; nothing sensitive is
-// decided on the client.
+// sync attempt gets a 401 back from the API; nothing sensitive is decided
+// on the client.
+//
+// This page used to also have its own venue hide/delete list, but that's
+// now fully superseded by /admin/venues (Edit/Hide/Show/Delete, category
+// management, and real admin_roles-based auth instead of a shared
+// password) — see pages/admin/venues.js.
 export default function AdminSync() {
   const [password, setPassword] = useState('');
   const [unlocked, setUnlocked] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
-
-  const [venues, setVenues] = useState([]);
-  const [venuesLoading, setVenuesLoading] = useState(false);
-  const [venueSearch, setVenueSearch] = useState('');
-  const [hidingId, setHidingId] = useState(null);
-  const [hideError, setHideError] = useState('');
 
   const runSync = async () => {
     setSyncing(true);
@@ -36,57 +34,11 @@ export default function AdminSync() {
         setError(data.error || 'Sync failed');
       } else {
         setResult(data);
-        loadVenues();
       }
     } catch (e) {
       setError('Sync failed — network error');
     }
     setSyncing(false);
-  };
-
-  // venues.is_hidden has a public SELECT policy, so listing (including
-  // already-hidden rows, so the admin can see what's already gone) doesn't
-  // need the admin password — only the actual hide action does.
-  const loadVenues = useCallback(async () => {
-    setVenuesLoading(true);
-    const { data } = await supabase
-      .from('venues')
-      .select('id, name, category, city, is_hidden')
-      .order('name', { ascending: true });
-    setVenues(data || []);
-    setVenuesLoading(false);
-  }, []);
-
-  useEffect(() => { if (unlocked) loadVenues(); }, [unlocked, loadVenues]);
-
-  const filteredVenues = useMemo(() => {
-    const q = venueSearch.trim().toLowerCase();
-    if (!q) return venues;
-    return venues.filter(v =>
-      v.name.toLowerCase().includes(q) || (v.city || '').toLowerCase().includes(q)
-    );
-  }, [venues, venueSearch]);
-
-  const hideVenue = async (venue) => {
-    if (venue.is_hidden) return;
-    setHidingId(venue.id);
-    setHideError('');
-    try {
-      const res = await fetch('/api/admin/hide-venue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Admin-Password': password },
-        body: JSON.stringify({ venueId: venue.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setHideError(data.error || 'Hide failed');
-      } else {
-        setVenues(prev => prev.map(v => v.id === venue.id ? { ...v, is_hidden: true } : v));
-      }
-    } catch (e) {
-      setHideError('Hide failed — network error');
-    }
-    setHidingId(null);
   };
 
   return (
@@ -156,47 +108,12 @@ export default function AdminSync() {
             )}
 
             <div className="admin-venues-section">
-              <h2>🗑️ Manage Venues</h2>
               <p className="admin-sync-desc">
-                Deleting a venue here doesn&apos;t remove its row — it sets <code>is_hidden</code> to
-                true, which hides it from the map, search, trending, and Discover for every user,
-                permanently. There&apos;s no undo in this UI; un-hiding requires a direct database edit.
+                Need to edit, hide, or delete a venue? Head to the{' '}
+                <Link href="/admin/venues">Venue Manager</Link> — it has full edit/hide/delete
+                controls and requires a real WadUp admin account rather than this page&apos;s
+                shared password.
               </p>
-              <input
-                className="admin-venue-search"
-                type="text"
-                placeholder="Search venues by name or city…"
-                value={venueSearch}
-                onChange={(e) => setVenueSearch(e.target.value)}
-              />
-              {hideError && <div className="admin-sync-error">⚠️ {hideError}</div>}
-
-              {venuesLoading ? (
-                <div className="admin-sync-desc">Loading venues…</div>
-              ) : (
-                <div className="admin-venue-list">
-                  {filteredVenues.length === 0 ? (
-                    <div className="admin-sync-desc">No venues match &ldquo;{venueSearch}&rdquo;.</div>
-                  ) : filteredVenues.map(v => (
-                    <div key={v.id} className={`admin-venue-row${v.is_hidden ? ' hidden' : ''}`}>
-                      <div className="admin-venue-info">
-                        <div className="admin-venue-name">{v.name}</div>
-                        <div className="admin-venue-meta">
-                          {CATEGORY_LABELS[v.category] || v.category} · {v.city}
-                          {v.is_hidden && <span className="admin-venue-hidden-tag"> · hidden</span>}
-                        </div>
-                      </div>
-                      <button
-                        className="admin-venue-delete-btn"
-                        onClick={() => hideVenue(v)}
-                        disabled={v.is_hidden || hidingId === v.id}
-                      >
-                        {v.is_hidden ? 'Hidden' : hidingId === v.id ? 'Hiding…' : '🗑️ Delete'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </>
         )}
