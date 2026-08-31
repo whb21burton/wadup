@@ -6,7 +6,7 @@ import {
   isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
-import { getTrendingVenues, getBestRated } from '../lib/rankings';
+import { getTrendingVenues, getBestRated, getScheduleTrendingVenues, getRankedVenues } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
 import AuthSidebar from '../components/AuthSidebar';
 
@@ -30,13 +30,6 @@ function withTMAffiliateTracking(url) {
 function venueMatchesChip(v, chip) {
   if (v.cat === 'events' || v.cat === 'sports') return false;
   return chip === 'all' || v.cat === chip;
-}
-
-// No bounds yet (map hasn't fired its first bounds_changed) — don't hide everything.
-function isInBounds(bounds, lat, lng) {
-  if (!bounds) return true;
-  if (lat == null || lng == null) return false;
-  return bounds.contains(new window.google.maps.LatLng(lat, lng));
 }
 
 const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', restaurant: '🍔', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
@@ -89,6 +82,34 @@ function quickFilterDateSet(quickFilter, activeDate) {
   return activeDate ? new Set([activeDate]) : null;
 }
 
+// ── "🔥 Trending Now" / "🏆 Top 10" sidebar helpers ──
+// Results from lib/rankings.js's getScheduleTrendingVenues/getRankedVenues
+// are raw Supabase rows (`category`/`custom_emoji`), not the `.cat`-aliased
+// shape dropVenuePin's mock-compat mapping produces — keep these separate.
+function venueEmoji(v) {
+  return v.custom_emoji || CATEGORY_ICONS[v.category] || '📍';
+}
+
+const EVENT_TYPE_ICON  = { live_music: '🎵', trivia: '🧠', happy_hour: '⏰', specials: '🏷️', activities: '🎳', sports_game: '🏟️', event: '🎫' };
+const EVENT_TYPE_LABEL = { live_music: 'Live Music', trivia: 'Trivia', happy_hour: 'Happy Hour', specials: 'Specials', activities: 'Activities', sports_game: 'Game', event: 'Event' };
+
+function timeToMinsLocal(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function trendingReasonBadge(v) {
+  const s = v._scheduleEntry;
+  if (!s) return null;
+  const icon  = EVENT_TYPE_ICON[s.event_type] || '🔥';
+  const label = EVENT_TYPE_LABEL[s.event_type] || 'Event';
+  const now = new Date();
+  const diff = timeToMinsLocal(s.start_time) - (now.getHours() * 60 + now.getMinutes());
+  if (diff <= 0) return `${icon} ${label} — happening now`;
+  if (diff <= 5) return `${icon} ${label} starting soon`;
+  return `${icon} ${label} in ${diff}min`;
+}
+
 export default function WadUp() {
   const mapRef       = useRef(null);
   const mapObj       = useRef(null);
@@ -102,9 +123,6 @@ export default function WadUp() {
   const bestRatedVenueIds = useRef(new Set());
   const eventVenueIdsTodayRef = useRef(new Set());
   const mapInitStarted = useRef(false);
-  const mapBoundsRef = useRef(null);
-  const boundsDebounceRef = useRef(null);
-  const renderTrendingRef = useRef(null);
   const filterPinsRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -117,8 +135,9 @@ export default function WadUp() {
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('all');
   const [activeDate,     setActiveDate]     = useState(new Date().toISOString().slice(0,10));
-  const [trending,       setTrending]       = useState([]);
-  const [tmLoading,      setTmLoading]      = useState(true);
+  const [trendingNow,    setTrendingNow]    = useState([]);
+  const [topRanked,      setTopRanked]      = useState([]);
+  const [sidebarLoading, setSidebarLoading] = useState(true);
   const [mapReady,       setMapReady]       = useState(false);
   const [showSplash,     setShowSplash]     = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -247,38 +266,26 @@ export default function WadUp() {
     sheetTouchDeltaY.current = 0;
   }, []);
 
-  // ── Build trending list — scoped to what's currently in view on the map ──
-  const renderTrending = useCallback((chipOverride, dateOverride, boundsOverride, quickFilterOverride) => {
-    const chip   = chipOverride ?? activeChip;
-    const date   = dateOverride ?? activeDate;
-    const bounds = boundsOverride ?? mapBoundsRef.current;
-    const qf     = quickFilterOverride !== undefined ? quickFilterOverride : quickFilter;
-    const dateSet = quickFilterDateSet(qf, date);
-    const venues = venuesRef.current;
-    const tmEvs  = tmEventsRef.current;
+  // ── 🔥 Trending Now / 🏆 Top 10 sidebar lists — city-scoped, filtered by
+  // the active chip only (not the day strip or Tonight/Weekend, which only
+  // affect TM event pins). Independent of the map/viewport entirely, unlike
+  // the old viewport-scoped trending list this replaces. ──
+  const loadSidebarLists = useCallback(async (chip) => {
+    setSidebarLoading(true);
+    try {
+      const [nowList, rankedList] = await Promise.all([
+        getScheduleTrendingVenues(supabase, chip, 'Chattanooga'),
+        getRankedVenues(supabase, chip, 'Chattanooga', 10),
+      ]);
+      setTrendingNow(nowList);
+      setTopRanked(rankedList);
+    } catch (e) {
+      /* sidebar lists are a nice-to-have — leave whatever was showing */
+    }
+    setSidebarLoading(false);
+  }, []);
 
-    const liveVenues = venues
-      .filter(v => v.live && isVenueEligible(v) && venueMatchesChip(v, chip) && isInBounds(bounds, v.lat, v.lng))
-      .map(v => ({ ...v, _isTM: false }))
-      .sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0));
-
-    const filteredTM = tmEvs
-      .filter(ev =>
-        (chip === 'all' || ev.cat === chip) &&
-        (!dateSet || dateSet.has(ev.dateStr)) &&
-        isInBounds(bounds, ev.lat, ev.lng)
-      )
-      .sort((a, b) => (a.dateStr || '').localeCompare(b.dateStr || ''));
-
-    const all = [...liveVenues, ...filteredTM].slice(0, 20);
-
-    setTrending(all);
-  }, [activeChip, activeDate, quickFilter]);
-
-  // Keep stable refs to the latest renderTrending/filterPins so map-mount's
-  // one-time listeners (and the async ranking fetch below) never call a stale
-  // closure holding outdated activeChip/activeDate/quickFilter.
-  useEffect(() => { renderTrendingRef.current = renderTrending; }, [renderTrending]);
+  useEffect(() => { loadSidebarLists(activeChip); }, [activeChip, loadSidebarLists]);
 
   // ── Filter map pins — flags drive direct marker/overlay visibility ──
   const filterPins = useCallback((chipOverride, dateOverride, quickFilterOverride) => {
@@ -777,8 +784,6 @@ export default function WadUp() {
       } finally {
         completed++;
         if (completed === total || completed === 1) {
-          setTmLoading(false);
-          renderTrending();
           filterPins();
         }
       }
@@ -787,7 +792,7 @@ export default function WadUp() {
     // Stagger all regions
     tmEventsRef.current = [];
     TM_REGIONS.forEach((r, i) => fetchRegion(r, i));
-  }, [dropTMPin, renderTrending, filterPins]);
+  }, [dropTMPin, filterPins]);
 
   // ── Load real Chattanooga venues from Supabase (Google Places-sourced) ──
   const loadVenuesFromSupabase = useCallback(async () => {
@@ -832,16 +837,15 @@ export default function WadUp() {
 
     // Drop venue pins — ineligible venues (e.g. a restaurant with nothing on today) never get one
     venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
-    renderTrendingRef.current?.();
     filterPinsRef.current?.();
 
     // Phase 2: layer real, city-scoped activity-based rankings (lib/rankings.js,
     // backed by the live Supabase checkins/reviews/saved_venues tables) onto
     // the naive same-session "top 10 by rating" badge above — additive, so
     // pins already dropped just get re-dropped (picking up the new badge)
-    // once this async fetch resolves. Uses filterPinsRef/renderTrendingRef
-    // (not the plain closures) since this can resolve well after mount, by
-    // which point activeChip/activeDate/quickFilter may have moved on.
+    // once this async fetch resolves. Uses filterPinsRef (not the plain
+    // closure) since this can resolve well after mount, by which point
+    // activeChip/activeDate/quickFilter may have moved on.
     const citiesOnMap = [...new Set(venuesRef.current.map(v => v.city).filter(Boolean))];
     Promise.all(citiesOnMap.map(city => Promise.all([getTrendingVenues(city, 10), getBestRated(city, 10)])))
       .then(perCityResults => {
@@ -853,7 +857,6 @@ export default function WadUp() {
         if (!changed) return;
         venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
         filterPinsRef.current?.();
-        renderTrendingRef.current?.();
       })
       .catch(() => { /* rankings are a nice-to-have — pins already show without them */ });
   }, [dropVenuePin]);
@@ -923,16 +926,6 @@ export default function WadUp() {
       map.addListener('click', () => collapseSpiderfy());
       map.addListener('dragstart', () => collapseSpiderfy());
 
-      // Trending list tracks the current viewport — debounced so a drag/zoom
-      // gesture doesn't re-filter on every intermediate frame.
-      map.addListener('bounds_changed', () => {
-        mapBoundsRef.current = map.getBounds();
-        clearTimeout(boundsDebounceRef.current);
-        boundsDebounceRef.current = setTimeout(() => {
-          renderTrendingRef.current?.();
-        }, 300);
-      });
-
       setMapReady(true);
 
       // Real Chattanooga venues (Google Places-sourced, see pages/api/places/sync.js)
@@ -985,17 +978,15 @@ export default function WadUp() {
     return () => { window.removeEventListener('resize', onResize); clearTimeout(t); };
   }, [nudgeMap]);
 
-  // ── Chip change ──
+  // ── Chip change ── (also triggers the loadSidebarLists effect above, via activeChip)
   const onChipClick = (chip) => {
     setActiveChip(chip);
-    renderTrending(chip, activeDate);
     filterPins(chip, activeDate);
   };
 
   // ── Day change ──
   const onDayClick = (iso) => {
     setActiveDate(iso);
-    renderTrending(activeChip, iso);
     filterPins(activeChip, iso);
   };
 
@@ -1010,7 +1001,6 @@ export default function WadUp() {
   const onQuickFilterClick = (kind) => {
     const next = quickFilter === kind ? null : kind;
     setQuickFilter(next);
-    renderTrending(activeChip, activeDate, undefined, next);
     filterPins(activeChip, activeDate, next);
   };
 
@@ -1140,42 +1130,65 @@ export default function WadUp() {
     </div>
   );
 
-  const renderTrendingItems = () => (
-    trending.length === 0 ? (
-      <div className="t-empty">
-        {tmLoading ? '🎟️ Loading events…' : 'Nothing found — try another category or date'}
-      </div>
-    ) : trending.map((item, idx) => {
-      const icon = item._isTM
-        ? (item.cat === 'sports' ? (item.sportEmoji || '🏟️') : '🎟️')
-        : (getVenueBadges(
-            item, trendingVenueIds.current.has(item.id), bestRatedVenueIds.current.has(item.id),
-            eventVenueIdsTodayRef.current.has(item.id)
-          )[0]?.icon || CATEGORY_ICONS[item.cat] || '📍');
-      return (
-        <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
-          <div className="t-rank">#{idx+1}</div>
-          <div className="t-icon">{icon}</div>
-          <div className="t-info">
-            <div className="t-name">{item.name}</div>
-            <div className="t-sub">{item.subcategory || CATEGORY_LABELS[item.cat] || item.cat} · {item.city}, {item.state}</div>
-            {item._isTM && item.dateStr && (
-              <div className="t-date">
-                📅 {new Date(item.dateStr+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}
-                {item.timeStr ? ' · '+item.timeStr.slice(0,5) : ''}
-              </div>
-            )}
-          </div>
-          <div className="t-meta">
-            <div className="t-city">{item.city}{item.state ? ', ' + item.state : ''}</div>
-            {item._isTM
-              ? (item.price && <div className="t-date">{item.price}</div>)
-              : ((effectiveRatingCount(item) || 0) > 0 && <div className="t-rating">⭐ {effectiveRating(item).toFixed(1)}</div>)
-            }
-          </div>
+  const renderTrendingNowItems = () => (
+    trendingNow.length === 0 ? (
+      <div className="t-empty">{sidebarLoading ? 'Loading…' : 'Nothing trending right now'}</div>
+    ) : trendingNow.map(v => (
+      <div key={v.id} className="t-item" onClick={() => flyTo(v.lng, v.lat)}>
+        <div className="t-icon">{venueEmoji(v)}</div>
+        <div className="t-info">
+          <div className="t-name">{v.name}</div>
+          <div className="t-sub">{CATEGORY_LABELS[v.category] || v.category}</div>
+          {trendingReasonBadge(v) && <div className="t-trend-badge">{trendingReasonBadge(v)}</div>}
         </div>
-      );
-    })
+      </div>
+    ))
+  );
+
+  const renderTopRankedItems = () => (
+    topRanked.length === 0 ? (
+      <div className="t-empty">{sidebarLoading ? 'Loading…' : 'No ranked venues yet'}</div>
+    ) : topRanked.map((v, idx) => (
+      <div key={v.id} className="t-item" onClick={() => flyTo(v.lng, v.lat)}>
+        <div className={`t-rank${idx === 0 ? ' rank-gold' : idx === 1 ? ' rank-silver' : idx === 2 ? ' rank-bronze' : ''}`}>
+          #{idx + 1}
+        </div>
+        <div className="t-icon">{venueEmoji(v)}</div>
+        <div className="t-info">
+          <div className="t-name">{v.name}</div>
+          <div className="t-sub">{(v.vote_score || 0).toLocaleString()} pts</div>
+        </div>
+        {(v.total_ratings || 0) > 0 && <div className="t-rating">⭐ {(v.average_rating || 0).toFixed(1)}</div>}
+      </div>
+    ))
+  );
+
+  const renderSidebarLists = () => (
+    <>
+      <div className="panel-header">
+        <div className="panel-title">
+          <div className="panel-title-dot" />
+          🔥 Trending Now
+        </div>
+        <div className="panel-radius">{trendingNow.length}</div>
+      </div>
+      <div className="trending-list sidebar-scroll-list">
+        {renderTrendingNowItems()}
+      </div>
+
+      <div className="sidebar-divider" />
+
+      <div className="panel-header">
+        <div className="panel-title">
+          <div className="panel-title-dot" />
+          🏆 Top 10
+        </div>
+        <div className="panel-radius">{CATEGORY_LABELS[activeChip] || 'All'}</div>
+      </div>
+      <div className="trending-list sidebar-scroll-list">
+        {renderTopRankedItems()}
+      </div>
+    </>
   );
 
   return (
@@ -1392,18 +1405,7 @@ export default function WadUp() {
           {renderDayStrip('sidebar-days')}
 
           <div className="sidebar-trending">
-            <div className="panel-header">
-              <div className="panel-title">
-                <div className="panel-title-dot" />
-                Trending In View
-              </div>
-              <div className="panel-radius">
-                🗺️ {tmLoading ? 'Loading…' : `${trending.length} found`}
-              </div>
-            </div>
-            <div className="trending-list">
-              {renderTrendingItems()}
-            </div>
+            {renderSidebarLists()}
           </div>
         </aside>
 
@@ -1441,18 +1443,9 @@ export default function WadUp() {
                 onTouchEnd={onSheetTouchEnd}
               >
                 <div className="panel-handle" onClick={() => setSheetExpanded(v => !v)} />
-                <div className="panel-header">
-                  <div className="panel-title">
-                    <div className="panel-title-dot" />
-                    Trending In View
-                  </div>
-                  <div className="panel-radius">
-                    🗺️ In View{tmLoading ? ' · Loading…' : ` · ${trending.length} found`}
-                  </div>
-                </div>
               </div>
-              <div className="trending-list">
-                {renderTrendingItems()}
+              <div className="trending-panel-scroll">
+                {renderSidebarLists()}
               </div>
             </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { supabase } from '../../lib/supabase';
@@ -313,6 +313,91 @@ function AddVenueModal({ session, defaultCity, defaultState, onClose, onAdded })
   );
 }
 
+const SORT_OPTIONS = [
+  { id: 'az',       label: 'A-Z' },
+  { id: 'za',       label: 'Z-A' },
+  { id: 'rankings', label: 'Rankings' },
+  { id: 'google',   label: 'Google Rating' },
+  { id: 'votes',    label: 'Vote Score' },
+];
+
+// Mirrors lib/rankings.js's applyAdminRankOverride (a module-private helper
+// there) — duplicated rather than exported/imported since this operates on
+// an already-in-memory venue list instead of running its own Supabase query.
+function sortByRankOverrideThenVotes(venues, category) {
+  const overridden = venues
+    .filter(v => v.admin_rank_override?.[category] != null)
+    .sort((a, b) => a.admin_rank_override[category] - b.admin_rank_override[category]);
+  const rest = venues
+    .filter(v => v.admin_rank_override?.[category] == null)
+    .sort((a, b) => (b.vote_score || 0) - (a.vote_score || 0));
+  return [...overridden, ...rest];
+}
+
+function RankingsView({ venues, category, session, onSaved }) {
+  const [order, setOrder] = useState(venues);
+  const dragIndexRef = useRef(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => { setOrder(venues); }, [venues]);
+
+  const onDragOver = (e, i) => {
+    e.preventDefault();
+    const from = dragIndexRef.current;
+    if (from === null || from === i) return;
+    setOrder(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(i, 0, moved);
+      return next;
+    });
+    dragIndexRef.current = i;
+  };
+
+  const onDrop = async () => {
+    dragIndexRef.current = null;
+    setSaving(true);
+    setError('');
+    try {
+      await Promise.all(order.map((v, idx) =>
+        authedFetch('/api/admin/update-venue', session, {
+          venueId: v.id,
+          updates: { admin_rank_override: { ...(v.admin_rank_override || {}), [category]: idx } },
+        })
+      ));
+      onSaved();
+    } catch (e) {
+      setError(e.message);
+    }
+    setSaving(false);
+  };
+
+  if (!order.length) return <div className="admin-sync-desc">No venues in this category yet.</div>;
+
+  return (
+    <div className="admin-rankings-list">
+      {order.map((v, i) => (
+        <div
+          key={v.id}
+          className={`admin-rankings-row${v.admin_rank_override?.[category] != null ? ' overridden' : ''}`}
+          draggable
+          onDragStart={() => { dragIndexRef.current = i; }}
+          onDragOver={(e) => onDragOver(e, i)}
+          onDrop={onDrop}
+        >
+          <span className="admin-drag-handle">⠿</span>
+          <span className="admin-venue-table-icon">{venueIcon(v)}</span>
+          <span className="admin-venue-table-name">{v.name}</span>
+          <span className="admin-rankings-score">{v.vote_score || 0} pts</span>
+        </div>
+      ))}
+      {saving && <div className="admin-sync-desc">Saving order…</div>}
+      {error && <div className="admin-modal-error">⚠️ {error}</div>}
+    </div>
+  );
+}
+
 export default function AdminVenues() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
@@ -324,6 +409,9 @@ export default function AdminVenues() {
   const [selectedState, setSelectedState] = useState('');
   const [selectedCity, setSelectedCity] = useState('');
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [sortMode, setSortMode] = useState('az');
+  const [rankingsTab, setRankingsTab] = useState(EDITABLE_CATEGORIES[0].id);
 
   const [editingVenue, setEditingVenue] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -365,13 +453,28 @@ export default function AdminVenues() {
   );
   useEffect(() => { if (citiesForState.length && !citiesForState.includes(selectedCity)) setSelectedCity(citiesForState[0]); }, [citiesForState, selectedCity]);
 
-  const visibleVenues = useMemo(() => {
+  const scopedVenues = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allVenues
       .filter(v => v.state === selectedState && v.city === selectedCity)
-      .filter(v => !q || v.name.toLowerCase().includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [allVenues, selectedState, selectedCity, search]);
+      .filter(v => categoryFilter === 'all' || v.category === categoryFilter)
+      .filter(v => !q || v.name.toLowerCase().includes(q));
+  }, [allVenues, selectedState, selectedCity, categoryFilter, search]);
+
+  const visibleVenues = useMemo(() => {
+    const list = [...scopedVenues];
+    if (sortMode === 'za') return list.sort((a, b) => b.name.localeCompare(a.name));
+    if (sortMode === 'google') return list.sort((a, b) => (b.google_rating || 0) - (a.google_rating || 0));
+    if (sortMode === 'votes') return list.sort((a, b) => (b.vote_score || 0) - (a.vote_score || 0));
+    return list.sort((a, b) => a.name.localeCompare(b.name)); // 'az' and the default
+  }, [scopedVenues, sortMode]);
+
+  const rankingsVenues = useMemo(() => {
+    const list = allVenues.filter(v =>
+      v.state === selectedState && v.city === selectedCity && v.category === rankingsTab
+    );
+    return sortByRankOverrideThenVotes(list, rankingsTab);
+  }, [allVenues, selectedState, selectedCity, rankingsTab]);
 
   const toggleHidden = async (venue) => {
     setActionError('');
@@ -418,6 +521,10 @@ export default function AdminVenues() {
               {citiesForState.length === 0 && <option value="">No cities</option>}
               {citiesForState.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+              <option value="all">All Categories</option>
+              {EDITABLE_CATEGORIES.map(c => <option key={c.id} value={c.id}>{CATEGORY_TEXT[c.id]}</option>)}
+            </select>
             <input
               className="admin-venue-search"
               type="text"
@@ -428,9 +535,45 @@ export default function AdminVenues() {
             <button className="admin-add-venue-btn" onClick={() => setAddOpen(true)}>+ Add Venue</button>
           </div>
 
+          <div className="admin-sort-row">
+            {SORT_OPTIONS.map(opt => (
+              <button
+                key={opt.id}
+                className={`admin-sort-btn${sortMode === opt.id ? ' active' : ''}`}
+                onClick={() => setSortMode(opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
           {actionError && <div className="admin-modal-error">⚠️ {actionError}</div>}
 
-          {loadingVenues ? (
+          {sortMode === 'rankings' ? (
+            <>
+              <div className="admin-rankings-tabs">
+                {EDITABLE_CATEGORIES.map(c => (
+                  <button
+                    key={c.id}
+                    className={`admin-rankings-tab${rankingsTab === c.id ? ' active' : ''}`}
+                    onClick={() => setRankingsTab(c.id)}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+              {loadingVenues ? (
+                <div className="admin-sync-desc">Loading venues…</div>
+              ) : (
+                <RankingsView
+                  venues={rankingsVenues}
+                  category={rankingsTab}
+                  session={session}
+                  onSaved={loadVenues}
+                />
+              )}
+            </>
+          ) : loadingVenues ? (
             <div className="admin-sync-desc">Loading venues…</div>
           ) : visibleVenues.length === 0 ? (
             <div className="admin-sync-desc">No venues match.</div>

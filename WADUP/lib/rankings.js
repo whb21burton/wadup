@@ -174,7 +174,94 @@ export const POINTS = {
   REFER_FRIEND: 200,
   DAILY_LOGIN: 5,
   LOCAL_REVIEW: 25, // bonus points for reviewing in your local city
+  VOTE: 5,
 };
+
+// ── Phase 7: Voting / vote-based ranking / schedule-based trending ─────
+//
+// A vote's weight scales with how much the voter's word should count:
+// admins/ambassadors curating their city count for a lot, verified locals
+// count for more than a drive-by tourist, everyone else counts for 1.
+export function getVoteWeight(userProfile, adminRole) {
+  if (adminRole?.role === 'super_admin' || adminRole?.role === 'ambassador') return 100;
+  if (userProfile?.is_local) return 10;
+  return 1;
+}
+
+// Ranked by admin_rank_override[category] first (manually curated order),
+// then by vote_score — the organic community ranking — for everything else.
+// Unlike the other functions in this file, this (and getScheduleTrendingVenues
+// below) take `supabase` as a parameter rather than using the module-level
+// import, so the same function works from either a client session or an
+// admin route without duplicating the query logic.
+export async function getRankedVenues(supabase, category, city, limit = 50) {
+  let query = supabase
+    .from('venues')
+    .select(`${VENUE_CARD_FIELDS}, vote_score, admin_rank_override, venue_votes(count)`)
+    .eq('city', city)
+    .eq('is_hidden', false)
+    .order('vote_score', { ascending: false });
+  if (category && category !== 'all') query = query.eq('category', category);
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return applyAdminRankOverride(data, category).slice(0, limit);
+}
+
+function applyAdminRankOverride(venues, category) {
+  const overridden = venues
+    .filter(v => v.admin_rank_override?.[category] != null)
+    .sort((a, b) => a.admin_rank_override[category] - b.admin_rank_override[category]);
+  const rest = venues
+    .filter(v => v.admin_rank_override?.[category] == null)
+    .sort((a, b) => (b.vote_score || 0) - (a.vote_score || 0));
+  return [...overridden, ...rest];
+}
+
+// A venue is "trending now" if it has a venue_event_schedule entry starting
+// within its event type's window today — distinct from getTrendingVenues
+// above (which measures recent checkins/reviews/saves/views) — this measures
+// upcoming scheduled events instead. Named separately to avoid colliding
+// with that existing export, since the two are genuinely different signals.
+const TRENDING_WINDOWS = {
+  sports_game: 120, // 2 hours before
+  live_music: 120,  // 2 hours before
+  event: 120,       // 2 hours before
+  trivia: 60,       // 1 hour before
+  happy_hour: 30,   // 30 mins before
+  specials: 30,     // 30 mins before
+  activities: 60,   // 1 hour before
+};
+
+function timeToMins(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+// Ticketmaster events aren't in this calculation — they're a separate,
+// client-fetched data source (pages/index.js's tmEventsRef), not something a
+// Supabase query here can see; a caller that wants both merges them itself.
+export async function getScheduleTrendingVenues(supabase, category, city) {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const nowMins = timeToMins(now.toTimeString().slice(0, 5));
+
+  const { data: schedules, error } = await supabase
+    .from('venue_event_schedule')
+    .select('*, venues(*)')
+    .eq('day_of_week', dayOfWeek)
+    .eq('is_active', true);
+  if (error || !schedules) return [];
+
+  return schedules
+    .filter(s => {
+      const window = TRENDING_WINDOWS[s.event_type] || 60;
+      const startMins = timeToMins(s.start_time);
+      return nowMins >= startMins - window && nowMins < startMins + 30;
+    })
+    .filter(s => s.venues && !s.venues.is_hidden && (!city || s.venues.city === city) && (category === 'all' || s.venues.category === category))
+    .map(s => ({ ...s.venues, _scheduleEntry: s }));
+}
 
 // Server-only. `admin` must be the service-role client from
 // pages/api/supabase-admin.js — points_log has no INSERT policy for

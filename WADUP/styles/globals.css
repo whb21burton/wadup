@@ -594,7 +594,7 @@ html, body {
   flex-direction: column;
   transition: height 0.28s ease;
 }
-.trending-panel.expanded { height: 220px; }
+.trending-panel.expanded { height: 380px; } /* fits both Trending Now + Top 10 sections */
 
 /* ── BOTTOM NAV (mobile only — Map / Discover) ── */
 .bottom-nav {
@@ -733,6 +733,40 @@ html, body {
   font-weight: 700;
   color: #f4a000;
 }
+.t-trend-badge {
+  margin-top: 2px;
+  display: inline-block;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #d94b00;
+  background: rgba(255,105,0,0.12);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.t-rank.rank-gold   { color: #d4af00; font-size: 0.8rem; }
+.t-rank.rank-silver { color: #9aa3ab; font-size: 0.78rem; }
+.t-rank.rank-bronze { color: #b5691f; font-size: 0.76rem; }
+
+/* Each of the two sidebar sections (Trending Now / Top 10) shows ~5 rows
+   before scrolling, rather than the single section splitting the whole
+   available height 50/50 via flex:1. */
+.sidebar-scroll-list { flex: none; max-height: 260px; }
+
+.sidebar-divider {
+  height: 1px;
+  margin: 10px 20px;
+  background: rgba(255,255,255,0.1);
+  flex-shrink: 0;
+}
+.trending-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.trending-panel-scroll::-webkit-scrollbar { display: none; }
+.trending-panel-scroll .sidebar-divider { margin: 8px 12px; }
 
 /* ── MAP PINS (clean white pill) ── */
 .wu-pin {
@@ -1504,6 +1538,47 @@ html, body {
   font-size: 0.8rem;
   font-weight: 700;
   color: #ff8a5c;
+}
+
+/* ── VOTE SECTION (pages/venue/[id].js) ── */
+.venue-vote-locked {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #999;
+  background: var(--gray);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.venue-vote-buttons { display: flex; gap: 10px; }
+.venue-vote-btn {
+  flex: 1;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1.5px solid #ddd;
+  background: #fff;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.venue-vote-btn:disabled { opacity: 0.6; cursor: default; }
+.venue-vote-up.active { background: #e8fff2; border-color: #2ecc71; color: #1a8a4a; }
+.venue-vote-down.active { background: #fff0ee; border-color: #ff6347; color: #c0392b; }
+.venue-vote-counts {
+  margin-top: 12px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #555;
+}
+.venue-vote-score {
+  margin-top: 4px;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #d99a00;
 }
 
 /* ── POINTS TOAST — slides in from the top, fades after 3s (see the
@@ -2728,6 +2803,65 @@ html, body {
   font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* ── Sort row / Rankings view (Venue Manager) ── */
+.admin-sort-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.admin-sort-btn {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,229,255,0.2);
+  background: rgba(255,255,255,0.04);
+  color: #9fc3cc;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.admin-sort-btn.active { background: var(--cyan); color: #04222a; border-color: var(--cyan); }
+
+.admin-rankings-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.admin-rankings-tab {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,229,255,0.2);
+  background: rgba(255,255,255,0.04);
+  color: #9fc3cc;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.admin-rankings-tab.active { background: var(--yellow); color: var(--black); border-color: var(--yellow); }
+
+.admin-rankings-list { display: flex; flex-direction: column; gap: 4px; }
+.admin-rankings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  cursor: grab;
+}
+.admin-rankings-row.overridden { background: rgba(255,252,0,0.14); border: 1px solid rgba(255,252,0,0.4); }
+.admin-drag-handle { color: #7f97a3; font-size: 1rem; cursor: grab; flex-shrink: 0; }
+.admin-rankings-score {
+  flex-shrink: 0;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--cyan);
 }
 
 /* ── Venue table ── */

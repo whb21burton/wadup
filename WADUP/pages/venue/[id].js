@@ -99,6 +99,11 @@ export default function VenuePage() {
   const [checkinCount, setCheckinCount]= useState(0);
   const [checkinError, setCheckinError]= useState('');
   const [pointsToast,  setPointsToast] = useState(null);
+  const [hasCheckedIn, setHasCheckedIn] = useState(false);
+  const [myVote,       setMyVote]       = useState(null); // 1 | -1 | null
+  const [voteCounts,   setVoteCounts]   = useState({ up: 0, down: 0 });
+  const [voting,       setVoting]       = useState(false);
+  const [voteError,    setVoteError]    = useState('');
   const [reportedIds,  setReportedIds] = useState(new Set());
   const [shareCopied,  setShareCopied] = useState(false);
 
@@ -231,6 +236,72 @@ export default function VenuePage() {
       .eq('venue_id', venue.id)
       .then(({ count }) => setCheckinCount(count || 0));
   }, [venue?.id]);
+
+  // Vote tallies + my own vote — venue_votes has a public SELECT policy, so
+  // one query gets both (no need to separately ask "what did I vote").
+  useEffect(() => {
+    if (!venue?.id) return;
+    supabase.from('venue_votes').select('user_id, vote').eq('venue_id', venue.id)
+      .then(({ data }) => {
+        const rows = data || [];
+        setVoteCounts({
+          up: rows.filter(r => r.vote === 1).length,
+          down: rows.filter(r => r.vote === -1).length,
+        });
+        const mine = session?.user ? rows.find(r => r.user_id === session.user.id) : null;
+        setMyVote(mine ? mine.vote : null);
+      });
+  }, [venue?.id, session]);
+
+  // Voting is gated on having checked in — checkins restricts SELECT to the
+  // acting user's own rows, which is exactly what's needed here (asking
+  // "have I checked in", not "who has").
+  useEffect(() => {
+    if (!session?.user || !venue?.id) { setHasCheckedIn(false); return; }
+    supabase.from('checkins').select('id').eq('user_id', session.user.id).eq('venue_id', venue.id).limit(1)
+      .then(({ data }) => setHasCheckedIn(!!data?.length));
+  }, [session, venue?.id]);
+
+  const castVote = async (voteValue) => {
+    if (!session) { requireLogin(); return; }
+    setVoting(true);
+    setVoteError('');
+    try {
+      const res = await fetch('/api/venues/vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ venue_id: venue.id, vote: voteValue }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setVoteError(data.error || 'Vote failed');
+        setTimeout(() => setVoteError(''), 4000);
+        return;
+      }
+
+      const previousVote = myVote;
+      setMyVote(voteValue);
+      setVoteCounts(prev => {
+        const next = { ...prev };
+        if (previousVote === null) {
+          if (voteValue === 1) next.up++; else next.down++;
+        } else if (previousVote !== voteValue) {
+          if (voteValue === 1) { next.up++; next.down--; } else { next.down++; next.up--; }
+        }
+        return next;
+      });
+      setVenue(v => (v ? { ...v, vote_score: data.vote_score } : v));
+
+      if (data.pointsAwarded > 0) {
+        setPointsToast(`+${data.pointsAwarded} WadUp Points 🔥`);
+        setTimeout(() => setPointsToast(null), 3000);
+      }
+    } catch (e) {
+      setVoteError('Vote failed — try again');
+      setTimeout(() => setVoteError(''), 4000);
+    }
+    setVoting(false);
+  };
 
   const applyLikeDelta = (reviewId, delta, liked) => {
     setMyLikes(prev => {
@@ -436,6 +507,35 @@ export default function VenuePage() {
         </div>
 
         <div className="venue-body">
+          <section className="venue-section venue-vote-section">
+            <h2>Rate this place</h2>
+            {!session ? (
+              <div className="venue-vote-locked">🔒 Log in and check in first to vote</div>
+            ) : !hasCheckedIn ? (
+              <div className="venue-vote-locked">🔒 Check in first to vote</div>
+            ) : (
+              <div className="venue-vote-buttons">
+                <button
+                  className={`venue-vote-btn venue-vote-up${myVote === 1 ? ' active' : ''}`}
+                  onClick={() => castVote(1)}
+                  disabled={voting}
+                >
+                  👍 Upvote
+                </button>
+                <button
+                  className={`venue-vote-btn venue-vote-down${myVote === -1 ? ' active' : ''}`}
+                  onClick={() => castVote(-1)}
+                  disabled={voting}
+                >
+                  👎 Downvote
+                </button>
+              </div>
+            )}
+            <div className="venue-vote-counts">{voteCounts.up} 👍 · {voteCounts.down} 👎</div>
+            <div className="venue-vote-score">⭐ Score: {(venue.vote_score || 0).toLocaleString()} points</div>
+            {voteError && <div className="venue-checkin-error">{voteError}</div>}
+          </section>
+
           <section className="venue-section">
             <h2>About</h2>
             {venue.description && <p className="venue-description">{venue.description}</p>}
