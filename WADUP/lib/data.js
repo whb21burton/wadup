@@ -118,7 +118,7 @@ export function getVenueBadges(v, isTrending, isBestRated, hasEventToday) {
   if (v.has_specials_today)   badges.push({ id: 'specials',   icon: '🏷️', label: 'Specials' });
   if (hasEventToday)          badges.push({ id: 'event_today',icon: '🎫', label: 'Event Today' });
   if (isVenueOpenNow(v.hours))badges.push({ id: 'open_now',   icon: '🟢', label: 'Open Now' });
-  if (isVenueNew(v))          badges.push({ id: 'new',        icon: '🆕', label: 'New' });
+  if (!v.hide_new_badge && isVenueNew(v)) badges.push({ id: 'new', icon: '🆕', label: 'New' });
   if (isTrending)             badges.push({ id: 'trending',   icon: '🔥', label: 'Trending' });
   if (isBestRated)            badges.push({ id: 'best_rated', icon: '⭐', label: 'Best Rated' });
   return badges;

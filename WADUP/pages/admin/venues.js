@@ -51,7 +51,12 @@ async function authedFetch(url, session, body) {
   return data;
 }
 
-function EditVenueModal({ venue, session, onClose, onSaved }) {
+// Shared by the Live-venue "Edit" flow and the Pending-queue "Edit & Approve"
+// flow — `venue` can be either a live venues row or a venues_pending row
+// (they share name/categories/subcategory/custom_emoji; a pending row simply
+// has no is_hidden/is_verified/is_private/hide_new_badge yet, so those default
+// off). The caller decides what saving actually means via `onSave`.
+function EditVenueModal({ venue, onClose, onSaved, onSave, title = 'Edit Venue' }) {
   const [name, setName] = useState(venue.name || '');
   const [categories, setCategories] = useState(venueCategories(venue));
   const [subcategory, setSubcategory] = useState(venue.subcategory || '');
@@ -60,6 +65,7 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
   const [visible, setVisible] = useState(!venue.is_hidden);
   const [verified, setVerified] = useState(!!venue.is_verified);
   const [isPrivate, setIsPrivate] = useState(!!venue.is_private);
+  const [hideNewBadge, setHideNewBadge] = useState(!!venue.hide_new_badge);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -67,15 +73,13 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
     setSaving(true);
     setError('');
     try {
-      await authedFetch('/api/admin/update-venue', session, {
-        venueId: venue.id,
-        updates: {
-          name, categories, subcategory: subcategory || null,
-          custom_emoji: emoji || null,
-          is_hidden: !visible,
-          is_verified: verified,
-          is_private: isPrivate,
-        },
+      await onSave({
+        name, categories, subcategory: subcategory || null,
+        custom_emoji: emoji || null,
+        is_hidden: !visible,
+        is_verified: verified,
+        is_private: isPrivate,
+        hide_new_badge: hideNewBadge,
       });
       onSaved();
     } catch (e) {
@@ -88,7 +92,7 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
     <div className="admin-modal-backdrop" onClick={onClose}>
       <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
         <div className="admin-modal-header">
-          <span>Edit Venue</span>
+          <span>{title}</span>
           <button className="admin-modal-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="admin-modal-body">
@@ -151,6 +155,10 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
             <label className="admin-toggle">
               <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} />
               Private Venue 🔒
+            </label>
+            <label className="admin-toggle">
+              <input type="checkbox" checked={hideNewBadge} onChange={(e) => setHideNewBadge(e.target.checked)} />
+              Hide New Badge
             </label>
           </div>
 
@@ -336,6 +344,30 @@ function AddVenueModal({ session, defaultCity, defaultState, onClose, onAdded })
   );
 }
 
+function PendingVenuesView({ pending, onApprove, onEditApprove, onReject }) {
+  if (!pending.length) return <div className="admin-sync-desc">No pending venues to review.</div>;
+  return (
+    <div className="admin-venue-table">
+      {pending.map(v => (
+        <div key={v.id} className="admin-venue-table-row admin-pending-row">
+          <span className="admin-venue-table-icon">{CATEGORY_ICON[venueCategories(v)[0]] || '📍'}</span>
+          <span className="admin-venue-table-name">{v.name}</span>
+          <span className="admin-venue-table-category">
+            {venueCategories(v).map(c => CATEGORY_TEXT[c] || c).join(', ') || '—'}
+          </span>
+          <span className="admin-pending-rating">{v.google_rating != null ? `⭐ ${v.google_rating.toFixed(1)}` : '—'}</span>
+          <span className="admin-pending-address">{v.address || '—'}</span>
+          <div className="admin-venue-table-actions">
+            <button onClick={() => onApprove(v)}>✅ Approve</button>
+            <button onClick={() => onEditApprove(v)}>✏️ Edit & Approve</button>
+            <button className="admin-danger-btn" onClick={() => onReject(v)}>❌ Reject</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const SORT_OPTIONS = [
   { id: 'az',       label: 'A-Z' },
   { id: 'za',       label: 'Z-A' },
@@ -427,14 +459,21 @@ export default function AdminVenues() {
   const [adminRole, setAdminRole] = useState(null);
   const [session, setSession] = useState(null);
 
+  const [viewTab, setViewTab] = useState('live'); // 'live' | 'pending'
+
   const [allVenues, setAllVenues] = useState([]);
   const [loadingVenues, setLoadingVenues] = useState(true);
+  const [cityOptions, setCityOptions] = useState([]); // [{city, state}] — scoped to this admin's access
   const [selectedState, setSelectedState] = useState('');
   const [selectedCity, setSelectedCity] = useState('');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortMode, setSortMode] = useState('az');
   const [rankingsTab, setRankingsTab] = useState(EDITABLE_CATEGORIES[0].id);
+
+  const [pendingVenues, setPendingVenues] = useState([]);
+  const [loadingPending, setLoadingPending] = useState(true);
+  const [pendingEditTarget, setPendingEditTarget] = useState(null);
 
   const [editingVenue, setEditingVenue] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -452,37 +491,80 @@ export default function AdminVenues() {
 
   useEffect(() => { bootstrap(); }, [bootstrap]);
 
-  const loadVenues = useCallback(async () => {
+  // Which (city, state) pairs this admin is even allowed to pick — a
+  // super_admin sees every city that has venues; an ambassador only sees
+  // their assigned_cities. This is the one place city/state access is
+  // actually gated; the main venue query below trusts selectedCity/
+  // selectedState completely once they can only hold an allowed value.
+  const loadCityOptions = useCallback(async () => {
     if (!adminRole) return;
-    setLoadingVenues(true);
-    let query = supabase.from('venues').select('*').order('name', { ascending: true });
+    let query = supabase.from('venues').select('city, state');
     if (!isSuperAdmin(adminRole)) {
-      if (!adminRole.cities?.length) { setAllVenues([]); setLoadingVenues(false); return; }
+      if (!adminRole.cities?.length) { setCityOptions([]); return; }
       query = query.in('city', adminRole.cities);
     }
     const { data } = await query;
-    setAllVenues(data || []);
-    setLoadingVenues(false);
+    const seen = new Set();
+    const unique = [];
+    (data || []).forEach(({ city, state }) => {
+      if (!city || !state || seen.has(`${city}|${state}`)) return;
+      seen.add(`${city}|${state}`);
+      unique.push({ city, state });
+    });
+    setCityOptions(unique);
   }, [adminRole]);
 
-  useEffect(() => { loadVenues(); }, [loadVenues]);
+  useEffect(() => { loadCityOptions(); }, [loadCityOptions]);
 
-  const states = useMemo(() => [...new Set(allVenues.map(v => v.state).filter(Boolean))].sort(), [allVenues]);
+  const states = useMemo(() => [...new Set(cityOptions.map(o => o.state))].sort(), [cityOptions]);
   useEffect(() => { if (!selectedState && states.length) setSelectedState(states[0]); }, [states, selectedState]);
 
   const citiesForState = useMemo(
-    () => [...new Set(allVenues.filter(v => v.state === selectedState).map(v => v.city).filter(Boolean))].sort(),
-    [allVenues, selectedState]
+    () => [...new Set(cityOptions.filter(o => o.state === selectedState).map(o => o.city))].sort(),
+    [cityOptions, selectedState]
   );
   useEffect(() => { if (citiesForState.length && !citiesForState.includes(selectedCity)) setSelectedCity(citiesForState[0]); }, [citiesForState, selectedCity]);
 
+  // Every venue in the selected city/state, full stop — no is_hidden filter,
+  // no other exclusion. Hidden venues are shown (greyed out) rather than
+  // silently dropped, so nothing an admin needs to manage can go missing here.
+  const loadVenues = useCallback(async () => {
+    if (!adminRole || !selectedCity || !selectedState) { setAllVenues([]); return; }
+    setLoadingVenues(true);
+    const { data } = await supabase
+      .from('venues')
+      .select('*')
+      .eq('city', selectedCity)
+      .eq('state', selectedState)
+      .order('name', { ascending: true });
+    setAllVenues(data || []);
+    setLoadingVenues(false);
+  }, [adminRole, selectedCity, selectedState]);
+
+  useEffect(() => { loadVenues(); }, [loadVenues]);
+
+  const loadPending = useCallback(async () => {
+    if (!session) return;
+    setLoadingPending(true);
+    try {
+      const data = await authedFetch('/api/admin/pending-venues', session, {});
+      setPendingVenues(data.pending || []);
+    } catch (e) {
+      setActionError(e.message);
+    }
+    setLoadingPending(false);
+  }, [session]);
+
+  useEffect(() => { loadPending(); }, [loadPending]);
+
+  // Only search + category narrow the list further — city/state are already
+  // applied server-side above.
   const scopedVenues = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allVenues
-      .filter(v => v.state === selectedState && v.city === selectedCity)
       .filter(v => categoryFilter === 'all' || venueCategories(v).includes(categoryFilter))
       .filter(v => !q || v.name.toLowerCase().includes(q));
-  }, [allVenues, selectedState, selectedCity, categoryFilter, search]);
+  }, [allVenues, categoryFilter, search]);
 
   const visibleVenues = useMemo(() => {
     const list = [...scopedVenues];
@@ -493,11 +575,9 @@ export default function AdminVenues() {
   }, [scopedVenues, sortMode]);
 
   const rankingsVenues = useMemo(() => {
-    const list = allVenues.filter(v =>
-      v.state === selectedState && v.city === selectedCity && venueCategories(v).includes(rankingsTab)
-    );
+    const list = allVenues.filter(v => venueCategories(v).includes(rankingsTab));
     return sortByRankOverrideThenVotes(list, rankingsTab);
-  }, [allVenues, selectedState, selectedCity, rankingsTab]);
+  }, [allVenues, rankingsTab]);
 
   const toggleHidden = async (venue) => {
     setActionError('');
@@ -522,6 +602,28 @@ export default function AdminVenues() {
     }
   };
 
+  const approvePending = async (pendingVenue) => {
+    setActionError('');
+    try {
+      await authedFetch('/api/admin/approve-venue', session, { pendingId: pendingVenue.id });
+      loadPending();
+      loadVenues();
+      loadCityOptions();
+    } catch (e) {
+      setActionError(e.message);
+    }
+  };
+
+  const rejectPending = async (pendingVenue) => {
+    setActionError('');
+    try {
+      await authedFetch('/api/admin/reject-venue', session, { pendingId: pendingVenue.id });
+      loadPending();
+    } catch (e) {
+      setActionError(e.message);
+    }
+  };
+
   if (checking) return <div className="venue-page-status admin-loading"><div className="cover-spin" /></div>;
 
   return (
@@ -535,6 +637,30 @@ export default function AdminVenues() {
         <main className="admin-main">
           <h1 className="admin-page-title">Venue Manager</h1>
 
+          <div className="admin-view-tabs">
+            <button className={`admin-view-tab${viewTab === 'live' ? ' active' : ''}`} onClick={() => setViewTab('live')}>
+              Live Venues
+            </button>
+            <button className={`admin-view-tab${viewTab === 'pending' ? ' active' : ''}`} onClick={() => setViewTab('pending')}>
+              Pending Approval ({pendingVenues.length})
+            </button>
+          </div>
+
+          {actionError && <div className="admin-modal-error">⚠️ {actionError}</div>}
+
+          {viewTab === 'pending' ? (
+            loadingPending ? (
+              <div className="admin-sync-desc">Loading pending venues…</div>
+            ) : (
+              <PendingVenuesView
+                pending={pendingVenues}
+                onApprove={approvePending}
+                onEditApprove={setPendingEditTarget}
+                onReject={rejectPending}
+              />
+            )
+          ) : (
+          <>
           <div className="admin-filter-row">
             <select value={selectedState} onChange={(e) => { setSelectedState(e.target.value); setSelectedCity(''); }}>
               {states.length === 0 && <option value="">No states</option>}
@@ -570,8 +696,6 @@ export default function AdminVenues() {
             ))}
           </div>
 
-          {actionError && <div className="admin-modal-error">⚠️ {actionError}</div>}
-
           {sortMode === 'rankings' ? (
             <>
               <div className="admin-rankings-tabs">
@@ -603,7 +727,7 @@ export default function AdminVenues() {
           ) : (
             <div className="admin-venue-table">
               {visibleVenues.map(v => (
-                <div key={v.id} className="admin-venue-table-row">
+                <div key={v.id} className={`admin-venue-table-row${v.is_hidden ? ' admin-row-hidden' : ''}`}>
                   <span className="admin-venue-table-icon">{venueIcon(v)}</span>
                   <span className="admin-venue-table-name">{v.name}</span>
                   <span className="admin-venue-table-category">
@@ -623,15 +747,26 @@ export default function AdminVenues() {
               ))}
             </div>
           )}
+          </>
+          )}
         </main>
       </div>
 
       {editingVenue && (
         <EditVenueModal
           venue={editingVenue}
-          session={session}
           onClose={() => setEditingVenue(null)}
+          onSave={(fields) => authedFetch('/api/admin/update-venue', session, { venueId: editingVenue.id, updates: fields })}
           onSaved={() => { setEditingVenue(null); loadVenues(); }}
+        />
+      )}
+      {pendingEditTarget && (
+        <EditVenueModal
+          venue={pendingEditTarget}
+          title="Edit & Approve"
+          onClose={() => setPendingEditTarget(null)}
+          onSave={(fields) => authedFetch('/api/admin/approve-venue', session, { pendingId: pendingEditTarget.id, overrides: fields })}
+          onSaved={() => { setPendingEditTarget(null); loadPending(); loadVenues(); loadCityOptions(); }}
         />
       )}
       {addOpen && (

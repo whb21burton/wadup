@@ -460,6 +460,79 @@ html, body {
   cursor: pointer;
 }
 
+/* ── Admin map controls ── */
+.map-frame.map-edit-mode {
+  outline: 4px solid var(--yellow);
+  outline-offset: -4px;
+}
+.map-admin-toolbar {
+  position: absolute;
+  top: 62px;
+  right: 14px;
+  z-index: 20;
+}
+.map-admin-edit-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,252,0,0.4);
+  background: rgba(13,15,20,0.85);
+  color: var(--yellow);
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+}
+.map-admin-edit-btn.active {
+  background: var(--yellow);
+  color: var(--black);
+}
+.map-context-menu {
+  position: fixed;
+  z-index: 1000000;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  background: #12151c;
+  border: 1px solid rgba(0,229,255,0.25);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+  overflow: hidden;
+  padding: 4px;
+}
+.map-context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #eafcff;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.map-context-menu button:hover { background: rgba(255,255,255,0.08); }
+.map-context-menu button.map-context-danger { color: #ff8a5c; }
+.map-action-toast {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000000;
+  background: rgba(255,69,0,0.92);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+}
+
 /* ── MOBILE SEARCH TRIGGER ── */
 .search-trigger {
   position: absolute;
@@ -2890,6 +2963,26 @@ html, body {
   color: var(--cyan);
 }
 
+/* ── Live / Pending view tabs ── */
+.admin-view-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.admin-view-tab {
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,229,255,0.2);
+  background: rgba(255,255,255,0.04);
+  color: #9fc3cc;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.admin-view-tab.active { background: var(--cyan); color: var(--black); border-color: var(--cyan); }
+
 /* ── Venue table ── */
 .admin-venue-table { display: flex; flex-direction: column; gap: 4px; }
 .admin-venue-table-row {
@@ -2901,6 +2994,10 @@ html, body {
   transition: background 0.12s;
 }
 .admin-venue-table-row:hover { background: rgba(255,255,255,0.05); }
+.admin-venue-table-row.admin-row-hidden { opacity: 0.45; }
+.admin-venue-table-row.admin-row-hidden:hover { opacity: 0.7; }
+.admin-pending-rating { width: 60px; flex-shrink: 0; color: #ffd700; font-size: 0.82rem; font-weight: 700; }
+.admin-pending-address { width: 220px; flex-shrink: 0; color: #9fc3cc; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-venue-table-icon { font-size: 1.2rem; width: 26px; text-align: center; flex-shrink: 0; }
 .admin-venue-table-name { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-venue-table-category { width: 110px; flex-shrink: 0; color: #9fc3cc; font-size: 0.85rem; }

@@ -1,6 +1,11 @@
 // pages/api/places/sync.js — pulls real Chattanooga venues from Google
-// Places API (New) and upserts them into Supabase's `venues` table, keyed
-// on google_place_id so re-running this never creates duplicates.
+// Places API (New). NEVER writes a new venue straight to the live `venues`
+// table: a place Google returns that isn't already an approved venue lands
+// in `venues_pending` for an admin to approve/reject (see
+// pages/admin/venues.js's Pending Approval tab, and approve-venue.js/
+// reject-venue.js). Already-approved venues just get their Google-sourced
+// fields refreshed. Keyed on google_place_id throughout, so re-running this
+// never creates duplicates in either table.
 import { supabaseAdmin } from '../supabase-admin';
 
 const CHATTANOOGA_CENTER = { lat: 35.0456, lng: -85.3096 };
@@ -154,51 +159,54 @@ export default async function handler(req, res) {
 
   const allRows = [...byPlaceId.values()];
   if (!allRows.length) {
-    return res.status(200).json({ success: true, added: 0, updated: 0, totalFetched: 0, byCategory, skippedChains, skippedDeleted: 0, errors });
+    return res.status(200).json({ success: true, added_to_queue: 0, already_live: 0, skipped: 0, totalFetched: 0, byCategory, skippedChains, errors });
   }
 
-  // A venue an admin has deleted must never come back through a re-sync —
-  // deleted_venues (populated by /api/admin/delete-venue) is a permanent
-  // blocklist by google_place_id, independent of the name-substring
-  // CHAIN_BLOCKLIST above.
-  const { data: deletedRows, error: deletedError } = await supabaseAdmin
-    .from('deleted_venues')
-    .select('google_place_id')
-    .in('google_place_id', allRows.map(r => r.google_place_id));
-  if (deletedError) {
-    return res.status(500).json({ error: 'Failed to read deleted_venues blocklist', detail: deletedError.message });
-  }
+  // Three exclusion lists, checked before anything touches `venues` or
+  // `venues_pending`:
+  //   - deleted_venues: an admin permanently deleted this place (delete-venue.js)
+  //   - venues (already exists): already approved and live — never re-queued,
+  //     only refreshed
+  //   - venues_pending with status 'rejected': an admin already reviewed and
+  //     rejected it, so it must not silently reappear in the queue
+  const placeIds = allRows.map(r => r.google_place_id);
+  const [
+    { data: deletedRows, error: deletedError },
+    { data: liveRowsRaw, error: liveError },
+    { data: pendingRowsRaw, error: pendingError },
+  ] = await Promise.all([
+    supabaseAdmin.from('deleted_venues').select('google_place_id').in('google_place_id', placeIds),
+    supabaseAdmin.from('venues').select('google_place_id, custom_cover_photo, name').in('google_place_id', placeIds),
+    supabaseAdmin.from('venues_pending').select('google_place_id, status').in('google_place_id', placeIds),
+  ]);
+  if (deletedError) return res.status(500).json({ error: 'Failed to read deleted_venues blocklist', detail: deletedError.message });
+  if (liveError) return res.status(500).json({ error: 'Failed to read existing venues', detail: liveError.message });
+  if (pendingError) return res.status(500).json({ error: 'Failed to read venues_pending', detail: pendingError.message });
+
   const deletedIds = new Set((deletedRows || []).map(r => r.google_place_id));
-  const skippedDeleted = allRows.filter(r => deletedIds.has(r.google_place_id)).length;
-  const rows = allRows.filter(r => !deletedIds.has(r.google_place_id));
-  if (!rows.length) {
-    return res.status(200).json({ success: true, added: 0, updated: 0, totalFetched: allRows.length, byCategory, skippedChains, skippedDeleted, errors });
+  const liveByPlaceId = new Map((liveRowsRaw || []).map(r => [r.google_place_id, r]));
+  const rejectedIds = new Set((pendingRowsRaw || []).filter(r => r.status === 'rejected').map(r => r.google_place_id));
+  const alreadyPendingIds = new Set((pendingRowsRaw || []).filter(r => r.status !== 'rejected').map(r => r.google_place_id));
+
+  let skipped = 0;
+  const liveUpdateCandidates = [];
+  const pendingCandidates = [];
+  for (const row of allRows) {
+    const id = row.google_place_id;
+    if (deletedIds.has(id) || rejectedIds.has(id)) { skipped++; continue; }
+    if (liveByPlaceId.has(id)) { liveUpdateCandidates.push(row); continue; }
+    pendingCandidates.push(row);
   }
 
-  const { data: existing, error: existingError } = await supabaseAdmin
-    .from('venues')
-    .select('google_place_id, custom_cover_photo, name')
-    .in('google_place_id', rows.map(r => r.google_place_id));
-  if (existingError) {
-    return res.status(500).json({ error: 'Failed to read existing venues', detail: existingError.message });
-  }
-  const existingByPlaceId = new Map((existing || []).map(r => [r.google_place_id, r]));
-  const added = rows.filter(r => !existingByPlaceId.has(r.google_place_id)).length;
-  const updated = rows.length - added;
   const nowIso = new Date().toISOString();
 
-  // Brand-new venues get the full row Google gave us. Re-syncing an EXISTING
-  // venue must ONLY refresh Google-sourced fields (rating, review count,
+  // Already-live venues: sync NEVER adds a venue straight to the map — this
+  // is purely a refresh of Google-sourced fields (rating, review count,
   // hours, and — unless the admin uploaded their own — the cover photo).
   // Every admin-curated field (name, custom_emoji, categories/category,
-  // is_hidden, is_claimed, is_verified, is_private, admin_rank_override,
+  // is_hidden, is_private, is_verified, hide_new_badge, admin_rank_override,
   // vote_score, description, subcategory) is left completely untouched: it's
   // simply never included in the update payload below.
-  const newRows = rows
-    .filter(r => !existingByPlaceId.has(r.google_place_id))
-    .map(r => ({ ...r, last_google_sync: nowIso }));
-
-  const existingRows = rows.filter(r => existingByPlaceId.has(r.google_place_id));
   // Split by custom_cover_photo so each upsert batch has a consistent set of
   // columns — PostgREST fills any column omitted from a row (but present on
   // a sibling row in the same batch) with NULL, so mixing the two shapes in
@@ -208,32 +216,28 @@ export default async function handler(req, res) {
   // though these rows always hit the ON CONFLICT DO UPDATE path. Echoing back
   // each venue's own current name satisfies the constraint as a harmless
   // `name = name` no-op without ever applying Google's name to an existing venue.
-  const refreshPhotoRows = existingRows
-    .filter(r => !existingByPlaceId.get(r.google_place_id).custom_cover_photo)
+  const refreshPhotoRows = liveUpdateCandidates
+    .filter(r => !liveByPlaceId.get(r.google_place_id).custom_cover_photo)
     .map(r => ({
       google_place_id: r.google_place_id,
-      name: existingByPlaceId.get(r.google_place_id).name,
+      name: liveByPlaceId.get(r.google_place_id).name,
       google_rating: r.google_rating,
       google_review_count: r.google_review_count,
       hours: r.hours,
       cover_photo_url: r.cover_photo_url,
       last_google_sync: nowIso,
     }));
-  const keepPhotoRows = existingRows
-    .filter(r => existingByPlaceId.get(r.google_place_id).custom_cover_photo)
+  const keepPhotoRows = liveUpdateCandidates
+    .filter(r => liveByPlaceId.get(r.google_place_id).custom_cover_photo)
     .map(r => ({
       google_place_id: r.google_place_id,
-      name: existingByPlaceId.get(r.google_place_id).name,
+      name: liveByPlaceId.get(r.google_place_id).name,
       google_rating: r.google_rating,
       google_review_count: r.google_review_count,
       hours: r.hours,
       last_google_sync: nowIso,
     }));
 
-  if (newRows.length) {
-    const { error } = await supabaseAdmin.from('venues').upsert(newRows, { onConflict: 'google_place_id' });
-    if (error) return res.status(500).json({ error: 'Insert failed', detail: error.message });
-  }
   if (refreshPhotoRows.length) {
     const { error } = await supabaseAdmin.from('venues').upsert(refreshPhotoRows, { onConflict: 'google_place_id' });
     if (error) return res.status(500).json({ error: 'Update failed', detail: error.message });
@@ -243,14 +247,32 @@ export default async function handler(req, res) {
     if (error) return res.status(500).json({ error: 'Update failed', detail: error.message });
   }
 
+  // Everything else — a place never seen before, or one still sitting in the
+  // pending queue from an earlier sync — is (re-)upserted into
+  // venues_pending for an admin to review via the Pending Approval tab. This
+  // is the ONLY path that can introduce a new venue from Google; sync never
+  // writes a brand-new row directly into the live `venues` table anymore.
+  // `is_claimed`/`custom_cover_photo` aren't columns on venues_pending at
+  // all, so they're stripped before the upsert.
+  const pendingRowsToUpsert = pendingCandidates.map(({ is_claimed, custom_cover_photo, ...pendingFields }) => ({
+    ...pendingFields,
+    status: 'pending',
+  }));
+  const addedToQueue = pendingCandidates.filter(r => !alreadyPendingIds.has(r.google_place_id)).length;
+
+  if (pendingRowsToUpsert.length) {
+    const { error } = await supabaseAdmin.from('venues_pending').upsert(pendingRowsToUpsert, { onConflict: 'google_place_id' });
+    if (error) return res.status(500).json({ error: 'Pending queue upsert failed', detail: error.message });
+  }
+
   return res.status(200).json({
     success: true,
-    added,
-    updated,
+    added_to_queue: addedToQueue,
+    already_live: liveUpdateCandidates.length,
+    skipped,
     totalFetched: allRows.length,
     byCategory,
     skippedChains,
-    skippedDeleted,
     errors,
   });
 }
