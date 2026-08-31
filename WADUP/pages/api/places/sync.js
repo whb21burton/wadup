@@ -30,7 +30,7 @@ const CHAIN_BLOCKLIST = [
   'cracker barrel', 'buffalo wild wings', 'applebee', 'chili', 'olive garden',
   'red lobster', 'ihop', 'denny', 'waffle house', 'starbucks', 'dunkin',
   'walmart', 'target', 'costco', 'whole foods', 'publix', 'kroger', 'aldi',
-  'cvs', 'walgreen', 'dollar', 'chuck e cheese', 'dave and buster',
+  'cvs', 'walgreen', 'dollar', 'chuck e cheese',
   'holiday inn', 'marriott', 'hilton', 'hyatt', 'hampton inn', 'best western',
   'comfort inn', 'days inn', 'super 8', 'motel 6', 'brothers bagel',
   'panera', 'chipotle', 'panda express', 'five guys', 'shake shack',
