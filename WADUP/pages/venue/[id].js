@@ -450,6 +450,7 @@ export default function VenuePage() {
           <div className="venue-header-content">
             <h1 className="venue-name">{venue.name}</h1>
             {venue.is_verified && <div className="venue-verified">✓ Verified Business</div>}
+            {venue.is_private && <div className="venue-private-badge">🔒 Private Venue</div>}
             {rankings.localFavorite && <div className="venue-local-favorite-badge">🏆 Local Favorite</div>}
 
             <div className="venue-rating-line">

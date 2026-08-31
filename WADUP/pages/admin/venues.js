@@ -59,6 +59,7 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [visible, setVisible] = useState(!venue.is_hidden);
   const [verified, setVerified] = useState(!!venue.is_verified);
+  const [isPrivate, setIsPrivate] = useState(!!venue.is_private);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -73,6 +74,7 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
           custom_emoji: emoji || null,
           is_hidden: !visible,
           is_verified: verified,
+          is_private: isPrivate,
         },
       });
       onSaved();
@@ -145,6 +147,10 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
             <label className="admin-toggle">
               <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />
               Verified
+            </label>
+            <label className="admin-toggle">
+              <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} />
+              Private Venue 🔒
             </label>
           </div>
 

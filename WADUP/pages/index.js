@@ -522,6 +522,7 @@ export default function WadUp() {
 
     const el = document.createElement('div');
     el.className = `wu-pin ${zoomClass}${specialIcon ? ' wu-pin-emoji' : ''}`;
+    if (v.is_private) el.style.opacity = '0.5';
 
     if (specialIcon) {
       const iconSpan = document.createElement('span');

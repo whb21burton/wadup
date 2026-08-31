@@ -7,7 +7,7 @@ import { canAccessCity } from '../../../lib/admin';
 // actually exposes.
 const EDITABLE_FIELDS = [
   'name', 'categories', 'subcategory', 'custom_emoji',
-  'is_hidden', 'is_verified', 'address', 'lat', 'lng', 'phone', 'website', 'description',
+  'is_hidden', 'is_verified', 'is_private', 'address', 'lat', 'lng', 'phone', 'website', 'description',
   'admin_rank_override', // manual drag-and-drop ranking (pages/admin/venues.js) — never vote_score itself, which is trigger-computed
 ];
 

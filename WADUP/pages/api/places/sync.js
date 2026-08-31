@@ -167,9 +167,9 @@ export default async function handler(req, res) {
   // venue must ONLY refresh Google-sourced fields (rating, review count,
   // hours, and — unless the admin uploaded their own — the cover photo).
   // Every admin-curated field (name, custom_emoji, categories/category,
-  // is_hidden, is_claimed, is_verified, admin_rank_override, vote_score,
-  // description, subcategory) is left completely untouched: it's simply
-  // never included in the update payload below.
+  // is_hidden, is_claimed, is_verified, is_private, admin_rank_override,
+  // vote_score, description, subcategory) is left completely untouched: it's
+  // simply never included in the update payload below.
   const newRows = rows
     .filter(r => !existingByPlaceId.has(r.google_place_id))
     .map(r => ({ ...r, last_google_sync: nowIso }));

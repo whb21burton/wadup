@@ -1491,6 +1491,15 @@ html, body {
   font-weight: 800;
   color: #ffd700;
 }
+.venue-private-badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #c9a7ff;
+}
 .venue-location, .venue-category-line {
   margin-top: 4px;
   font-family: 'Rajdhani', sans-serif;
