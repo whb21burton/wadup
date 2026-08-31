@@ -91,7 +91,7 @@ export async function getBestRated(city, limit = 20, category = null) {
     .order('average_rating', { ascending: false })
     .order('total_ratings', { ascending: false })
     .limit(limit);
-  if (category) query = query.eq('category', category);
+  if (category) query = query.overlaps('categories', [category]);
 
   const { data, error } = await query;
   return error ? [] : (data || []);
@@ -131,15 +131,15 @@ export async function getMostPopular(city, limit = 20) {
 export async function getLocalFavorites(city, limit = 10) {
   if (!city) return [];
 
-  const { data: categories, error } = await supabase
+  const { data: categoryRows, error } = await supabase
     .from('venues')
-    .select('category')
+    .select('categories')
     .eq('city', city)
     .eq('is_hidden', false)
     .gte('total_ratings', 3);
-  if (error || !categories?.length) return [];
+  if (error || !categoryRows?.length) return [];
 
-  const distinctCats = [...new Set(categories.map(c => c.category).filter(Boolean))];
+  const distinctCats = [...new Set(categoryRows.flatMap(r => r.categories || []).filter(Boolean))];
   if (!distinctCats.length) return [];
 
   const perCategory = Math.max(1, Math.ceil(limit / distinctCats.length));
@@ -150,14 +150,22 @@ export async function getLocalFavorites(city, limit = 10) {
         .select(VENUE_CARD_FIELDS)
         .eq('city', city)
         .eq('is_hidden', false)
-        .eq('category', cat)
+        .overlaps('categories', [cat])
         .gte('total_ratings', 3)
         .order('average_rating', { ascending: false })
         .limit(perCategory)
     )
   );
 
-  const combined = results.flatMap(r => r.data || []);
+  // A multi-category venue can win a "best in category" slot for more than
+  // one of its categories — dedupe by id before capping to `limit`, or it
+  // could occupy multiple of the final spots under the same identity.
+  const seen = new Set();
+  const combined = results.flatMap(r => r.data || []).filter(v => {
+    if (seen.has(v.id)) return false;
+    seen.add(v.id);
+    return true;
+  });
   return combined
     .sort((a, b) => b.average_rating - a.average_rating)
     .slice(0, limit);
@@ -201,7 +209,7 @@ export async function getRankedVenues(supabase, category, city, limit = 50) {
     .eq('city', city)
     .eq('is_hidden', false)
     .order('vote_score', { ascending: false });
-  if (category && category !== 'all') query = query.eq('category', category);
+  if (category && category !== 'all') query = query.overlaps('categories', [category]);
 
   const { data, error } = await query;
   if (error || !data) return [];
@@ -259,7 +267,7 @@ export async function getScheduleTrendingVenues(supabase, category, city) {
       const startMins = timeToMins(s.start_time);
       return nowMins >= startMins - window && nowMins < startMins + 30;
     })
-    .filter(s => s.venues && !s.venues.is_hidden && (!city || s.venues.city === city) && (category === 'all' || s.venues.category === category))
+    .filter(s => s.venues && !s.venues.is_hidden && (!city || s.venues.city === city) && (category === 'all' || (s.venues.categories || []).includes(category)))
     .map(s => ({ ...s.venues, _scheduleEntry: s }));
 }
 

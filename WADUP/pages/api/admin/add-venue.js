@@ -8,7 +8,7 @@ import { canAccessCity } from '../../../lib/admin';
 
 const ALLOWED_FIELDS = [
   'name', 'address', 'city', 'state', 'lat', 'lng', 'phone', 'website',
-  'category', 'subcategory', 'custom_emoji',
+  'categories', 'subcategory', 'custom_emoji',
   'google_place_id', 'google_rating', 'google_review_count', 'cover_photo_url', 'hours', 'source',
 ];
 
@@ -22,8 +22,8 @@ export default async function handler(req, res) {
   if (!auth) return res.status(403).json({ error: 'Not authorized' });
 
   const { venue } = req.body || {};
-  if (!venue?.name || !venue?.city || !venue?.category) {
-    return res.status(400).json({ error: 'name, city, and category are required' });
+  if (!venue?.name || !venue?.city || !venue?.categories?.length) {
+    return res.status(400).json({ error: 'name, city, and at least one category are required' });
   }
   if (!canAccessCity(auth.adminRole, venue.city)) {
     return res.status(403).json({ error: 'Not authorized for this city' });
@@ -36,6 +36,8 @@ export default async function handler(req, res) {
   row.source = row.source || 'manual';
   row.is_hidden = false;
   row.is_claimed = false;
+  // venues.category (singular) fallback — see update-venue.js for why.
+  row.category = row.categories[0] || null;
 
   const query = row.google_place_id
     ? supabaseAdmin.from('venues').upsert(row, { onConflict: 'google_place_id' })

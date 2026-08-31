@@ -6,7 +6,7 @@ import { canAccessCity } from '../../../lib/admin';
 // google_place_id, owner_id) through this route — only what the Edit modal
 // actually exposes.
 const EDITABLE_FIELDS = [
-  'name', 'category', 'subcategory', 'custom_emoji',
+  'name', 'categories', 'subcategory', 'custom_emoji',
   'is_hidden', 'is_verified', 'address', 'lat', 'lng', 'phone', 'website', 'description',
   'admin_rank_override', // manual drag-and-drop ranking (pages/admin/venues.js) — never vote_score itself, which is trigger-computed
 ];
@@ -38,6 +38,14 @@ export default async function handler(req, res) {
   }
   if (!Object.keys(safeUpdates).length) {
     return res.status(400).json({ error: 'No editable fields in updates' });
+  }
+
+  // venues.category (singular) is kept as a fallback for any page not yet
+  // updated to read the categories array — sync it to the array's first
+  // entry ("primary" category) whenever categories changes, rather than
+  // letting it silently go stale the moment a venue is edited.
+  if (Array.isArray(safeUpdates.categories)) {
+    safeUpdates.category = safeUpdates.categories[0] || null;
   }
 
   const { error } = await supabaseAdmin.from('venues').update(safeUpdates).eq('id', venueId);

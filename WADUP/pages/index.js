@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   CATEGORY_CHIPS, CATEGORY_LABELS,
   isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
+  venueMatchesChip, venueCategories,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
 import { getTrendingVenues, getBestRated, getScheduleTrendingVenues, getRankedVenues } from '../lib/rankings';
@@ -24,12 +25,6 @@ function withTMAffiliateTracking(url) {
     const sep = url.includes('?') ? '&' : '?';
     return `${url}${sep}camefrom=${encodeURIComponent(TM_AFFILIATE_ID)}`;
   }
-}
-
-// Database venues never populate the Ticketmaster-only Events/Sports chips.
-function venueMatchesChip(v, chip) {
-  if (v.cat === 'events' || v.cat === 'sports') return false;
-  return chip === 'all' || v.cat === chip;
 }
 
 const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', restaurant: '🍔', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
@@ -83,11 +78,11 @@ function quickFilterDateSet(quickFilter, activeDate) {
 }
 
 // ── "🔥 Trending Now" / "🏆 Top 10" sidebar helpers ──
-// Results from lib/rankings.js's getScheduleTrendingVenues/getRankedVenues
-// are raw Supabase rows (`category`/`custom_emoji`), not the `.cat`-aliased
-// shape dropVenuePin's mock-compat mapping produces — keep these separate.
+// A venue's pin/card icon always reflects its *primary* (first) category —
+// see venueCategories() in lib/data.js for the categories[]-with-category
+// fallback this reads from.
 function venueEmoji(v) {
-  return v.custom_emoji || CATEGORY_ICONS[v.category] || '📍';
+  return v.custom_emoji || CATEGORY_ICONS[venueCategories(v)[0]] || '📍';
 }
 
 const EVENT_TYPE_ICON  = { live_music: '🎵', trivia: '🧠', happy_hour: '⏰', specials: '🏷️', activities: '🎳', sports_game: '🏟️', event: '🎫' };
@@ -297,8 +292,8 @@ export default function WadUp() {
     if (!map) return;
 
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[filterPins] chip =', chip, '| sample venue cats:',
-        venuesRef.current.slice(0, 5).map(v => v.cat),
+      console.log('[filterPins] chip =', chip, '| sample venue categories:',
+        venuesRef.current.slice(0, 5).map(v => venueCategories(v)),
         '| sample TM event cats:',
         tmEventsRef.current.slice(0, 5).map(ev => ev.cat));
     }
@@ -520,8 +515,9 @@ export default function WadUp() {
     // usual white pill — they read better on the map as a landmark icon than
     // as a name-bearing bubble, and there isn't a badge/rating worth cramming
     // onto them.
-    const isParkPin = v.cat === 'outdoors' && /park/i.test(v.name || '');
-    const isGolfPin = v.cat === 'activities' && (/golf/i.test(v.name || '') || /golf/i.test(v.subcategory || ''));
+    const cats = venueCategories(v);
+    const isParkPin = cats.includes('outdoors') && /park/i.test(v.name || '');
+    const isGolfPin = cats.includes('activities') && (/golf/i.test(v.name || '') || /golf/i.test(v.subcategory || ''));
     const specialIcon = isParkPin ? '🌳' : isGolfPin ? '⛳' : null;
 
     const el = document.createElement('div');
@@ -577,7 +573,7 @@ export default function WadUp() {
     const iwHtml = `
       <div class="gm-iw">
         <div class="popup-name">${escapeHtml(v.name)}</div>
-        <div class="popup-type">${escapeHtml(CATEGORY_LABELS[v.cat] || v.cat)}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
+        <div class="popup-type">${escapeHtml(cats.map(c => CATEGORY_LABELS[c] || c).join(' · '))}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
         ${ratingHtml}
         ${badgesHtml}
         <div class="popup-address">📍 ${escapeHtml(v.address)}</div>
@@ -808,7 +804,7 @@ export default function WadUp() {
     // (`cat` instead of `category`, and a `live` flag every mock row hardcoded
     // to true) — map real rows into that same shape rather than touching every
     // call site.
-    venuesRef.current = data.map(v => ({ ...v, cat: v.category, live: true }));
+    venuesRef.current = data.map(v => ({ ...v, live: true }));
 
     // Bulk-fetch today's venue_events once (rather than one query per pin) so
     // dropVenuePin can flag "🎫 Event Today" per venue via a plain Set lookup.
@@ -1015,7 +1011,7 @@ export default function WadUp() {
           v.name.toLowerCase().includes(q) ||
           (v.city || '').toLowerCase().includes(q) ||
           (v.subcategory || '').toLowerCase().includes(q) ||
-          (CATEGORY_LABELS[v.cat] || '').toLowerCase().includes(q)
+          venueCategories(v).some(c => (CATEGORY_LABELS[c] || '').toLowerCase().includes(q))
         )
       ).slice(0, 8);
       const events = tmEventsRef.current.filter(ev =>
@@ -1138,7 +1134,7 @@ export default function WadUp() {
         <div className="t-icon">{venueEmoji(v)}</div>
         <div className="t-info">
           <div className="t-name">{v.name}</div>
-          <div className="t-sub">{CATEGORY_LABELS[v.category] || v.category}</div>
+          <div className="t-sub">{CATEGORY_LABELS[venueCategories(v)[0]] || v.category}</div>
           {trendingReasonBadge(v) && <div className="t-trend-badge">{trendingReasonBadge(v)}</div>}
         </div>
       </div>
@@ -1320,7 +1316,7 @@ export default function WadUp() {
                           <span className="search-result-icon">📍</span>
                           <div className="search-result-text">
                             <div className="search-result-name">{p.name}</div>
-                            <div className="search-result-sub">{CATEGORY_LABELS[p.cat] || p.cat} · {p.city}</div>
+                            <div className="search-result-sub">{CATEGORY_LABELS[venueCategories(p)[0]] || p.category} · {p.city}</div>
                           </div>
                         </div>
                       ))}

@@ -93,7 +93,8 @@ function mapPlaceToRow(place, wadupCat) {
     lng: place.location?.longitude ?? null,
     phone: place.internationalPhoneNumber || null,
     website: place.websiteUri || null,
-    category: wadupCat,
+    categories: [wadupCat],
+    category: wadupCat, // legacy single-value fallback — see the upsert split below for why this is stripped on re-sync
     // Google's specific type (e.g. "italian_restaurant") as a free-text
     // subcategory — more specific than the broad wadupCat bucket, and
     // already fetched via the field mask below, so no extra API cost.
@@ -160,11 +161,23 @@ export default async function handler(req, res) {
   const added = rows.filter(r => !existingIds.has(r.google_place_id)).length;
   const updated = rows.length - added;
 
-  const { error: upsertError } = await supabaseAdmin
-    .from('venues')
-    .upsert(rows, { onConflict: 'google_place_id' });
-  if (upsertError) {
-    return res.status(500).json({ error: 'Upsert failed', detail: upsertError.message });
+  // Brand-new venues get their categories set from the search group they
+  // matched. Re-syncing an EXISTING venue must not touch categories/category
+  // at all — an admin may have since curated additional categories onto it
+  // via the Edit modal, and upserting `categories: [wadupCat]` again would
+  // silently clobber that back down to a single category.
+  const newRows = rows.filter(r => !existingIds.has(r.google_place_id));
+  const updateRows = rows
+    .filter(r => existingIds.has(r.google_place_id))
+    .map(({ category, categories, ...refreshFields }) => refreshFields);
+
+  if (newRows.length) {
+    const { error } = await supabaseAdmin.from('venues').upsert(newRows, { onConflict: 'google_place_id' });
+    if (error) return res.status(500).json({ error: 'Insert failed', detail: error.message });
+  }
+  if (updateRows.length) {
+    const { error } = await supabaseAdmin.from('venues').upsert(updateRows, { onConflict: 'google_place_id' });
+    if (error) return res.status(500).json({ error: 'Update failed', detail: error.message });
   }
 
   return res.status(200).json({

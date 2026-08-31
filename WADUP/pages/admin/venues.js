@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { supabase } from '../../lib/supabase';
 import { getAdminRole, isSuperAdmin } from '../../lib/admin';
-import { CATEGORY_CHIPS } from '../../lib/data';
+import { CATEGORY_CHIPS, venueCategories } from '../../lib/data';
 import AdminSidebar from '../../components/AdminSidebar';
 
 const CATEGORY_TEXT = {
@@ -13,11 +13,31 @@ const CATEGORY_TEXT = {
 const CATEGORY_ICON = {
   nightlife: '🍸', restaurant: '🍔', events: '🎵', sports: '🏟️', outdoors: '🌳', activities: '🎳',
 };
-const EMOJI_CHOICES = ['🍸','🍔','🎵','🏟️','🌳','🎳','⛳','🎬','🎤','☕','🍺','🍕','🎨','🏋️','🎯','🎱','🏊','🚴','🍩','🍦'];
+const EMOJI_OPTIONS = [
+  // Food & Drink
+  '🍔', '🍕', '🌮', '🍣', '🍜', '🥢', '🍱', '🥩', '🍗', '🥗',
+  '🍺', '🍸', '🍷', '☕', '🧃', '🥂', '🍾', '🧉',
+  // Activities
+  '🎳', '⛳', '🏌️', '🧗', '🚣', '🏊', '🎯', '🎮', '🎪', '🎠',
+  '🎭', '🎬', '🎵', '🎤', '🎸', '🎺',
+  // Sports
+  '🏈', '⚾', '🏀', '🏒', '⚽', '🎾', '🏋️', '🤼', '🏇', '🥊',
+  // Nature & Outdoors
+  '🌳', '🌲', '⛰️', '🏔️', '🌊', '🏕️', '🌿', '🌺',
+  // Places & Vibes
+  '🍽️', '🕯️', '✨', '👑', '🔥', '⭐', '💎', '🏆',
+  '🎉', '🎊', '🌙', '🌅', '🏙️', '🗺️',
+  // Specific
+  '🎰', '🎲', '🃏',
+];
 const EDITABLE_CATEGORIES = CATEGORY_CHIPS.filter(c => c.id !== 'all');
 
 function venueIcon(v) {
-  return v.custom_emoji || CATEGORY_ICON[v.category] || '📍';
+  return v.custom_emoji || CATEGORY_ICON[venueCategories(v)[0]] || '📍';
+}
+
+function toggleCategory(categories, id) {
+  return categories.includes(id) ? categories.filter(c => c !== id) : [...categories, id];
 }
 
 async function authedFetch(url, session, body) {
@@ -33,7 +53,7 @@ async function authedFetch(url, session, body) {
 
 function EditVenueModal({ venue, session, onClose, onSaved }) {
   const [name, setName] = useState(venue.name || '');
-  const [category, setCategory] = useState(venue.category || '');
+  const [categories, setCategories] = useState(venueCategories(venue));
   const [subcategory, setSubcategory] = useState(venue.subcategory || '');
   const [emoji, setEmoji] = useState(venue.custom_emoji || '');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -49,7 +69,7 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
       await authedFetch('/api/admin/update-venue', session, {
         venueId: venue.id,
         updates: {
-          name, category, subcategory: subcategory || null,
+          name, categories, subcategory: subcategory || null,
           custom_emoji: emoji || null,
           is_hidden: !visible,
           is_verified: verified,
@@ -76,13 +96,13 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
           <label>Emoji</label>
           <div className="admin-emoji-row">
             <button type="button" className="admin-emoji-current" onClick={() => setPickerOpen(v => !v)}>
-              {emoji || CATEGORY_ICON[category] || '📍'}
+              {emoji || CATEGORY_ICON[categories[0]] || '📍'}
             </button>
             <span className="admin-emoji-hint">Click to change</span>
           </div>
           {pickerOpen && (
             <div className="admin-emoji-picker">
-              {EMOJI_CHOICES.map(e => (
+              {EMOJI_OPTIONS.map(e => (
                 <button
                   key={e} type="button" className="admin-emoji-choice"
                   onClick={() => { setEmoji(e); setPickerOpen(false); }}
@@ -96,17 +116,14 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
             </div>
           )}
 
-          <label>Category</label>
+          <label>Categories</label>
           <div className="admin-checkbox-grid">
-            {/* Single-select in practice — venues.category is one text column,
-                not an array, so checking one clears the others. Rendered as
-                checkboxes to match the requested layout. */}
             {EDITABLE_CATEGORIES.map(c => (
               <label key={c.id} className="admin-checkbox-item">
                 <input
                   type="checkbox"
-                  checked={category === c.id}
-                  onChange={() => setCategory(c.id)}
+                  checked={categories.includes(c.id)}
+                  onChange={() => setCategories(prev => toggleCategory(prev, c.id))}
                 />
                 {c.label}
               </label>
@@ -133,7 +150,7 @@ function EditVenueModal({ venue, session, onClose, onSaved }) {
 
           {error && <div className="admin-modal-error">⚠️ {error}</div>}
 
-          <button className="admin-save-btn" onClick={save} disabled={saving || !name || !category}>
+          <button className="admin-save-btn" onClick={save} disabled={saving || !name || !categories.length}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -152,7 +169,7 @@ function AddVenueModal({ session, defaultCity, defaultState, onClose, onAdded })
 
   const [form, setForm] = useState({
     name: '', address: '', city: defaultCity || '', state: defaultState || '',
-    lat: '', lng: '', category: 'nightlife', subcategory: '', custom_emoji: '',
+    lat: '', lng: '', categories: ['nightlife'], subcategory: '', custom_emoji: '',
   });
   const setField = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
@@ -183,8 +200,8 @@ function AddVenueModal({ session, defaultCity, defaultState, onClose, onAdded })
   };
 
   const submit = async () => {
-    if (!form.name || !form.city || !form.category) {
-      setError('Name, city, and category are required');
+    if (!form.name || !form.city || !form.categories?.length) {
+      setError('Name, city, and at least one category are required');
       return;
     }
     setSaving(true);
@@ -278,14 +295,14 @@ function AddVenueModal({ session, defaultCity, defaultState, onClose, onAdded })
                   <input value={form.lng} onChange={(e) => setField('lng', e.target.value)} />
                 </div>
               </div>
-              <label>Category</label>
+              <label>Categories</label>
               <div className="admin-checkbox-grid">
                 {EDITABLE_CATEGORIES.map(c => (
                   <label key={c.id} className="admin-checkbox-item">
                     <input
                       type="checkbox"
-                      checked={form.category === c.id}
-                      onChange={() => setField('category', c.id)}
+                      checked={form.categories.includes(c.id)}
+                      onChange={() => setField('categories', toggleCategory(form.categories, c.id))}
                     />
                     {c.label}
                   </label>
@@ -297,7 +314,7 @@ function AddVenueModal({ session, defaultCity, defaultState, onClose, onAdded })
               <input
                 value={form.custom_emoji}
                 onChange={(e) => setField('custom_emoji', e.target.value)}
-                placeholder={CATEGORY_ICON[form.category] || '📍'}
+                placeholder={CATEGORY_ICON[form.categories[0]] || '📍'}
                 maxLength={4}
               />
 
@@ -457,7 +474,7 @@ export default function AdminVenues() {
     const q = search.trim().toLowerCase();
     return allVenues
       .filter(v => v.state === selectedState && v.city === selectedCity)
-      .filter(v => categoryFilter === 'all' || v.category === categoryFilter)
+      .filter(v => categoryFilter === 'all' || venueCategories(v).includes(categoryFilter))
       .filter(v => !q || v.name.toLowerCase().includes(q));
   }, [allVenues, selectedState, selectedCity, categoryFilter, search]);
 
@@ -471,7 +488,7 @@ export default function AdminVenues() {
 
   const rankingsVenues = useMemo(() => {
     const list = allVenues.filter(v =>
-      v.state === selectedState && v.city === selectedCity && v.category === rankingsTab
+      v.state === selectedState && v.city === selectedCity && venueCategories(v).includes(rankingsTab)
     );
     return sortByRankOverrideThenVotes(list, rankingsTab);
   }, [allVenues, selectedState, selectedCity, rankingsTab]);
@@ -583,7 +600,9 @@ export default function AdminVenues() {
                 <div key={v.id} className="admin-venue-table-row">
                   <span className="admin-venue-table-icon">{venueIcon(v)}</span>
                   <span className="admin-venue-table-name">{v.name}</span>
-                  <span className="admin-venue-table-category">{CATEGORY_TEXT[v.category] || v.category}</span>
+                  <span className="admin-venue-table-category">
+                    {venueCategories(v).map(c => CATEGORY_TEXT[c] || c).join(', ')}
+                  </span>
                   <span className={`admin-venue-table-status${v.is_hidden ? ' hidden' : ''}`}>
                     {v.is_hidden ? '❌ Hidden' : '✅ Visible'}
                   </span>

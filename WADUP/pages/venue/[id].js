@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
-import { CATEGORY_LABELS, hasWadupRating } from '../../lib/data';
+import { CATEGORY_LABELS, hasWadupRating, venueCategories } from '../../lib/data';
 import { getBestRated } from '../../lib/rankings';
 import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
@@ -172,9 +172,11 @@ export default function VenuePage() {
       const [{ data: byRating }, { data: byPopularity }, bestInCategory] = await Promise.all([
         supabase.from('venues').select('id').eq('city', venueData.city).eq('is_hidden', false).order('average_rating', { ascending: false }),
         supabase.from('venues').select('id').eq('city', venueData.city).eq('is_hidden', false).order('total_ratings', { ascending: false }),
-        // Local Favorite: top 10 best-rated within this exact city + category
-        // (a tighter, more meaningful peer group than city-wide bestRated above).
-        getBestRated(venueData.city, 10, venueData.category),
+        // Local Favorite: top 10 best-rated within this exact city + primary
+        // category (a tighter, more meaningful peer group than city-wide
+        // bestRated above). Uses the venue's first category for a multi-
+        // category venue, same "primary category" convention used for pins.
+        getBestRated(venueData.city, 10, venueCategories(venueData)[0]),
       ]);
       const enough = (list) => Array.isArray(list) && list.length >= 3;
       const rank = (list) => {
@@ -483,8 +485,12 @@ export default function VenuePage() {
 
             <div className="venue-location">📍 {venue.city}{venue.state ? `, ${venue.state}` : ''}</div>
             <div className="venue-category-line">
-              {CATEGORY_LABELS[venue.category] || venue.category}
-              {venue.subcategory ? ` · ${venue.subcategory}` : ''}
+              <div className="venue-category-badges">
+                {venueCategories(venue).map(c => (
+                  <span key={c} className="venue-category-badge">{CATEGORY_LABELS[c] || c}</span>
+                ))}
+              </div>
+              {venue.subcategory && <span className="venue-subcategory-text"> · {venue.subcategory}</span>}
             </div>
             {checkinCount > 0 && <div className="venue-checkin-count">🎉 {checkinCount.toLocaleString()} check-in{checkinCount === 1 ? '' : 's'}</div>}
 
