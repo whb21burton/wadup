@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
-import { CATEGORY_LABELS } from '../../lib/data';
+import { CATEGORY_LABELS, hasWadupRating } from '../../lib/data';
 import { getBestRated } from '../../lib/rankings';
 import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
@@ -380,9 +380,26 @@ export default function VenuePage() {
             {rankings.localFavorite && <div className="venue-local-favorite-badge">🏆 Local Favorite</div>}
 
             <div className="venue-rating-line">
-              {(venue.total_ratings || 0) < 5
-                ? <span className="venue-new-badge">New on WadUp</span>
-                : <span>⭐ {(venue.average_rating || 0).toFixed(1)} · {venue.total_ratings} Ratings</span>}
+              {hasWadupRating(venue) ? (
+                <>
+                  <span>⭐ {venue.average_rating.toFixed(1)} · {venue.total_ratings} WadUp Ratings</span>
+                  {venue.google_rating != null && (
+                    <span className="venue-google-rating-secondary">
+                      Google: {venue.google_rating.toFixed(1)} ({venue.google_review_count || 0})
+                    </span>
+                  )}
+                </>
+              ) : venue.google_rating != null ? (
+                <>
+                  <span>
+                    ⭐ {venue.google_rating.toFixed(1)} <span className="venue-rating-source-label">Google Rating</span>
+                    {venue.google_review_count ? ` (${venue.google_review_count})` : ''}
+                  </span>
+                  <span className="venue-new-badge">Be the first to review on WadUp!</span>
+                </>
+              ) : (
+                <span className="venue-new-badge">New on WadUp</span>
+              )}
             </div>
 
             {(rankings.trending || rankings.bestRated) && (

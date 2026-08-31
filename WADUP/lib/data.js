@@ -1,73 +1,11 @@
 // lib/data.js — venue data, category chips, and Ticketmaster helpers
 
-export const DEFAULT_VENUES = [
-  {
-    id: 'v1', name: 'Tootsies Orchid Lounge', cat: 'nightlife', subcategory: 'Live Music Bar',
-    address: '422 Broadway, Nashville, TN 37203', city: 'Nashville', state: 'TN',
-    phone: '(615) 726-0463', website: 'tootsies.net',
-    lat: 36.1591, lng: -86.7816, live: true,
-    average_rating: 4.6, total_ratings: 312,
-    is_local_favorite: true, is_restaurant: false,
-    has_live_music_today: true, has_trivia_today: false, has_specials_today: false, has_happy_hour_today: true,
-    created_at: '2024-01-15',
-  },
-  {
-    id: 'v2', name: 'Honest Pint', cat: 'nightlife', subcategory: 'Craft Beer Bar',
-    address: '102 Tremont St, Chattanooga, TN 37405', city: 'Chattanooga', state: 'TN',
-    phone: '(423) 648-7446', website: 'honestpint.com',
-    lat: 35.0456, lng: -85.3096, live: true,
-    average_rating: 4.3, total_ratings: 128,
-    is_local_favorite: false, is_restaurant: false,
-    has_live_music_today: false, has_trivia_today: true, has_specials_today: false, has_happy_hour_today: false,
-    created_at: '2026-08-24',
-  },
-  {
-    id: 'v3', name: 'Top Golf Chattanooga', cat: 'activities', subcategory: 'Golf Entertainment',
-    address: '2020 Gunbarrel Rd, Chattanooga, TN 37421', city: 'Chattanooga', state: 'TN',
-    phone: '(423) 531-0000', website: 'topgolf.com',
-    lat: 35.0527, lng: -85.2480, live: true,
-    average_rating: 4.5, total_ratings: 540,
-    is_local_favorite: false, is_restaurant: false,
-    has_live_music_today: false, has_trivia_today: false, has_specials_today: true, has_happy_hour_today: false,
-    created_at: '2023-06-01',
-  },
-  {
-    id: 'v4', name: 'Punchline Comedy Club', cat: 'nightlife', subcategory: 'Comedy Club',
-    address: '280 Elizabeth St NE, Atlanta, GA 30307', city: 'Atlanta', state: 'GA',
-    phone: '(404) 555-0101', website: 'punchlinecomedy.com',
-    lat: 33.7490, lng: -84.3880, live: true,
-    average_rating: 4.1, total_ratings: 96,
-    is_local_favorite: false, is_restaurant: false,
-    has_live_music_today: false, has_trivia_today: false, has_specials_today: false, has_happy_hour_today: false,
-    created_at: '2022-11-20',
-  },
-  {
-    id: 'v5', name: 'Bluegrass Grill', cat: 'activities', subcategory: 'Restaurant',
-    address: '55 Patten Pkwy, Chattanooga, TN 37402', city: 'Chattanooga', state: 'TN',
-    phone: '(423) 555-0199', website: 'bluegrassgrill.example',
-    lat: 35.0490, lng: -85.3080, live: true,
-    average_rating: 4.7, total_ratings: 210,
-    is_local_favorite: true, is_restaurant: true,
-    has_live_music_today: false, has_trivia_today: false, has_specials_today: false, has_happy_hour_today: false,
-    created_at: '2021-04-02',
-  },
-  {
-    id: 'v6', name: 'Generic Diner', cat: 'activities', subcategory: 'Restaurant',
-    address: '10 Main St, Chattanooga, TN 37402', city: 'Chattanooga', state: 'TN',
-    phone: '(423) 555-0100', website: '',
-    lat: 35.0420, lng: -85.3120, live: true,
-    average_rating: 3.4, total_ratings: 12,
-    is_local_favorite: false, is_restaurant: true,
-    has_live_music_today: false, has_trivia_today: false, has_specials_today: false, has_happy_hour_today: false,
-    created_at: '2020-02-02',
-  },
-];
-
 // ── Category chips shown on the map screen ──
 export const CATEGORY_CHIPS = [
   { id: 'all',        label: 'All' },
   { id: 'events',     label: '🎵 Events' },
   { id: 'nightlife',  label: '🍸 Bars & Nightlife' },
+  { id: 'restaurant', label: '🍔 Restaurants' },
   { id: 'sports',     label: '🏟️ Sports' },
   { id: 'outdoors',   label: '🌳 Outdoors' },
   { id: 'activities', label: '🎳 Activities' },
@@ -80,6 +18,7 @@ export const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CHIPS.map(c => [c.id,
 // they aren't real self-serve business categories.
 export const VENUE_CATEGORIES = [
   { id: 'nightlife',  label: 'Bars & Nightlife' },
+  { id: 'restaurant', label: 'Restaurant' },
   { id: 'outdoors',   label: 'Outdoors' },
   { id: 'activities', label: 'Activities' },
 ];
@@ -109,14 +48,61 @@ export function isVenueNew(v) {
   return days >= 0 && days <= 7;
 }
 
+// A venue only gets its own WadUp star rating once it has a real sample size
+// of WadUp reviews; below that threshold, its Google rating (imported at
+// sync time — see pages/api/places/sync.js) is the more meaningful number.
+export function hasWadupRating(v) {
+  return (v.total_ratings || 0) >= 5;
+}
+export function effectiveRating(v) {
+  return hasWadupRating(v) ? v.average_rating : v.google_rating;
+}
+export function effectiveRatingCount(v) {
+  return hasWadupRating(v) ? v.total_ratings : v.google_review_count;
+}
+
+// Parses a Google Places `regularOpeningHours` object (the shape stored in
+// venues.hours — { periods: [{ open: {day,hour,minute}, close: {...} }] })
+// against the viewer's local clock. Good enough for a single-city app;
+// doesn't account for a visitor browsing from a different timezone than
+// the venue's, since the New Places API fieldmask used here doesn't return
+// a timezone to correct for.
+export function isVenueOpenNow(hours) {
+  const periods = hours?.periods;
+  if (!periods?.length) return false;
+  const now = new Date();
+  const day = now.getDay();
+  const mins = now.getHours() * 60 + now.getMinutes();
+
+  return periods.some(p => {
+    if (!p.open) return false;
+    const openDay  = p.open.day;
+    const openMins = (p.open.hour || 0) * 60 + (p.open.minute || 0);
+    if (!p.close) return openDay === day; // open 24 hours that day
+    const closeDay  = p.close.day;
+    const closeMins = (p.close.hour || 0) * 60 + (p.close.minute || 0);
+
+    if (openDay === closeDay) {
+      return day === openDay && mins >= openMins && mins < closeMins;
+    }
+    // Overnight span, e.g. opens Fri 6pm, closes Sat 2am.
+    if (day === openDay)  return mins >= openMins;
+    if (day === closeDay) return mins < closeMins;
+    return false;
+  });
+}
+
 // Status badges for a venue, highest-priority first. `isTrending`/`isBestRated`
 // are computed externally (top 10 in their city, per lib/rankings.js) since
-// they depend on the whole set, not just this one venue.
-export function getVenueBadges(v, isTrending, isBestRated) {
+// they depend on the whole set, not just this one venue; same for
+// `hasEventToday`, which depends on that day's venue_events across the map.
+export function getVenueBadges(v, isTrending, isBestRated, hasEventToday) {
   const badges = [];
   if (v.has_live_music_today) badges.push({ id: 'live',       icon: '🔴', label: 'Live Now' });
   if (v.has_happy_hour_today) badges.push({ id: 'happy_hour', icon: '⏰', label: 'Happy Hour' });
   if (v.has_specials_today)   badges.push({ id: 'specials',   icon: '🏷️', label: 'Specials' });
+  if (hasEventToday)          badges.push({ id: 'event_today',icon: '🎫', label: 'Event Today' });
+  if (isVenueOpenNow(v.hours))badges.push({ id: 'open_now',   icon: '🟢', label: 'Open Now' });
   if (isVenueNew(v))          badges.push({ id: 'new',        icon: '🆕', label: 'New' });
   if (isTrending)             badges.push({ id: 'trending',   icon: '🔥', label: 'Trending' });
   if (isBestRated)            badges.push({ id: 'best_rated', icon: '⭐', label: 'Best Rated' });

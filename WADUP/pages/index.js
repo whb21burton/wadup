@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import {
-  DEFAULT_VENUES, CATEGORY_CHIPS, CATEGORY_LABELS,
-  isVenueEligible, getVenueBadges,
+  CATEGORY_CHIPS, CATEGORY_LABELS,
+  isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
 import { getTrendingVenues, getBestRated } from '../lib/rankings';
@@ -39,7 +39,7 @@ function isInBounds(bounds, lat, lng) {
   return bounds.contains(new window.google.maps.LatLng(lat, lng));
 }
 
-const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
+const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', restaurant: '🍔', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
 
 // Popups are built as raw HTML strings for Google's InfoWindow — escape any
 // text that ultimately comes from an API response or (eventually) user input.
@@ -97,9 +97,10 @@ export default function WadUp() {
   const tmMarkers    = useRef({});
   const overlays     = useRef({});
   const tmEventsRef  = useRef([]);
-  const venuesRef    = useRef([...DEFAULT_VENUES]);
+  const venuesRef    = useRef([]);
   const trendingVenueIds = useRef(new Set());
   const bestRatedVenueIds = useRef(new Set());
+  const eventVenueIdsTodayRef = useRef(new Set());
   const mapInitStarted = useRef(false);
   const mapBoundsRef = useRef(null);
   const boundsDebounceRef = useRef(null);
@@ -499,9 +500,14 @@ export default function WadUp() {
     }
     if (!v.live) return;
 
-    const badges   = getVenueBadges(v, trendingVenueIds.current.has(v.id), bestRatedVenueIds.current.has(v.id));
+    const badges = getVenueBadges(
+      v, trendingVenueIds.current.has(v.id), bestRatedVenueIds.current.has(v.id),
+      eventVenueIdsTodayRef.current.has(v.id)
+    );
     const topBadge = badges[0];
-    const hasRating = v.total_ratings > 0;
+    const rating = effectiveRating(v);
+    const ratingCount = effectiveRatingCount(v);
+    const hasRating = rating != null && (ratingCount || 0) > 0;
 
     const el = document.createElement('div');
     el.className = `wu-pin ${zoomClass}`;
@@ -527,7 +533,7 @@ export default function WadUp() {
     if (hasRating) {
       const ratingSpan = document.createElement('span');
       ratingSpan.className = 'wu-rating';
-      ratingSpan.textContent = `⭐ ${v.average_rating.toFixed(1)}`;
+      ratingSpan.textContent = `⭐ ${rating.toFixed(1)}`;
       textWrap.appendChild(ratingSpan);
     }
 
@@ -540,7 +546,7 @@ export default function WadUp() {
     el.appendChild(tail);
 
     const ratingHtml = hasRating
-      ? `<div class="popup-rating">⭐ ${v.average_rating.toFixed(1)} (${v.total_ratings} review${v.total_ratings === 1 ? '' : 's'})</div>`
+      ? `<div class="popup-rating">⭐ ${rating.toFixed(1)} (${ratingCount} ${hasWadupRating(v) ? 'WadUp ' : 'Google '}review${ratingCount === 1 ? '' : 's'})</div>`
       : '';
     const badgesHtml = badges.length
       ? `<div class="popup-badges">${badges.map(b => `<span class="popup-badge">${b.icon} ${escapeHtml(b.label)}</span>`).join('')}</div>`
@@ -765,6 +771,74 @@ export default function WadUp() {
     TM_REGIONS.forEach((r, i) => fetchRegion(r, i));
   }, [dropTMPin, renderTrending, filterPins]);
 
+  // ── Load real Chattanooga venues from Supabase (Google Places-sourced) ──
+  const loadVenuesFromSupabase = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('venues')
+      .select('*')
+      .eq('city', 'Chattanooga')
+      .order('google_rating', { ascending: false });
+    if (error || !data) return;
+
+    // The rest of this file was written against the earlier mock venue shape
+    // (`cat` instead of `category`, and a `live` flag every mock row hardcoded
+    // to true) — map real rows into that same shape rather than touching every
+    // call site.
+    venuesRef.current = data.map(v => ({ ...v, cat: v.category, live: true }));
+
+    // Bulk-fetch today's venue_events once (rather than one query per pin) so
+    // dropVenuePin can flag "🎫 Event Today" per venue via a plain Set lookup.
+    const now = new Date();
+    const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
+    const dayEnd   = new Date(now); dayEnd.setUTCHours(23, 59, 59, 999);
+    const { data: eventsToday } = await supabase
+      .from('venue_events')
+      .select('venue_id')
+      .lte('start_time', dayEnd.toISOString())
+      .gte('end_time', dayStart.toISOString());
+    eventVenueIdsTodayRef.current = new Set((eventsToday || []).map(e => e.venue_id));
+
+    // Top 10 by rating, area-wide — independent of whichever chip is active.
+    // Freshly-synced venues have no WadUp reviews yet, so this needs the same
+    // Google-rating fallback as the pins themselves, or every synced venue
+    // would tie at 0 and "top 10" would be an arbitrary slice.
+    trendingVenueIds.current = new Set(
+      venuesRef.current
+        .filter(v => v.live && isVenueEligible(v))
+        .slice()
+        .sort((a, b) => (effectiveRating(b) || 0) - (effectiveRating(a) || 0))
+        .slice(0, 10)
+        .map(v => v.id)
+    );
+
+    // Drop venue pins — ineligible venues (e.g. a restaurant with nothing on today) never get one
+    venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
+    renderTrendingRef.current?.();
+    filterPinsRef.current?.();
+
+    // Phase 2: layer real, city-scoped activity-based rankings (lib/rankings.js,
+    // backed by the live Supabase checkins/reviews/saved_venues tables) onto
+    // the naive same-session "top 10 by rating" badge above — additive, so
+    // pins already dropped just get re-dropped (picking up the new badge)
+    // once this async fetch resolves. Uses filterPinsRef/renderTrendingRef
+    // (not the plain closures) since this can resolve well after mount, by
+    // which point activeChip/activeDate/quickFilter may have moved on.
+    const citiesOnMap = [...new Set(venuesRef.current.map(v => v.city).filter(Boolean))];
+    Promise.all(citiesOnMap.map(city => Promise.all([getTrendingVenues(city, 10), getBestRated(city, 10)])))
+      .then(perCityResults => {
+        let changed = false;
+        perCityResults.forEach(([trendList, ratedList]) => {
+          trendList.forEach(v => { if (!trendingVenueIds.current.has(v.id)) { trendingVenueIds.current.add(v.id); changed = true; } });
+          ratedList.forEach(v => { if (!bestRatedVenueIds.current.has(v.id)) { bestRatedVenueIds.current.add(v.id); changed = true; } });
+        });
+        if (!changed) return;
+        venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
+        filterPinsRef.current?.();
+        renderTrendingRef.current?.();
+      })
+      .catch(() => { /* rankings are a nice-to-have — pins already show without them */ });
+  }, [dropVenuePin]);
+
   // ── Init Google Maps ──
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -842,41 +916,10 @@ export default function WadUp() {
 
       setMapReady(true);
 
-      // Top 10 by rating, area-wide — independent of whichever chip is active
-      trendingVenueIds.current = new Set(
-        venuesRef.current
-          .filter(v => v.live && isVenueEligible(v))
-          .slice()
-          .sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0))
-          .slice(0, 10)
-          .map(v => v.id)
-      );
-
-      // Drop venue pins — ineligible venues (e.g. a restaurant with nothing on today) never get one
-      venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
-      renderTrending();
-
-      // Phase 2: layer real, city-scoped activity-based rankings (lib/rankings.js,
-      // backed by the live Supabase venues/checkins/reviews/saved_venues tables)
-      // onto the naive same-session "top 10 by rating" badge above — additive,
-      // so pins already dropped just get re-dropped (picking up the new badge)
-      // once this async fetch resolves. Uses filterPinsRef/renderTrendingRef
-      // (not the plain closures) since this can resolve well after mount, by
-      // which point activeChip/activeDate/quickFilter may have moved on.
-      const citiesOnMap = [...new Set(venuesRef.current.map(v => v.city).filter(Boolean))];
-      Promise.all(citiesOnMap.map(city => Promise.all([getTrendingVenues(city, 10), getBestRated(city, 10)])))
-        .then(perCityResults => {
-          let changed = false;
-          perCityResults.forEach(([trendList, ratedList]) => {
-            trendList.forEach(v => { if (!trendingVenueIds.current.has(v.id)) { trendingVenueIds.current.add(v.id); changed = true; } });
-            ratedList.forEach(v => { if (!bestRatedVenueIds.current.has(v.id)) { bestRatedVenueIds.current.add(v.id); changed = true; } });
-          });
-          if (!changed) return;
-          venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
-          filterPinsRef.current?.();
-          renderTrendingRef.current?.();
-        })
-        .catch(() => { /* rankings are a nice-to-have — pins already show without them */ });
+      // Real Chattanooga venues (Google Places-sourced, see pages/api/places/sync.js)
+      // load asynchronously — pins get dropped once the fetch resolves, same
+      // fire-and-forget pattern as fetchTM() below.
+      loadVenuesFromSupabase();
 
       // Fetch TM events
       setTimeout(() => fetchTM(), 300);
@@ -1086,7 +1129,10 @@ export default function WadUp() {
     ) : trending.map((item, idx) => {
       const icon = item._isTM
         ? (item.cat === 'sports' ? (item.sportEmoji || '🏟️') : '🎟️')
-        : (getVenueBadges(item, trendingVenueIds.current.has(item.id), bestRatedVenueIds.current.has(item.id))[0]?.icon || CATEGORY_ICONS[item.cat] || '📍');
+        : (getVenueBadges(
+            item, trendingVenueIds.current.has(item.id), bestRatedVenueIds.current.has(item.id),
+            eventVenueIdsTodayRef.current.has(item.id)
+          )[0]?.icon || CATEGORY_ICONS[item.cat] || '📍');
       return (
         <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
           <div className="t-rank">#{idx+1}</div>
@@ -1105,7 +1151,7 @@ export default function WadUp() {
             <div className="t-city">{item.city}{item.state ? ', ' + item.state : ''}</div>
             {item._isTM
               ? (item.price && <div className="t-date">{item.price}</div>)
-              : (item.total_ratings > 0 && <div className="t-rating">⭐ {item.average_rating.toFixed(1)}</div>)
+              : ((effectiveRatingCount(item) || 0) > 0 && <div className="t-rating">⭐ {effectiveRating(item).toFixed(1)}</div>)
             }
           </div>
         </div>
