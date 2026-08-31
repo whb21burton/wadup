@@ -13,6 +13,7 @@ export default function BrowseVenues() {
     supabase
       .from('venues')
       .select('*')
+      .eq('is_hidden', false)
       .order('name', { ascending: true })
       .then(({ data }) => {
         setVenues(data || []);

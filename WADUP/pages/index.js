@@ -509,41 +509,56 @@ export default function WadUp() {
     const ratingCount = effectiveRatingCount(v);
     const hasRating = rating != null && (ratingCount || 0) > 0;
 
+    // Parks and golf courses get a plain, larger emoji marker instead of the
+    // usual white pill — they read better on the map as a landmark icon than
+    // as a name-bearing bubble, and there isn't a badge/rating worth cramming
+    // onto them.
+    const isParkPin = v.cat === 'outdoors' && /park/i.test(v.name || '');
+    const isGolfPin = v.cat === 'activities' && (/golf/i.test(v.name || '') || /golf/i.test(v.subcategory || ''));
+    const specialIcon = isParkPin ? '🌳' : isGolfPin ? '⛳' : null;
+
     const el = document.createElement('div');
-    el.className = `wu-pin ${zoomClass}`;
+    el.className = `wu-pin ${zoomClass}${specialIcon ? ' wu-pin-emoji' : ''}`;
 
-    const pill = document.createElement('div');
-    pill.className = 'wu-pill';
+    if (specialIcon) {
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'wu-emoji-icon';
+      iconSpan.textContent = specialIcon;
+      el.appendChild(iconSpan);
+    } else {
+      const pill = document.createElement('div');
+      pill.className = 'wu-pill';
 
-    if (topBadge) {
-      const badgeEl = document.createElement('span');
-      badgeEl.className = topBadge.id === 'live' ? 'wu-badge wu-badge-live' : 'wu-badge';
-      badgeEl.textContent = topBadge.icon;
-      pill.appendChild(badgeEl);
+      if (topBadge) {
+        const badgeEl = document.createElement('span');
+        badgeEl.className = topBadge.id === 'live' ? 'wu-badge wu-badge-live' : 'wu-badge';
+        badgeEl.textContent = topBadge.icon;
+        pill.appendChild(badgeEl);
+      }
+
+      const textWrap = document.createElement('div');
+      textWrap.className = 'wu-pill-text';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'wu-name';
+      nameSpan.textContent = v.name;
+      textWrap.appendChild(nameSpan);
+
+      if (hasRating) {
+        const ratingSpan = document.createElement('span');
+        ratingSpan.className = 'wu-rating';
+        ratingSpan.textContent = `⭐ ${rating.toFixed(1)}`;
+        textWrap.appendChild(ratingSpan);
+      }
+
+      pill.appendChild(textWrap);
+
+      const tail = document.createElement('div');
+      tail.className = 'wu-tail';
+
+      el.appendChild(pill);
+      el.appendChild(tail);
     }
-
-    const textWrap = document.createElement('div');
-    textWrap.className = 'wu-pill-text';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'wu-name';
-    nameSpan.textContent = v.name;
-    textWrap.appendChild(nameSpan);
-
-    if (hasRating) {
-      const ratingSpan = document.createElement('span');
-      ratingSpan.className = 'wu-rating';
-      ratingSpan.textContent = `⭐ ${rating.toFixed(1)}`;
-      textWrap.appendChild(ratingSpan);
-    }
-
-    pill.appendChild(textWrap);
-
-    const tail = document.createElement('div');
-    tail.className = 'wu-tail';
-
-    el.appendChild(pill);
-    el.appendChild(tail);
 
     const ratingHtml = hasRating
       ? `<div class="popup-rating">⭐ ${rating.toFixed(1)} (${ratingCount} ${hasWadupRating(v) ? 'WadUp ' : 'Google '}review${ratingCount === 1 ? '' : 's'})</div>`
@@ -569,7 +584,7 @@ export default function WadUp() {
       zIndex: topBadge ? 15 : 10,
     });
 
-    const overlay = makeOverlay(pos, el, map);
+    const overlay = makeOverlay(pos, el, map, specialIcon ? 'center' : 'bottom');
 
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
@@ -580,15 +595,18 @@ export default function WadUp() {
       e.stopPropagation();
       handlePinInteraction(v.id);
     });
-    el.addEventListener('mouseenter', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      cancelPopupClose();
-      handlePinInteraction(v.id);
-    });
-    el.addEventListener('mouseleave', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      schedulePopupClose();
-    });
+    // Park/golf emoji pins open on click only — no hover-triggered popup.
+    if (!specialIcon) {
+      el.addEventListener('mouseenter', () => {
+        if (!window.matchMedia('(hover: hover)').matches) return;
+        cancelPopupClose();
+        handlePinInteraction(v.id);
+      });
+      el.addEventListener('mouseleave', () => {
+        if (!window.matchMedia('(hover: hover)').matches) return;
+        schedulePopupClose();
+      });
+    }
 
     mapMarkers.current[v.id] = { marker };
     overlays.current[v.id]   = overlay;
@@ -777,6 +795,7 @@ export default function WadUp() {
       .from('venues')
       .select('*')
       .eq('city', 'Chattanooga')
+      .eq('is_hidden', false)
       .order('google_rating', { ascending: false });
     if (error || !data) return;
 

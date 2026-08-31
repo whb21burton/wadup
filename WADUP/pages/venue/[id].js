@@ -135,7 +135,7 @@ export default function VenuePage() {
     setNotFound(false);
 
     const { data: venueData, error: venueErr } = await supabase
-      .from('venues').select('*').eq('id', id).single();
+      .from('venues').select('*').eq('id', id).eq('is_hidden', false).single();
 
     if (venueErr || !venueData) {
       setNotFound(true);
@@ -165,8 +165,8 @@ export default function VenuePage() {
     // number to mean anything, rather than trivially always being "#1".
     if (venueData.city) {
       const [{ data: byRating }, { data: byPopularity }, bestInCategory] = await Promise.all([
-        supabase.from('venues').select('id').eq('city', venueData.city).order('average_rating', { ascending: false }),
-        supabase.from('venues').select('id').eq('city', venueData.city).order('total_ratings', { ascending: false }),
+        supabase.from('venues').select('id').eq('city', venueData.city).eq('is_hidden', false).order('average_rating', { ascending: false }),
+        supabase.from('venues').select('id').eq('city', venueData.city).eq('is_hidden', false).order('total_ratings', { ascending: false }),
         // Local Favorite: top 10 best-rated within this exact city + category
         // (a tighter, more meaningful peer group than city-wide bestRated above).
         getBestRated(venueData.city, 10, venueData.category),

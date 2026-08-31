@@ -50,7 +50,8 @@ export async function getTrendingVenues(city, limit = 20) {
   const { data: venues, error } = await supabase
     .from('venues')
     .select(VENUE_CARD_FIELDS)
-    .eq('city', city);
+    .eq('city', city)
+    .eq('is_hidden', false);
   if (error || !venues?.length) return [];
 
   const ids = venues.map(v => v.id);
@@ -85,6 +86,7 @@ export async function getBestRated(city, limit = 20, category = null) {
     .from('venues')
     .select(VENUE_CARD_FIELDS)
     .eq('city', city)
+    .eq('is_hidden', false)
     .gte('total_ratings', 5)
     .order('average_rating', { ascending: false })
     .order('total_ratings', { ascending: false })
@@ -102,7 +104,8 @@ export async function getMostPopular(city, limit = 20) {
   const { data: venues, error } = await supabase
     .from('venues')
     .select(VENUE_CARD_FIELDS)
-    .eq('city', city);
+    .eq('city', city)
+    .eq('is_hidden', false);
   if (error || !venues?.length) return [];
 
   const ids = venues.map(v => v.id);
@@ -132,6 +135,7 @@ export async function getLocalFavorites(city, limit = 10) {
     .from('venues')
     .select('category')
     .eq('city', city)
+    .eq('is_hidden', false)
     .gte('total_ratings', 3);
   if (error || !categories?.length) return [];
 
@@ -145,6 +149,7 @@ export async function getLocalFavorites(city, limit = 10) {
         .from('venues')
         .select(VENUE_CARD_FIELDS)
         .eq('city', city)
+        .eq('is_hidden', false)
         .eq('category', cat)
         .gte('total_ratings', 3)
         .order('average_rating', { ascending: false })

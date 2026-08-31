@@ -745,6 +745,13 @@ html, body {
 }
 .wu-pin:hover { transform: scale(1.08); }
 
+/* Parks/golf courses: a bare landmark emoji instead of the name pill. */
+.wu-emoji-icon {
+  font-size: 32px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.45));
+}
+
 .wu-pill {
   position: relative;
   display: flex;
@@ -811,6 +818,8 @@ html, body {
 .zoom-far  .wu-name   { font-size: 0.42rem; max-width: 46px; }
 .zoom-far  .wu-rating { font-size: 0.4rem; }
 .zoom-far  .wu-badge  { width: 14px; height: 14px; font-size: 0.5rem; top: -5px; left: -5px; }
+.zoom-far  .wu-emoji-icon { font-size: 18px; }
+.zoom-mid  .wu-emoji-icon { font-size: 24px; }
 .zoom-mid  .wu-name   { font-size: 0.56rem; max-width: 84px; }
 .zoom-near .wu-name   { font-size: 0.66rem; max-width: 130px; }
 
@@ -2476,3 +2485,73 @@ html, body {
   font-size: 0.85rem;
 }
 .admin-sync-warnings ul { margin: 6px 0 0 18px; }
+
+.admin-venues-section {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(0,229,255,0.16);
+}
+.admin-venues-section h2 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.3rem;
+  letter-spacing: 0.03em;
+  margin-bottom: 10px;
+}
+.admin-venue-search {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,229,255,0.25);
+  background: rgba(255,255,255,0.06);
+  color: #eafcff;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.9rem;
+  margin-bottom: 14px;
+}
+.admin-venue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+.admin-venue-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.admin-venue-row.hidden { opacity: 0.45; }
+.admin-venue-info { flex: 1; min-width: 0; }
+.admin-venue-name {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #eafcff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-venue-meta {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.75rem;
+  color: #9fc3cc;
+}
+.admin-venue-hidden-tag { color: #ff8a5c; font-weight: 700; }
+.admin-venue-delete-btn {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,69,0,0.4);
+  background: rgba(255,69,0,0.1);
+  color: #ff8a5c;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.admin-venue-delete-btn:disabled { opacity: 0.5; cursor: default; }

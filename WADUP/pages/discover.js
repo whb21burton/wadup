@@ -262,10 +262,10 @@ export default function Discover() {
       getTrendingVenues(city, 20),
       getBestRated(city, 20),
       getLocalFavorites(city, 10),
-      supabase.from('venue_events').select('*, venues!inner(*)').eq('venues.city', city)
+      supabase.from('venue_events').select('*, venues!inner(*)').eq('venues.city', city).eq('venues.is_hidden', false)
         .lte('start_time', todayEnd.toISOString()).gte('end_time', todayStart.toISOString())
         .order('start_time', { ascending: true }),
-      supabase.from('venue_events').select('*, venues!inner(*)').eq('venues.city', city)
+      supabase.from('venue_events').select('*, venues!inner(*)').eq('venues.city', city).eq('venues.is_hidden', false)
         .gte('start_time', weekendStart.toISOString()).lte('start_time', weekendEnd.toISOString())
         .order('start_time', { ascending: true }),
       fetchTMEvents(coords.lat, coords.lng, todayStart, todayEnd),

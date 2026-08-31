@@ -22,6 +22,29 @@ const SEARCH_TYPES = [
   { types: ['movie_theater', 'comedy_club'],                     wadupCat: 'events' },
 ];
 
+// WadUp is meant to surface local/independent spots, not national chains —
+// skip any place whose name matches one of these (case-insensitive substring).
+const CHAIN_BLOCKLIST = [
+  'mcdonald', 'taco bell', 'burger king', 'wendy', 'chick-fil-a', 'subway',
+  'domino', 'pizza hut', 'papa john', 'kfc', 'popeyes', 'sonic', 'arby',
+  'cracker barrel', 'buffalo wild wings', 'applebee', 'chili', 'olive garden',
+  'red lobster', 'ihop', 'denny', 'waffle house', 'starbucks', 'dunkin',
+  'walmart', 'target', 'costco', 'whole foods', 'publix', 'kroger', 'aldi',
+  'cvs', 'walgreen', 'dollar', 'chuck e cheese', 'dave and buster',
+  'holiday inn', 'marriott', 'hilton', 'hyatt', 'hampton inn', 'best western',
+  'comfort inn', 'days inn', 'super 8', 'motel 6', 'brothers bagel',
+  'panera', 'chipotle', 'panda express', 'five guys', 'shake shack',
+  'in-n-out', 'whataburger', 'cook out', 'hardee', 'jack in the box',
+  'little caesar', 'papa murphy', 'jersey mike', 'jimmy john', 'firehouse',
+  'wingstop', 'raising cane', 'zaxby', 'golden corral', 'longhorn',
+  'texas roadhouse', 'outback', 'red robin', 'hooters', 'dennys', 'bob evan',
+];
+
+function isChain(name) {
+  const lower = (name || '').toLowerCase();
+  return CHAIN_BLOCKLIST.some(chain => lower.includes(chain));
+}
+
 const FIELD_MASK = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.location',
   'places.rating', 'places.userRatingCount', 'places.internationalPhoneNumber',
@@ -103,15 +126,17 @@ export default async function handler(req, res) {
   const byCategory = {};
   const errors = [];
   const byPlaceId = new Map(); // dedupe places matched by more than one type group
+  let skippedChains = 0;
 
   for (let i = 0; i < SEARCH_TYPES.length; i++) {
     const { types, wadupCat } = SEARCH_TYPES[i];
     if (i > 0) await new Promise(r => setTimeout(r, 200)); // light throttle between requests
     try {
       const places = await searchNearby(types);
-      byCategory[wadupCat] = (byCategory[wadupCat] || 0) + places.length;
       places.forEach(place => {
         if (!place.id || byPlaceId.has(place.id)) return; // first matching group wins
+        if (isChain(place.displayName?.text)) { skippedChains++; return; }
+        byCategory[wadupCat] = (byCategory[wadupCat] || 0) + 1;
         byPlaceId.set(place.id, mapPlaceToRow(place, wadupCat));
       });
     } catch (e) {
@@ -121,7 +146,7 @@ export default async function handler(req, res) {
 
   const rows = [...byPlaceId.values()];
   if (!rows.length) {
-    return res.status(200).json({ success: true, added: 0, updated: 0, totalFetched: 0, byCategory, errors });
+    return res.status(200).json({ success: true, added: 0, updated: 0, totalFetched: 0, byCategory, skippedChains, errors });
   }
 
   const { data: existing, error: existingError } = await supabaseAdmin
@@ -148,6 +173,7 @@ export default async function handler(req, res) {
     updated,
     totalFetched: rows.length,
     byCategory,
+    skippedChains,
     errors,
   });
 }
