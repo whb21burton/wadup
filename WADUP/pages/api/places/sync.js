@@ -94,7 +94,7 @@ function mapPlaceToRow(place, wadupCat) {
     phone: place.internationalPhoneNumber || null,
     website: place.websiteUri || null,
     categories: [wadupCat],
-    category: wadupCat, // legacy single-value fallback — see the upsert split below for why this is stripped on re-sync
+    category: wadupCat, // legacy single-value fallback — only used on insert; never re-applied to existing venues (see the update payloads below)
     // Google's specific type (e.g. "italian_restaurant") as a free-text
     // subcategory — more specific than the broad wadupCat bucket, and
     // already fetched via the field mask below, so no extra API cost.
@@ -105,6 +105,7 @@ function mapPlaceToRow(place, wadupCat) {
     hours: place.regularOpeningHours || null,
     is_claimed: false,
     source: 'google_places',
+    custom_cover_photo: false,
   };
 }
 
@@ -152,31 +153,69 @@ export default async function handler(req, res) {
 
   const { data: existing, error: existingError } = await supabaseAdmin
     .from('venues')
-    .select('google_place_id')
+    .select('google_place_id, custom_cover_photo, name')
     .in('google_place_id', rows.map(r => r.google_place_id));
   if (existingError) {
     return res.status(500).json({ error: 'Failed to read existing venues', detail: existingError.message });
   }
-  const existingIds = new Set((existing || []).map(r => r.google_place_id));
-  const added = rows.filter(r => !existingIds.has(r.google_place_id)).length;
+  const existingByPlaceId = new Map((existing || []).map(r => [r.google_place_id, r]));
+  const added = rows.filter(r => !existingByPlaceId.has(r.google_place_id)).length;
   const updated = rows.length - added;
+  const nowIso = new Date().toISOString();
 
-  // Brand-new venues get their categories set from the search group they
-  // matched. Re-syncing an EXISTING venue must not touch categories/category
-  // at all — an admin may have since curated additional categories onto it
-  // via the Edit modal, and upserting `categories: [wadupCat]` again would
-  // silently clobber that back down to a single category.
-  const newRows = rows.filter(r => !existingIds.has(r.google_place_id));
-  const updateRows = rows
-    .filter(r => existingIds.has(r.google_place_id))
-    .map(({ category, categories, ...refreshFields }) => refreshFields);
+  // Brand-new venues get the full row Google gave us. Re-syncing an EXISTING
+  // venue must ONLY refresh Google-sourced fields (rating, review count,
+  // hours, and — unless the admin uploaded their own — the cover photo).
+  // Every admin-curated field (name, custom_emoji, categories/category,
+  // is_hidden, is_claimed, is_verified, admin_rank_override, vote_score,
+  // description, subcategory) is left completely untouched: it's simply
+  // never included in the update payload below.
+  const newRows = rows
+    .filter(r => !existingByPlaceId.has(r.google_place_id))
+    .map(r => ({ ...r, last_google_sync: nowIso }));
+
+  const existingRows = rows.filter(r => existingByPlaceId.has(r.google_place_id));
+  // Split by custom_cover_photo so each upsert batch has a consistent set of
+  // columns — PostgREST fills any column omitted from a row (but present on
+  // a sibling row in the same batch) with NULL, so mixing the two shapes in
+  // one call would blank out cover_photo_url on the venues we mean to protect.
+  // `name` is NOT NULL with no default, so PostgREST's upsert would fail the
+  // NOT NULL check on its implicit insert branch if it were left out — even
+  // though these rows always hit the ON CONFLICT DO UPDATE path. Echoing back
+  // each venue's own current name satisfies the constraint as a harmless
+  // `name = name` no-op without ever applying Google's name to an existing venue.
+  const refreshPhotoRows = existingRows
+    .filter(r => !existingByPlaceId.get(r.google_place_id).custom_cover_photo)
+    .map(r => ({
+      google_place_id: r.google_place_id,
+      name: existingByPlaceId.get(r.google_place_id).name,
+      google_rating: r.google_rating,
+      google_review_count: r.google_review_count,
+      hours: r.hours,
+      cover_photo_url: r.cover_photo_url,
+      last_google_sync: nowIso,
+    }));
+  const keepPhotoRows = existingRows
+    .filter(r => existingByPlaceId.get(r.google_place_id).custom_cover_photo)
+    .map(r => ({
+      google_place_id: r.google_place_id,
+      name: existingByPlaceId.get(r.google_place_id).name,
+      google_rating: r.google_rating,
+      google_review_count: r.google_review_count,
+      hours: r.hours,
+      last_google_sync: nowIso,
+    }));
 
   if (newRows.length) {
     const { error } = await supabaseAdmin.from('venues').upsert(newRows, { onConflict: 'google_place_id' });
     if (error) return res.status(500).json({ error: 'Insert failed', detail: error.message });
   }
-  if (updateRows.length) {
-    const { error } = await supabaseAdmin.from('venues').upsert(updateRows, { onConflict: 'google_place_id' });
+  if (refreshPhotoRows.length) {
+    const { error } = await supabaseAdmin.from('venues').upsert(refreshPhotoRows, { onConflict: 'google_place_id' });
+    if (error) return res.status(500).json({ error: 'Update failed', detail: error.message });
+  }
+  if (keepPhotoRows.length) {
+    const { error } = await supabaseAdmin.from('venues').upsert(keepPhotoRows, { onConflict: 'google_place_id' });
     if (error) return res.status(500).json({ error: 'Update failed', detail: error.message });
   }
 
