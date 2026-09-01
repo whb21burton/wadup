@@ -60,27 +60,6 @@ function buildDays() {
   });
 }
 
-// Fri/Sat/Sun of the current (or, Mon–Thu, the upcoming) weekend.
-function weekendIsoDates() {
-  const today = new Date();
-  const day = today.getDay(); // 0=Sun..6=Sat
-  const fridayOffset = day === 5 ? 0 : day === 6 ? -1 : day === 0 ? -2 : 5 - day;
-  const fri = new Date(today);
-  fri.setDate(today.getDate() + fridayOffset);
-  return [0, 1, 2].map(i => {
-    const d = new Date(fri); d.setDate(fri.getDate() + i);
-    return d.toISOString().slice(0, 10);
-  });
-}
-
-// null (no quick filter — fall back to the day strip's single `activeDate`),
-// or the set of ISO dates a TM event's `dateStr` must fall in.
-function quickFilterDateSet(quickFilter, activeDate) {
-  if (quickFilter === 'tonight') return new Set([new Date().toISOString().slice(0, 10)]);
-  if (quickFilter === 'weekend') return new Set(weekendIsoDates());
-  return activeDate ? new Set([activeDate]) : null;
-}
-
 // ── "🔥 Trending Now" / "🏆 Top 10" sidebar helpers ──
 // A venue's pin/card icon always reflects its *primary* (first) category —
 // see venueCategories() in lib/data.js for the categories[]-with-category
@@ -134,6 +113,12 @@ export default function WadUp() {
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('all');
   const [activeDate,     setActiveDate]     = useState(new Date().toISOString().slice(0,10));
+  // filterPins reads these refs, not the state above, so it always sees the
+  // current value regardless of when its own closure was created — the
+  // state setters below update the ref SYNCHRONOUSLY, in the same click
+  // handler, rather than waiting a render cycle for a useEffect to catch up.
+  const activeCategoryRef = useRef('all');
+  const activeDateRef = useRef(new Date().toISOString().slice(0,10));
   const [trendingNow,    setTrendingNow]    = useState([]);
   const [topRanked,      setTopRanked]      = useState([]);
   const [sidebarLoading, setSidebarLoading] = useState(true);
@@ -148,7 +133,6 @@ export default function WadUp() {
   const [session,         setSession]         = useState(null);
   const [profile,         setProfile]         = useState(null);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
-  const [quickFilter,    setQuickFilter]      = useState(null); // null | 'tonight' | 'weekend'
 
   // ── Admin map controls ──
   // adminRoleRef exists because the venue-pin popup HTML is a plain string
@@ -312,11 +296,13 @@ export default function WadUp() {
   useEffect(() => { loadSidebarLists(activeChip); }, [activeChip, loadSidebarLists]);
 
   // ── Filter map pins — flags drive direct marker/overlay visibility ──
-  const filterPins = useCallback((chipOverride, dateOverride, quickFilterOverride) => {
-    const chip = chipOverride ?? activeChip;
-    const date = dateOverride ?? activeDate;
-    const qf   = quickFilterOverride !== undefined ? quickFilterOverride : quickFilter;
-    const dateSet = quickFilterDateSet(qf, date);
+  // Reads activeCategoryRef/activeDateRef (never the activeChip/activeDate
+  // state directly) so every caller — a click handler, or an async callback
+  // running long after the render that created it — always sees the current
+  // filter, not whatever was current when this particular closure was made.
+  const filterPins = useCallback(() => {
+    const chip = activeCategoryRef.current;
+    const date = activeDateRef.current;
     const map  = mapObj.current;
     if (!map) return;
 
@@ -337,12 +323,12 @@ export default function WadUp() {
       const entry = pinRegistry.current.get(ev.id);
       if (!entry) return;
       const catOk  = chip === 'all' || ev.cat === chip;
-      const dateOk = !dateSet || dateSet.has(ev.dateStr);
+      const dateOk = !date || ev.dateStr === date;
       entry.chipVisible = catOk && dateOk;
     });
 
     applyPinVisibility();
-  }, [activeChip, activeDate, quickFilter]);
+  }, []);
 
   useEffect(() => { filterPinsRef.current = filterPins; }, [filterPins]);
 
@@ -890,7 +876,7 @@ export default function WadUp() {
     // pins already dropped just get re-dropped (picking up the new badge)
     // once this async fetch resolves. Uses filterPinsRef (not the plain
     // closure) since this can resolve well after mount, by which point
-    // activeChip/activeDate/quickFilter may have moved on.
+    // activeChip/activeDate may have moved on.
     const citiesOnMap = [...new Set(venuesRef.current.map(v => v.city).filter(Boolean))];
     Promise.all(citiesOnMap.map(city => Promise.all([getTrendingVenues(city, 10), getBestRated(city, 10)])))
       .then(perCityResults => {
@@ -1036,8 +1022,17 @@ export default function WadUp() {
         gestureHandling: 'greedy',
         clickableIcons: false,
         styles: [
-          { featureType:'poi', elementType:'labels', stylers:[{visibility:'off'}] },
-          { featureType:'transit', elementType:'labels', stylers:[{visibility:'off'}] },
+          { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi.attraction', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi.government', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi.park', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi.place_of_worship', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi.school', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi.sports_complex', stylers: [{ visibility: 'off' }] },
+          { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
         ],
       });
 
@@ -1146,14 +1141,16 @@ export default function WadUp() {
 
   // ── Chip change ── (also triggers the loadSidebarLists effect above, via activeChip)
   const onChipClick = (chip) => {
+    activeCategoryRef.current = chip;
     setActiveChip(chip);
-    filterPins(chip, activeDate);
+    filterPins();
   };
 
   // ── Day change ──
   const onDayClick = (iso) => {
+    activeDateRef.current = iso;
     setActiveDate(iso);
-    filterPins(activeChip, iso);
+    filterPins();
   };
 
   // ── Fly to venue ──
@@ -1161,13 +1158,6 @@ export default function WadUp() {
     if (!mapObj.current) return;
     mapObj.current.panTo({ lat, lng });
     mapObj.current.setZoom(15);
-  };
-
-  // ── Quick filter (Tonight / Weekend) — layers on top of the chip filter ──
-  const onQuickFilterClick = (kind) => {
-    const next = quickFilter === kind ? null : kind;
-    setQuickFilter(next);
-    filterPins(activeChip, activeDate, next);
   };
 
   // ── Search overlay — debounced 300ms across venue names/categories/cities/event names ──
@@ -1247,23 +1237,6 @@ export default function WadUp() {
     <button className={containerClass} onClick={openSearch}>
       🔍 Search places, events…
     </button>
-  );
-
-  const renderQuickFilters = (containerClass) => (
-    <div className={containerClass}>
-      <button
-        className={`quick-filter-btn${quickFilter === 'tonight' ? ' active' : ''}`}
-        onClick={() => onQuickFilterClick('tonight')}
-      >
-        🌙 Tonight
-      </button>
-      <button
-        className={`quick-filter-btn${quickFilter === 'weekend' ? ' active' : ''}`}
-        onClick={() => onQuickFilterClick('weekend')}
-      >
-        📅 Weekend
-      </button>
-    </div>
   );
 
   const renderChips = (containerClass) => (
@@ -1567,7 +1540,6 @@ export default function WadUp() {
           </div>
 
           {renderChips('sidebar-chips')}
-          {renderQuickFilters('sidebar-quick-filters')}
           {renderDayStrip('sidebar-days')}
 
           <div className="sidebar-trending">
@@ -1598,7 +1570,6 @@ export default function WadUp() {
 
             {renderSearchTrigger('search-trigger')}
             {renderChips('chips')}
-            {renderQuickFilters('quick-filters')}
             {renderDayStrip('day-strip')}
 
             <div className={`trending-panel${sheetExpanded ? ' expanded' : ''}`}>

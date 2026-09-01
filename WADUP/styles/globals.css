@@ -95,7 +95,6 @@ html, body {
 .sidebar-days::-webkit-scrollbar { display: none; }
 .sidebar.collapsed .sidebar-topbar,
 .sidebar.collapsed .sidebar-chips,
-.sidebar.collapsed .sidebar-quick-filters,
 .sidebar.collapsed .sidebar-days,
 .sidebar.collapsed .sidebar-trending { display: none; }
 
@@ -137,34 +136,6 @@ html, body {
   font-weight: 800;
   text-decoration: none;
   white-space: nowrap;
-}
-
-/* ── QUICK FILTERS (Tonight / Weekend) — layer on top of the category chip ── */
-.sidebar-quick-filters {
-  display: flex;
-  gap: 8px;
-  padding: 0 20px 16px;
-  flex-shrink: 0;
-}
-.quick-filter-btn {
-  flex-shrink: 0;
-  background: rgba(255,255,255,0.92);
-  border: none;
-  border-radius: 20px;
-  padding: 6px 14px;
-  font-family: 'Exo 2', sans-serif;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: #333;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-  transition: all 0.18s;
-}
-.quick-filter-btn.active {
-  background: var(--cyan);
-  color: #04222a;
-  box-shadow: 0 4px 16px rgba(0,229,255,0.35);
 }
 
 .sidebar-trending {
@@ -661,19 +632,6 @@ html, body {
   color: var(--black);
   box-shadow: 0 4px 16px rgba(255,252,0,0.35);
 }
-
-/* ── QUICK FILTERS (Tonight / Weekend), mobile ── */
-.quick-filters {
-  position: absolute;
-  bottom: 184px;
-  left: 0; right: 0;
-  display: flex;
-  gap: 6px;
-  padding: 0 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.quick-filters::-webkit-scrollbar { display: none; }
 
 /* ── DAY STRIP ── */
 .day-strip {

@@ -42,11 +42,9 @@ export function venueCategories(v) {
   return v.category ? [v.category] : [];
 }
 
-// Database venues never populate the Ticketmaster-only Events/Sports chips.
 export function venueMatchesChip(v, chip) {
-  const cats = venueCategories(v);
-  if (cats.includes('events') || cats.includes('sports')) return false;
-  return chip === 'all' || cats.includes(chip);
+  if (chip === 'all') return true;
+  return venueCategories(v).includes(chip);
 }
 
 // Business categories offered on venue-owner signup — mirrors the map's
@@ -76,12 +74,6 @@ export function isVenueEligible(v) {
     return !!(v.is_local_favorite || v.has_live_music_today || v.has_trivia_today || v.has_specials_today);
   }
   return true;
-}
-
-export function isVenueNew(v) {
-  if (!v.created_at) return false;
-  const days = (Date.now() - new Date(v.created_at).getTime()) / 864e5;
-  return days >= 0 && days <= 7;
 }
 
 // A venue only gets its own WadUp star rating once it has a real sample size
@@ -139,7 +131,6 @@ export function getVenueBadges(v, isTrending, isBestRated, hasEventToday) {
   if (v.has_specials_today)   badges.push({ id: 'specials',   icon: '🏷️', label: 'Specials' });
   if (hasEventToday)          badges.push({ id: 'event_today',icon: '🎫', label: 'Event Today' });
   if (isVenueOpenNow(v.hours))badges.push({ id: 'open_now',   icon: '🟢', label: 'Open Now' });
-  if (!v.hide_new_badge && isVenueNew(v)) badges.push({ id: 'new', icon: '🆕', label: 'New' });
   if (isTrending)             badges.push({ id: 'trending',   icon: '🔥', label: 'Trending' });
   if (isBestRated)            badges.push({ id: 'best_rated', icon: '⭐', label: 'Best Rated' });
   return badges;
