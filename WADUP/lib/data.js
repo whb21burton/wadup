@@ -42,9 +42,11 @@ export function venueCategories(v) {
   return v.category ? [v.category] : [];
 }
 
-export function venueMatchesChip(v, chip) {
-  if (chip === 'all') return true;
-  return venueCategories(v).includes(chip);
+export function venueMatchesChip(chip, venue) {
+  if (!chip || chip === 'all') return true;
+  const cats = venueCategories(venue);
+  console.log('[MATCH]', venue.name, 'cats:', cats, 'chip:', chip, 'match:', cats.includes(chip));
+  return cats.includes(chip);
 }
 
 // Business categories offered on venue-owner signup — mirrors the map's

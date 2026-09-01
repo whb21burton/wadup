@@ -301,33 +301,55 @@ export default function WadUp() {
   // running long after the render that created it — always sees the current
   // filter, not whatever was current when this particular closure was made.
   const filterPins = useCallback(() => {
-    const chip = activeCategoryRef.current;
-    const date = activeDateRef.current;
-    const map  = mapObj.current;
+    const map = mapObj.current;
     if (!map) return;
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[filterPins] chip =', chip, '| sample venue categories:',
-        venuesRef.current.slice(0, 5).map(v => venueCategories(v)),
-        '| sample TM event cats:',
-        tmEventsRef.current.slice(0, 5).map(ev => ev.cat));
-    }
+    const chip = activeCategoryRef.current;
+    const date = activeDateRef.current;
 
-    venuesRef.current.forEach(v => {
-      const entry = pinRegistry.current.get(v.id);
-      if (!entry) return;
-      entry.chipVisible = venueMatchesChip(v, chip);
+    console.log('[FILTER] chip:', chip, 'date:', date);
+    console.log('[FILTER] venue count:', Object.keys(mapMarkers.current).length);
+    console.log('[FILTER] tm count:', Object.keys(tmMarkers.current).length);
+
+    // A chip/date change supersedes whatever fan-out was showing — collapse
+    // it first so a pin doesn't end up stuck at its spiderfied offset while
+    // also being hidden/shown by the filter below.
+    collapseSpiderfy();
+
+    Object.entries(mapMarkers.current).forEach(([id, entry]) => {
+      const venue = venuesRef.current.find(v => v.id === id);
+      if (!venue) {
+        console.log('[FILTER] venue not found for id:', id);
+        return;
+      }
+      const show = venueMatchesChip(chip, venue);
+      // pinRegistry's own chipVisible flag is kept in sync too — findNearbyPins
+      // (the spiderfy fan-out) checks a pin's live map state to decide what's
+      // "hidden by the active filter", so this has to stay accurate even
+      // though this function no longer routes through it to apply visibility.
+      const registryEntry = pinRegistry.current.get(id);
+      if (registryEntry) registryEntry.chipVisible = show;
+      entry.marker.setMap(show ? map : null);
+      // Venue pins track their overlay in the separate `overlays` ref, not on
+      // this mapMarkers entry (unlike TM pins below, whose entry bundles
+      // both) — reading `entry.overlay` here would silently no-op every
+      // time, since it's always undefined for a venue, leaving the actually
+      // -visible custom pin overlay never hidden regardless of the filter.
+      const overlay = overlays.current[id];
+      if (overlay) overlay.setMap(show ? map : null);
     });
 
-    tmEventsRef.current.forEach(ev => {
-      const entry = pinRegistry.current.get(ev.id);
-      if (!entry) return;
-      const catOk  = chip === 'all' || ev.cat === chip;
-      const dateOk = !date || ev.dateStr === date;
-      entry.chipVisible = catOk && dateOk;
+    Object.entries(tmMarkers.current).forEach(([id, entry]) => {
+      const ev = tmEventsRef.current.find(e => e.id === id);
+      if (!ev) return;
+      const catMatch  = chip === 'all' || ev.cat === chip;
+      const dateMatch = !date || ev.dateStr === date;
+      const show = catMatch && dateMatch;
+      const registryEntry = pinRegistry.current.get(id);
+      if (registryEntry) registryEntry.chipVisible = show;
+      entry.marker.setMap(show ? map : null);
+      if (entry.overlay) entry.overlay.setMap(show ? map : null);
     });
-
-    applyPinVisibility();
   }, []);
 
   useEffect(() => { filterPinsRef.current = filterPins; }, [filterPins]);
@@ -483,23 +505,6 @@ export default function WadUp() {
       return;
     }
     entry.openPopup();
-  }
-
-  // ── Apply chip/date visibility directly to each pin's marker + overlay ──
-  function applyPinVisibility() {
-    const map = mapObj.current;
-    if (!map) return;
-    if (spiderStateRef.current) return; // don't reflow mid-spiderfy
-
-    pinRegistry.current.forEach(entry => {
-      if (entry.chipVisible) {
-        entry.marker.setMap(map);
-        entry.overlay.setMap(map);
-      } else {
-        entry.marker.setMap(null);
-        entry.overlay.setMap(null);
-      }
-    });
   }
 
   // ── Drop a venue pin ──
@@ -1141,8 +1146,15 @@ export default function WadUp() {
 
   // ── Chip change ── (also triggers the loadSidebarLists effect above, via activeChip)
   const onChipClick = (chip) => {
+    console.log('[CHIP] clicked:', chip);
     activeCategoryRef.current = chip;
     setActiveChip(chip);
+
+    // Debug: log first 5 venues and their categories
+    venuesRef.current.slice(0, 5).forEach(v => {
+      console.log('[CHIP] venue:', v.name, 'categories:', v.categories, 'category:', v.category);
+    });
+
     filterPins();
   };
 
