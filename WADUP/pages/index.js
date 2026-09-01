@@ -9,56 +9,11 @@ import {
 } from '../lib/data';
 import { getTrendingVenues, getBestRated, getScheduleTrendingVenues, getRankedVenues } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
-import { getAdminRole, isSuperAdmin } from '../lib/admin';
+import { getAdminRole } from '../lib/admin';
 import AuthSidebar from '../components/AuthSidebar';
 import AdminEditPanel from '../components/AdminEditPanel';
 
-const MAP_EDITABLE_CATEGORIES = CATEGORY_CHIPS.filter(c => c.id !== 'all');
 
-function toggleInArray(arr, id) {
-  return arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];
-}
-
-// Long-press stand-in for desktop right-click, used both on individual pins
-// and on the empty map background when Edit Mode is on.
-function attachLongPress(el, onLongPress, { threshold = 600, moveTolerance = 10 } = {}) {
-  let timer = null;
-  let startX = 0, startY = 0;
-  const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
-  el.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) { clear(); return; }
-    const t = e.touches[0];
-    startX = t.clientX; startY = t.clientY;
-    timer = setTimeout(() => onLongPress(startX, startY, e), threshold);
-  }, { passive: true });
-  el.addEventListener('touchmove', (e) => {
-    const t = e.touches[0];
-    if (!t) return;
-    if (Math.abs(t.clientX - startX) > moveTolerance || Math.abs(t.clientY - startY) > moveTolerance) clear();
-  }, { passive: true });
-  el.addEventListener('touchend', clear, { passive: true });
-  el.addEventListener('touchcancel', clear, { passive: true });
-  return clear;
-}
-
-// Converts a pixel offset from the map container's top-left corner back into
-// a LatLng — needed for the mobile long-press "Add Venue Here" flow, since
-// Google's MapCanvasProjection only exposes the forward (LatLng → pixel)
-// direction. Desktop right-click doesn't need this: the map's own
-// 'rightclick' event already hands back a real LatLng.
-function pixelToLatLng(map, offsetX, offsetY) {
-  const projection = map.getProjection();
-  const bounds = map.getBounds();
-  if (!projection || !bounds) return null;
-  const topRight = projection.fromLatLngToPoint(bounds.getNorthEast());
-  const bottomLeft = projection.fromLatLngToPoint(bounds.getSouthWest());
-  const scale = Math.pow(2, map.getZoom());
-  const worldPoint = new window.google.maps.Point(
-    offsetX / scale + bottomLeft.x,
-    offsetY / scale + topRight.y
-  );
-  return projection.fromPointToLatLng(worldPoint);
-}
 
 const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY || 'AIzaSyBoXf6UAa_SckH9gxfbiOK9OPpaySNH76w';
 const TM_AFFILIATE_ID = process.env.NEXT_PUBLIC_TM_AFFILIATE_ID || 'YOUR_AFFILIATE_ID';
@@ -154,117 +109,6 @@ function trendingReasonBadge(v) {
   return `${icon} ${label} in ${diff}min`;
 }
 
-// On-map "Add Venue Here" modal — opened from a right-click/long-press on
-// empty map background while Edit Mode is on. Lat/lng come straight from the
-// click location and aren't editable; everything else is a minimal manual
-// entry form (no Google Places search tab, unlike the full admin manager's
-// Add Venue modal — this is meant for "I'm standing here, add this spot"
-// speed, not a curated search flow).
-function MapAddVenueModal({ lat, lng, onClose, onSave }) {
-  const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
-  const [categories, setCategories] = useState(['nightlife']);
-  const [subcategory, setSubcategory] = useState('');
-  const [emoji, setEmoji] = useState('');
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const submit = async () => {
-    console.log('[EditMode] MapAddVenueModal: Add Venue clicked', { name, categories, lat, lng });
-    if (!name || !categories.length) {
-      console.warn('[EditMode] MapAddVenueModal: validation failed — name/categories missing');
-      setError('Name and at least one category are required');
-      return;
-    }
-    setSaving(true);
-    setError('');
-    try {
-      await onSave({ name, address: address || null, categories, subcategory: subcategory || null, custom_emoji: emoji || null });
-      console.log('[EditMode] MapAddVenueModal: add succeeded');
-    } catch (e) {
-      console.error('[EditMode] MapAddVenueModal: add FAILED:', e.message);
-      setError(e.message);
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="admin-modal-backdrop" onClick={onClose}>
-      <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="admin-modal-header">
-          <span>Add Venue Here</span>
-          <button className="admin-modal-close" onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div className="admin-modal-body">
-          <label>Name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} />
-
-          <label>Address (optional)</label>
-          <input value={address} onChange={(e) => setAddress(e.target.value)} />
-
-          <div className="admin-form-row">
-            <div>
-              <label>Lat</label>
-              <input value={lat.toFixed(6)} disabled />
-            </div>
-            <div>
-              <label>Lng</label>
-              <input value={lng.toFixed(6)} disabled />
-            </div>
-          </div>
-
-          <label>Emoji</label>
-          <div className="admin-emoji-row">
-            <button type="button" className="admin-emoji-current" onClick={() => setPickerOpen(v => !v)}>
-              {emoji || CATEGORY_ICONS[categories[0]] || '📍'}
-            </button>
-            <span className="admin-emoji-hint">Click to change</span>
-          </div>
-          {pickerOpen && (
-            <div className="admin-emoji-picker">
-              {EMOJI_OPTIONS.map(e => (
-                <button
-                  key={e} type="button" className="admin-emoji-choice"
-                  onClick={() => { setEmoji(e); setPickerOpen(false); }}
-                >
-                  {e}
-                </button>
-              ))}
-              <button type="button" className="admin-emoji-choice admin-emoji-clear" onClick={() => { setEmoji(''); setPickerOpen(false); }}>
-                Auto
-              </button>
-            </div>
-          )}
-
-          <label>Categories</label>
-          <div className="admin-checkbox-grid">
-            {MAP_EDITABLE_CATEGORIES.map(c => (
-              <label key={c.id} className="admin-checkbox-item">
-                <input
-                  type="checkbox"
-                  checked={categories.includes(c.id)}
-                  onChange={() => setCategories(prev => toggleInArray(prev, c.id))}
-                />
-                {c.label}
-              </label>
-            ))}
-          </div>
-
-          <label>Subcategory</label>
-          <input value={subcategory} onChange={(e) => setSubcategory(e.target.value)} />
-
-          {error && <div className="admin-modal-error">⚠️ {error}</div>}
-
-          <button className="admin-save-btn" onClick={submit} disabled={saving}>
-            {saving ? 'Adding…' : 'Add Venue'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function WadUp() {
   const mapRef       = useRef(null);
   const mapObj       = useRef(null);
@@ -307,49 +151,19 @@ export default function WadUp() {
   const [quickFilter,    setQuickFilter]      = useState(null); // null | 'tonight' | 'weekend'
 
   // ── Admin map controls ──
+  // adminRoleRef exists because the venue-pin popup HTML is a plain string
+  // built inside dropVenuePin (a memoized callback), not JSX — it needs the
+  // CURRENT admin status at popup-build time, not whatever `adminRole` value
+  // was closed over when dropVenuePin was last recreated.
   const [adminRole,      setAdminRole]      = useState(null);
   const adminRoleRef = useRef(null);
   useEffect(() => { adminRoleRef.current = adminRole; }, [adminRole]);
-  const [editMode,       setEditMode]       = useState(false);
-  const editModeRef = useRef(false);
-  // Confirms whether adminRole ever resolves non-null at all — if this never
-  // logs "toolbar rendering", the whole feature is dead before any pin/map-
-  // click code even matters, since the toolbar (and therefore the only way
-  // to turn Edit Mode on) is gated entirely on adminRole.
-  useEffect(() => {
-    console.log('[AdminToolbar] adminRole changed:', adminRole, adminRole ? '→ toolbar WILL render' : '→ toolbar hidden (adminRole is null — not logged in as an admin, or admin_roles lookup hasn\'t resolved yet)');
-  }, [adminRole]);
-  // Bare-bones debug trace, exactly as requested: confirms both pieces the
-  // whole feature is gated on, in one place, every time either changes.
-  useEffect(() => {
-    console.log('[DEBUG] adminRole:', adminRole);
-    console.log('[DEBUG] session:', session);
-  }, [adminRole, session]);
-  // Updates the ref SYNCHRONOUSLY, in the same tick as the click that
-  // toggles the button — not via a useEffect keyed on `editMode`, which
-  // would only update the ref on the NEXT render after React commits the
-  // state change. In practice that gap is usually sub-frame and harmless,
-  // but this removes even that theoretical race between "button clicked"
-  // and "a pin's click handler reads editModeRef.current".
-  const toggleEditMode = () => {
-    const newVal = !editModeRef.current;
-    editModeRef.current = newVal;
-    setEditMode(newVal);
-    console.log('[DEBUG] Edit mode toggled to:', newVal);
-    return newVal;
-  };
-  const [mapContextMenu, setMapContextMenu] = useState(null); // { x, y, venueId } | { x, y, lat, lng } | null
-  useEffect(() => {
-    if (mapContextMenu) console.log('[EditMode] mapContextMenu state set:', mapContextMenu);
-  }, [mapContextMenu]);
-  // The slide-in AdminEditPanel — opened either by clicking a pin directly
-  // while Edit Mode is on, or via the right-click context menu's Edit Venue.
+  // The slide-in AdminEditPanel — opened via the "✏️ Edit Venue" button
+  // inside a venue's popup (see dropVenuePin's iwHtml + window.__wadupEditVenue
+  // below), never via a separate mode toggle or right-click menu.
   const [editPanelVenue, setEditPanelVenue] = useState(null);
   const [relocating,     setRelocating]     = useState(false);
-  const relocatingRef = useRef(false);
-  useEffect(() => { relocatingRef.current = relocating; }, [relocating]);
   const [relocateTarget, setRelocateTarget] = useState(null); // { lat, lng } | null
-  const [mapAddingAt,     setMapAddingAt]     = useState(null); // { lat, lng } | null
   const [mapActionError,   setMapActionError]   = useState('');
   const [mapActionSuccess, setMapActionSuccess] = useState('');
 
@@ -425,35 +239,13 @@ export default function WadUp() {
     return () => { cancelled = true; };
   }, [session]);
 
-  // ── Admin role — gates the on-map Edit Mode toolbar/context menus ──
+  // ── Admin role — gates the "✏️ Edit Venue" button inside a venue's popup ──
   useEffect(() => {
-    if (!session?.user) {
-      console.log('[AdminToolbar] no session/user — skipping admin role lookup');
-      setAdminRole(null);
-      return;
-    }
-    console.log('[AdminToolbar] session present, looking up admin role for user', session.user.id);
+    if (!session?.user) { setAdminRole(null); return; }
     let cancelled = false;
-    getAdminRole(supabase, session.user.id).then(role => {
-      console.log('[AdminToolbar] getAdminRole resolved:', role);
-      if (!cancelled) setAdminRole(role);
-    });
+    getAdminRole(supabase, session.user.id).then(role => { if (!cancelled) setAdminRole(role); });
     return () => { cancelled = true; };
   }, [session]);
-
-  // ── Close the map's right-click/long-press context menu on any outside
-  // click or Escape ──
-  useEffect(() => {
-    if (!mapContextMenu) return;
-    const close = () => setMapContextMenu(null);
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
-    window.addEventListener('click', close);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('click', close);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [mapContextMenu]);
 
   // ── Capture Chrome's native "Add to Home Screen" prompt for later use ──
   useEffect(() => {
@@ -807,6 +599,14 @@ export default function WadUp() {
     const badgesHtml = badges.length
       ? `<div class="popup-badges">${badges.map(b => `<span class="popup-badge">${b.icon} ${escapeHtml(b.label)}</span>`).join('')}</div>`
       : '';
+    // Admin-only Edit button, built straight into the popup HTML string since
+    // Google's InfoWindow content is raw HTML, not React — window.__wadupEditVenue
+    // (defined once at map init) is the bridge back into React state. Same
+    // markup serves both the click-triggered InfoWindow and the desktop
+    // hover popup, since both go through this same iwHtml/openPopup path.
+    const editBtnHtml = adminRoleRef.current
+      ? `<button onclick="window.__wadupEditVenue('${v.id}')" class="popup-edit-venue-btn">✏️ Edit Venue</button>`
+      : '';
 
     const iwHtml = `
       <div class="gm-iw">
@@ -816,6 +616,7 @@ export default function WadUp() {
         ${badgesHtml}
         <div class="popup-address">📍 ${escapeHtml(v.address)}</div>
         <a class="popup-view-reviews" href="/venue/${encodeURIComponent(v.id)}">View Reviews</a>
+        ${editBtnHtml}
       </div>`;
 
     const pos    = new window.google.maps.LatLng(v.lat, v.lng);
@@ -824,16 +625,6 @@ export default function WadUp() {
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
       zIndex: topBadge ? 15 : 10,
     });
-    // Third redundant path: the invisible Marker object supports Maps' own
-    // native 'rightclick' event regardless of whether the DOM-level
-    // listeners above ever get a chance to fire.
-    marker.addListener('rightclick', (e) => {
-      console.log('[EditMode] google.maps Marker "rightclick" (fallback path) fired for venue', v.id);
-      if (!editModeRef.current) return;
-      const domEvent = e.domEvent;
-      setMapContextMenu({ x: domEvent?.clientX ?? 0, y: domEvent?.clientY ?? 0, venueId: v.id });
-    });
-
     const overlay = makeOverlay(pos, el, map, specialIcon ? 'center' : 'bottom');
 
     const openPopup = () => {
@@ -843,37 +634,8 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      console.log('[DEBUG] venue pin clicked:', v.name, '— editModeRef:', editModeRef.current, 'adminRoleRef:', adminRoleRef.current);
-      if (editModeRef.current && adminRoleRef.current) {
-        console.log('[DEBUG] Opening edit panel for venue:', v.name);
-        openEditPanel(v);
-        return;
-      }
       handlePinInteraction(v.id);
     });
-    // Admin Edit Mode: right-click (desktop) or long-press (mobile) a pin to
-    // open the Edit/Hide/Delete context menu. Inert unless Edit Mode is on,
-    // so normal map browsing is completely unaffected. `data-venue-id` lets
-    // the map container's own capture-phase 'contextmenu' listener (see the
-    // map-init effect below) identify which venue was clicked — that
-    // listener is the PRIMARY path, since Google Maps otherwise intercepts
-    // the right-click before it ever reaches this element. The listener
-    // registered directly on `el` here, and the marker's own 'rightclick'
-    // a few lines down, are redundant fallbacks in case that isn't true in
-    // every browser/Maps version.
-    el.dataset.venueId = String(v.id);
-    el.addEventListener('contextmenu', (e) => {
-      console.log('[EditMode] pin element "contextmenu" (bubble, fallback path) fired for venue', v.id);
-      e.preventDefault();
-      if (!editModeRef.current) return;
-      e.stopPropagation();
-      setMapContextMenu({ x: e.clientX, y: e.clientY, venueId: v.id });
-    });
-    attachLongPress(el, (x, y) => {
-      if (!editModeRef.current) return;
-      console.log('[EditMode] pin long-press fired for venue', v.id);
-      setMapContextMenu({ x, y, venueId: v.id });
-    }, { threshold: 500 });
     // Park/golf emoji pins open on click only — no hover-triggered popup.
     if (!specialIcon) {
       el.addEventListener('mouseenter', () => {
@@ -892,16 +654,18 @@ export default function WadUp() {
 
     const entry = { id: v.id, type: 'venue', marker, overlay, el, lat: v.lat, lng: v.lng, chipVisible: true, openPopup };
     pinRegistry.current.set(v.id, entry);
-    // `openEditPanel` is deliberately NOT in this deps array: it's declared
-    // further down in this component (after dropVenuePin), so listing it
-    // here would evaluate the reference before its `const` initializes —
-    // a real ReferenceError this exact change once threw at render time.
-    // The click handler above only reads `openEditPanel` when it actually
-    // fires (long after the full component body has run), so the closure
-    // is correct regardless; its identity is also stable across renders
-    // (see cancelRelocate/openEditPanel's own empty-ish dep chains), so
-    // omitting it here costs nothing.
   }, [zoomClass]);
+
+  // dropVenuePin bakes the "✏️ Edit Venue" popup button into a cached HTML
+  // string at drop time, read from adminRoleRef — so a venue pin dropped
+  // before the async admin-role lookup resolves would be stuck without the
+  // button until something else happened to redraw it. Re-dropping every
+  // live pin whenever adminRole changes closes that race.
+  useEffect(() => {
+    if (!mapReady) return;
+    venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
+    filterPinsRef.current?.();
+  }, [adminRole, mapReady, dropVenuePin]);
 
   // ── Drop a TM pin ──
   const dropTMPin = useCallback((ev) => {
@@ -978,17 +742,6 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      console.log('[DEBUG] TM pin clicked:', ev.name, '— editModeRef:', editModeRef.current, 'adminRoleRef:', adminRoleRef.current);
-      if (editModeRef.current && adminRoleRef.current) {
-        // Ticketmaster pins are events pulled live from the TM API, not rows
-        // in our own `venues` table — there's nothing for /api/admin/* to
-        // update or delete, so there's no edit panel to open. Still suppress
-        // the normal popup while Edit Mode is on, per spec, rather than
-        // silently falling through to it.
-        console.log('[DEBUG] TM pin not editable (no backing venues row), ignoring:', ev.id, ev.name);
-        setMapActionError('Ticketmaster events aren’t editable — not part of the venues database');
-        return;
-      }
       handlePinInteraction(ev.id);
     });
     el.addEventListener('mouseenter', () => {
@@ -1153,8 +906,8 @@ export default function WadUp() {
       .catch(() => { /* rankings are a nice-to-have — pins already show without them */ });
   }, [dropVenuePin]);
 
-  // ── Admin map controls: Edit/Hide/Delete/Add-here from the right-click
-  // (desktop) or long-press (mobile) context menu ──
+  // ── Admin map controls: Edit/Delete, both triggered from the "✏️ Edit
+  // Venue" button inside a venue's popup ──
   const authedFetchIndex = useCallback(async (url, body) => {
     const res = await fetch(url, {
       method: 'POST',
@@ -1181,56 +934,17 @@ export default function WadUp() {
   }, []);
 
   const flashMapSuccess = useCallback((msg) => {
-    console.log('[EditMode]', msg);
     setMapActionSuccess(msg);
     setTimeout(() => setMapActionSuccess(s => (s === msg ? '' : s)), 2500);
   }, []);
 
-  const mapHideVenue = useCallback(async (venue) => {
-    console.log('[EditMode] Hide/Show clicked for venue', venue.id, venue.name, 'current is_hidden:', venue.is_hidden);
-    setMapActionError('');
-    try {
-      await authedFetchIndex('/api/admin/update-venue', { venueId: venue.id, updates: { is_hidden: !venue.is_hidden } });
-      console.log('[EditMode] update-venue succeeded for hide toggle');
-      // A pin on the map is, by construction, always a currently-visible
-      // venue — this action is realistically always a hide, never a show
-      // (an already-hidden venue has no pin to right-click in the first
-      // place; unhiding lives in the full admin venue manager instead).
-      removePinFromMap(venue.id);
-      flashMapSuccess(`Hid "${venue.name}"`);
-    } catch (e) {
-      console.error('[EditMode] update-venue FAILED for hide toggle:', e);
-      setMapActionError(e.message);
-    }
-    setMapContextMenu(null);
-  }, [authedFetchIndex, removePinFromMap, flashMapSuccess]);
-
-  // Shared by the context menu's quick "Delete" action (which owns its own
-  // confirm() below) and AdminEditPanel's Delete button (which already
-  // confirms internally) — no confirm dialog here, so it's safe for both.
+  // Used by AdminEditPanel's own Delete button, which already confirms
+  // internally — no confirm dialog here.
   const deleteVenueViaApi = useCallback(async (venue) => {
-    console.log('[EditMode] deleting venue via API', venue.id, venue.name);
     await authedFetchIndex('/api/admin/delete-venue', { venueId: venue.id });
-    console.log('[EditMode] delete-venue succeeded');
     removePinFromMap(venue.id);
     flashMapSuccess(`Deleted "${venue.name}"`);
   }, [authedFetchIndex, removePinFromMap, flashMapSuccess]);
-
-  const mapDeleteVenue = useCallback(async (venue) => {
-    console.log('[EditMode] context-menu Delete clicked for venue', venue.id, venue.name);
-    setMapContextMenu(null);
-    if (!window.confirm(`Permanently delete "${venue.name}"? This cannot be undone.`)) {
-      console.log('[EditMode] delete cancelled by admin');
-      return;
-    }
-    setMapActionError('');
-    try {
-      await deleteVenueViaApi(venue);
-    } catch (e) {
-      console.error('[EditMode] delete-venue FAILED:', e);
-      setMapActionError(e.message);
-    }
-  }, [deleteVenueViaApi]);
 
   // Cancels an in-progress "click map to move" without discarding the panel
   // itself — called when relocate completes, the panel closes, or a
@@ -1246,14 +960,12 @@ export default function WadUp() {
   }, []);
 
   const openEditPanel = useCallback((venue) => {
-    console.log('[EditMode] opening edit panel for venue', venue.id, venue.name);
     cancelRelocate();
     setRelocateTarget(null);
     setEditPanelVenue(venue);
   }, [cancelRelocate]);
 
   const closeEditPanel = useCallback(() => {
-    console.log('[EditMode] closing edit panel');
     cancelRelocate();
     setRelocateTarget(null);
     setEditPanelVenue(null);
@@ -1262,7 +974,6 @@ export default function WadUp() {
   const startRelocate = useCallback(() => {
     const map = mapObj.current;
     if (!map || !editPanelVenue) return;
-    console.log('[EditMode] entering relocate mode for venue', editPanelVenue.id, '— click the map to set its new position');
     cancelRelocate();
     setRelocating(true);
     map.setOptions({ draggableCursor: 'crosshair' });
@@ -1270,7 +981,6 @@ export default function WadUp() {
     const listener = map.addListener('click', (e) => {
       const newLat = e.latLng.lat();
       const newLng = e.latLng.lng();
-      console.log('[EditMode] relocate click captured at', newLat, newLng);
       setRelocateTarget({ lat: newLat, lng: newLng });
       cancelRelocate();
       // Move the pin right away as a visual preview — the DB row isn't
@@ -1283,9 +993,7 @@ export default function WadUp() {
 
   const saveEditPanelVenue = useCallback(async (fields) => {
     if (!editPanelVenue) return;
-    console.log('[EditMode] saving edit panel for', editPanelVenue.id, fields);
     await authedFetchIndex('/api/admin/update-venue', { venueId: editPanelVenue.id, updates: fields });
-    console.log('[EditMode] update-venue succeeded');
     flashMapSuccess(`Saved "${fields.name || editPanelVenue.name}"`);
 
     // Reflect the change on the map immediately — no full page reload, and
@@ -1308,25 +1016,6 @@ export default function WadUp() {
     await deleteVenueViaApi(editPanelVenue); // throws on failure — AdminEditPanel shows it inline
     closeEditPanel();
   }, [editPanelVenue, deleteVenueViaApi, closeEditPanel]);
-
-  const mapAddVenueHere = useCallback(async (fields) => {
-    console.log('[EditMode] Add Venue Here submitted at', mapAddingAt, fields);
-    try {
-      // Straight into `venues` via add-venue.js — admin-added venues are
-      // never routed through venues_pending; that staging queue exists only
-      // for unreviewed Google Places sync results (see pages/api/places/sync.js).
-      await authedFetchIndex('/api/admin/add-venue', {
-        venue: { ...fields, lat: mapAddingAt.lat, lng: mapAddingAt.lng, city: 'Chattanooga', state: 'TN', source: 'manual' },
-      });
-      console.log('[EditMode] add-venue succeeded — venue is live immediately');
-      setMapAddingAt(null);
-      flashMapSuccess(`Added "${fields.name}"`);
-      loadVenuesFromSupabase();
-    } catch (e) {
-      console.error('[EditMode] add-venue FAILED:', e);
-      throw e; // MapAddVenueModal shows this inline via its own error state
-    }
-  }, [authedFetchIndex, mapAddingAt, loadVenuesFromSupabase, flashMapSuccess]);
 
   // ── Init Google Maps ──
   useEffect(() => {
@@ -1354,6 +1043,16 @@ export default function WadUp() {
 
       mapObj.current     = map;
       infoWindow.current = new window.google.maps.InfoWindow({ maxWidth: 240 });
+
+      // Bridge for the "✏️ Edit Venue" button embedded in a venue popup's raw
+      // HTML string (see dropVenuePin's iwHtml) — an inline onclick="" handler
+      // has no way to reach React state directly, so it calls this instead.
+      window.__wadupEditVenue = (venueId) => {
+        const venue = venuesRef.current.find(v => v.id === venueId);
+        if (!venue) return;
+        infoWindow.current.close();
+        openEditPanel(venue);
+      };
 
       // Desktop hover: keep the popup open while the mouse is over the popup
       // itself (not just the pin), and close it on a delay when it leaves both.
@@ -1392,65 +1091,6 @@ export default function WadUp() {
       // Clicking/dragging the map background collapses any open spiderfy fan-out
       map.addListener('click', () => collapseSpiderfy());
       map.addListener('dragstart', () => collapseSpiderfy());
-
-      // Admin Edit Mode: right-click empty map → "Add Venue Here", via
-      // Google's own synthesized 'rightclick' event (fires for the map
-      // background — never for a click Google decides landed on a POI/etc).
-      map.addListener('rightclick', (e) => {
-        console.log('[EditMode] google.maps "rightclick" fired on map background', { editMode: editModeRef.current, latLng: e.latLng?.toString() });
-        if (!editModeRef.current || !e.latLng) return;
-        const domEvent = e.domEvent;
-        console.log('[EditMode] opening "Add Venue Here" menu at', domEvent?.clientX, domEvent?.clientY);
-        setMapContextMenu({
-          x: domEvent?.clientX ?? 0, y: domEvent?.clientY ?? 0,
-          lat: e.latLng.lat(), lng: e.latLng.lng(),
-        });
-      });
-
-      // Right-click on a PIN is a different story: Google Maps installs its
-      // own 'contextmenu' listener on the map's container in the CAPTURE
-      // phase (that's how it suppresses the OS context menu and synthesizes
-      // 'rightclick' above) and stops the event there — so a listener
-      // attached directly to a pin's own element in the normal bubble phase
-      // (further down in this file, in dropVenuePin) can end up never firing
-      // at all, since the event never even reaches the pin. Intercepting in
-      // OUR OWN capture-phase listener on the same container, registered
-      // before Maps gets a chance to run, wins that race. We only act (and
-      // stopPropagation) when the click actually landed on a `.wu-pin`;
-      // every other right-click is left completely alone so the map's own
-      // 'rightclick' handling above keeps working for empty-map clicks.
-      if (mapRef.current) {
-        mapRef.current.addEventListener('contextmenu', (e) => {
-          const pinEl = e.target.closest?.('.wu-pin');
-          console.log('[EditMode] map container "contextmenu" fired (capture phase), target is a pin?', !!pinEl);
-          if (!pinEl) return; // not a pin — let Google Maps handle it natively
-          e.preventDefault();
-          if (!editModeRef.current) { console.log('[EditMode] edit mode is off — ignoring pin right-click'); return; }
-          e.stopPropagation();
-          const venueId = pinEl.dataset.venueId;
-          console.log('[EditMode] intercepted pin right-click before Google Maps could swallow it — venueId:', venueId, 'at', e.clientX, e.clientY);
-          setMapContextMenu({ x: e.clientX, y: e.clientY, venueId });
-        }, true); // capture: must run before Google Maps' own contextmenu listener
-      }
-
-      // Mobile long-press equivalent for the empty map background. Ignores a
-      // touch that started on a pin — dropVenuePin's own long-press handler
-      // owns that case. Touch events aren't intercepted by Google Maps the
-      // way 'contextmenu' is, so no capture-phase trick is needed here.
-      if (mapRef.current) {
-        attachLongPress(mapRef.current, (x, y, e) => {
-          if (!editModeRef.current) return;
-          if (e.target.closest?.('.wu-pin')) {
-            console.log('[EditMode] long-press on map container started on a pin — deferring to the pin\'s own long-press handler');
-            return;
-          }
-          console.log('[EditMode] long-press on empty map background at', x, y);
-          const rect = mapRef.current.getBoundingClientRect();
-          const latLng = pixelToLatLng(map, x - rect.left, y - rect.top);
-          if (!latLng) { console.log('[EditMode] pixelToLatLng failed — map projection not ready?'); return; }
-          setMapContextMenu({ x, y, lat: latLng.lat(), lng: latLng.lng() });
-        }, { threshold: 500 });
-      }
 
       setMapReady(true);
 
@@ -1936,7 +1576,7 @@ export default function WadUp() {
         </aside>
 
         {/* Map stage — full screen on desktop, phone mockup on mobile */}
-        <div className={`map-frame${editMode ? ' map-edit-mode' : ''}`}>
+        <div className="map-frame">
           <div ref={mapRef} id="map" />
 
           {!mapReady && !showSplash && (
@@ -1952,32 +1592,6 @@ export default function WadUp() {
           >
             {profile ? (profile.username || '?').slice(0, 1).toUpperCase() : '👤'}
           </button>
-
-          {adminRole && (
-            <button
-              id="edit-mode-btn"
-              onClick={() => {
-                const newVal = toggleEditMode();
-                alert('Edit mode is now: ' + (newVal ? 'ON' : 'OFF'));
-              }}
-              style={{
-                position: 'fixed',
-                top: '80px',
-                right: '16px',
-                zIndex: 99999,
-                background: editMode ? '#FFFC00' : '#050d1a',
-                color: editMode ? '#000' : '#fff',
-                border: '2px solid #FFFC00',
-                borderRadius: '8px',
-                padding: '10px 16px',
-                fontWeight: 800,
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-              }}
-            >
-              {editMode ? '✏️ EDIT ON' : '✏️ Edit Mode'}
-            </button>
-          )}
 
           {/* Mobile HUD */}
           <div className="hud">
@@ -2013,42 +1627,6 @@ export default function WadUp() {
             </nav>
           </div>
 
-          {mapContextMenu && (
-            <div
-              className="map-context-menu"
-              style={{ left: mapContextMenu.x, top: mapContextMenu.y }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {mapContextMenu.venueId ? (
-                (() => {
-                  const v = venuesRef.current.find(x => String(x.id) === String(mapContextMenu.venueId));
-                  console.log('[EditMode] rendering pin context menu, venueId:', mapContextMenu.venueId, 'resolved venue:', v?.name);
-                  if (!v) {
-                    console.warn('[EditMode] could not find venue', mapContextMenu.venueId, 'in venuesRef — menu will render empty');
-                    return null;
-                  }
-                  return (
-                    <>
-                      <button onClick={() => { console.log('[EditMode] Edit Venue clicked for', v.id); setMapContextMenu(null); openEditPanel(v); }}>✏️ Edit Venue</button>
-                      <button onClick={() => mapHideVenue(v)}>👁️ Hide/Show</button>
-                      {isSuperAdmin(adminRole) && (
-                        <button className="map-context-danger" onClick={() => mapDeleteVenue(v)}>🗑️ Delete</button>
-                      )}
-                    </>
-                  );
-                })()
-              ) : (
-                <button onClick={() => {
-                  console.log('[EditMode] Add Venue Here clicked at', mapContextMenu.lat, mapContextMenu.lng);
-                  setMapAddingAt({ lat: mapContextMenu.lat, lng: mapContextMenu.lng });
-                  setMapContextMenu(null);
-                }}>
-                  ➕ Add Venue Here
-                </button>
-              )}
-            </div>
-          )}
-
           {editPanelVenue && (
             <AdminEditPanel
               venue={editPanelVenue}
@@ -2058,15 +1636,6 @@ export default function WadUp() {
               onClose={closeEditPanel}
               onSave={saveEditPanelVenue}
               onDelete={deleteEditPanelVenue}
-            />
-          )}
-
-          {mapAddingAt && (
-            <MapAddVenueModal
-              lat={mapAddingAt.lat}
-              lng={mapAddingAt.lng}
-              onClose={() => setMapAddingAt(null)}
-              onSave={mapAddVenueHere}
             />
           )}
 
