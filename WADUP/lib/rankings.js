@@ -304,3 +304,30 @@ export async function getScheduleTrendingVenues(supabase, category, city) {
     .map(s => ({ ...s.venues, _scheduleEntry: s }));
 }
 
+// ── 🔥 Live Trending — the ONLY thing that may put a fire badge on a venue's
+// pin/popup (see getVenueBadges in lib/data.js, fed by pages/index.js). A
+// venue qualifies if, and only if:
+//   1. It has a venue_event_schedule entry for today, is_active, whose
+//      trending window (see TRENDING_WINDOWS above) covers right now — i.e.
+//      it's one of the venues getScheduleTrendingVenues would return, or
+//   2. It has a venue_events row starting within the next 2 hours.
+// Deliberately independent of rating (a 0.0-rated venue with no real activity
+// must never qualify) and independent of getTrendingVenues' recent-activity
+// score above (that composite is a different, past-tense signal — "popular
+// lately" — still used as-is by pages/discover.js's own Trending section).
+export async function getLiveTrendingVenueIds(supabase, city) {
+  const scheduleVenues = await getScheduleTrendingVenues(supabase, null, city);
+  const ids = new Set(scheduleVenues.map(v => v.id));
+
+  const now = new Date();
+  const twoHoursOut = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const { data: upcoming } = await supabase
+    .from('venue_events')
+    .select('venue_id')
+    .gte('start_time', now.toISOString())
+    .lte('start_time', twoHoursOut.toISOString());
+  (upcoming || []).forEach(e => { if (e.venue_id) ids.add(e.venue_id); });
+
+  return ids;
+}
+

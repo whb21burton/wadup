@@ -7,7 +7,7 @@ import {
   venueMatchesChip, venueCategories,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
-import { getTrendingVenues, getBestRated, getScheduleTrendingVenues, rankVenuesInBounds } from '../lib/rankings';
+import { getLiveTrendingVenueIds, getBestRated, getScheduleTrendingVenues, rankVenuesInBounds } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
 import { getAdminRole } from '../lib/admin';
 import AuthSidebar from '../components/AuthSidebar';
@@ -904,13 +904,17 @@ export default function WadUp() {
       .gte('end_time', dayStart.toISOString());
     eventVenueIdsTodayRef.current = new Set((eventsToday || []).map(e => e.venue_id));
 
-    // Top 10 by rating, area-wide — independent of whichever chip is active.
-    // Freshly-synced venues have no WadUp reviews yet, so this needs the same
-    // Google-rating fallback as the pins themselves, or every synced venue
-    // would tie at 0 and "top 10" would be an arbitrary slice.
-    trendingVenueIds.current = new Set(
+    // Best Rated placeholder, area-wide — independent of whichever chip is
+    // active. Freshly-synced venues have no WadUp reviews yet, so this needs
+    // the same Google-rating fallback as the pins themselves; the `> 0`
+    // floor keeps a venue with no rating at all (real or Google) from ever
+    // getting the ⭐ Best Rated badge just because "top 10 of an empty/tied
+    // set" is otherwise an arbitrary slice — the bug that used to put a 🔥
+    // Trending badge (a completely separate signal, see getLiveTrendingVenueIds
+    // below) on a 0.0-rated venue with zero real activity ever recorded.
+    bestRatedVenueIds.current = new Set(
       venuesRef.current
-        .filter(v => v.live && isVenueEligible(v))
+        .filter(v => v.live && isVenueEligible(v) && (effectiveRating(v) || 0) > 0)
         .slice()
         .sort((a, b) => (effectiveRating(b) || 0) - (effectiveRating(a) || 0))
         .slice(0, 10)
@@ -921,21 +925,30 @@ export default function WadUp() {
     venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
     filterPinsRef.current?.();
 
-    // Phase 2: layer real, city-scoped activity-based rankings (lib/rankings.js,
-    // backed by the live Supabase checkins/reviews/saved_venues tables) onto
-    // the naive same-session "top 10 by rating" badge above — additive, so
-    // pins already dropped just get re-dropped (picking up the new badge)
-    // once this async fetch resolves. Uses filterPinsRef (not the plain
-    // closure) since this can resolve well after mount, by which point
-    // activeChip/activeDate may have moved on.
+    // Phase 2: layer the real ⭐ Best Rated ranking (lib/rankings.js, backed
+    // by the live Supabase reviews) onto the naive same-session rating
+    // placeholder above, and compute 🔥 Live Trending fresh — additive for
+    // Best Rated, a full replace for Trending since getLiveTrendingVenueIds
+    // is the sole source of truth for that badge (no rating/placeholder ever
+    // feeds it — see the comment above bestRatedVenueIds). Pins already
+    // dropped just get re-dropped (picking up the new badge) once this async
+    // fetch resolves. Uses filterPinsRef (not the plain closure) since this
+    // can resolve well after mount, by which point activeChip/activeDate may
+    // have moved on.
     const citiesOnMap = [...new Set(venuesRef.current.map(v => v.city).filter(Boolean))];
-    Promise.all(citiesOnMap.map(city => Promise.all([getTrendingVenues(city, 10), getBestRated(city, 10)])))
+    Promise.all(citiesOnMap.map(city => Promise.all([getLiveTrendingVenueIds(supabase, city), getBestRated(city, 10)])))
       .then(perCityResults => {
         let changed = false;
-        perCityResults.forEach(([trendList, ratedList]) => {
-          trendList.forEach(v => { if (!trendingVenueIds.current.has(v.id)) { trendingVenueIds.current.add(v.id); changed = true; } });
+        perCityResults.forEach(([liveTrendingIds, ratedList]) => {
+          liveTrendingIds.forEach(id => { if (!trendingVenueIds.current.has(id)) { trendingVenueIds.current.add(id); changed = true; } });
           ratedList.forEach(v => { if (!bestRatedVenueIds.current.has(v.id)) { bestRatedVenueIds.current.add(v.id); changed = true; } });
         });
+
+        // TEMP DEBUG — remove once the fire-emoji bug is confirmed fixed in prod.
+        console.log('[TRENDING] venues marked trending:', venuesRef.current
+          .filter(v => trendingVenueIds.current.has(v.id))
+          .map(v => v.name));
+
         if (!changed) return;
         venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
         filterPinsRef.current?.();
