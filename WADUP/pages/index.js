@@ -7,7 +7,7 @@ import {
   venueMatchesChip, venueCategories,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
-import { getTrendingVenues, getBestRated, getScheduleTrendingVenues, getRankedVenues } from '../lib/rankings';
+import { getTrendingVenues, getBestRated, getScheduleTrendingVenues, rankVenuesInBounds } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
 import { getAdminRole } from '../lib/admin';
 import AuthSidebar from '../components/AuthSidebar';
@@ -281,12 +281,8 @@ export default function WadUp() {
   const loadSidebarLists = useCallback(async (chip) => {
     setSidebarLoading(true);
     try {
-      const [nowList, rankedList] = await Promise.all([
-        getScheduleTrendingVenues(supabase, chip, 'Chattanooga'),
-        getRankedVenues(supabase, chip, 'Chattanooga', 10),
-      ]);
+      const nowList = await getScheduleTrendingVenues(supabase, chip, 'Chattanooga');
       setTrendingNow(nowList);
-      setTopRanked(rankedList);
     } catch (e) {
       /* sidebar lists are a nice-to-have — leave whatever was showing */
     }
@@ -350,9 +346,46 @@ export default function WadUp() {
       entry.marker.setMap(show ? map : null);
       if (entry.overlay) entry.overlay.setMap(show ? map : null);
     });
+
+    updateAreaRanks();
   }, []);
 
   useEffect(() => { filterPinsRef.current = filterPins; }, [filterPins]);
+
+  // Ranks whatever venues are currently inside the map viewport by
+  // weighted_rating — drives both the #N label baked into a pin's name and
+  // the sidebar's "🏆 Top 10" list, which both need this same
+  // viewport-relative ranking (not a city-wide one). Called from filterPins
+  // (covers chip changes and any point pins get (re)dropped) and separately
+  // from the map's own 'bounds_changed' listener (panning/zooming changes
+  // what's "in bounds" without touching the chip filter at all).
+  const updateAreaRanks = useCallback(() => {
+    const map = mapObj.current;
+    if (!map) return;
+    const bounds = map.getBounds();
+    const chip = activeCategoryRef.current;
+
+    const inBounds = venuesRef.current.filter(v => {
+      if (!v.live) return false;
+      if (!bounds) return true;
+      return bounds.contains(new window.google.maps.LatLng(v.lat, v.lng));
+    });
+
+    const ranked = rankVenuesInBounds(inBounds, chip);
+    const rankedIds = new Set(ranked.filter(v => v._areaRank <= 10).map(v => v.id));
+
+    pinRegistry.current.forEach((entry, id) => {
+      if (entry.type !== 'venue') return;
+      const nameEl = entry.el?.querySelector('.wu-name');
+      if (!nameEl) return;
+      const venue = venuesRef.current.find(v => v.id === id);
+      if (!venue) return;
+      const rankedMatch = ranked.find(v => v.id === id);
+      nameEl.textContent = rankedMatch && rankedIds.has(id) ? `#${rankedMatch._areaRank} ${venue.name}` : venue.name;
+    });
+
+    setTopRanked(ranked.slice(0, 10));
+  }, []);
 
   // ── WuOverlay class factory ── anchor 'bottom' = pin (tail points at the
   // coordinate); anchor 'center' = bubble centered directly on the coordinate.
@@ -1092,6 +1125,16 @@ export default function WadUp() {
       map.addListener('click', () => collapseSpiderfy());
       map.addListener('dragstart', () => collapseSpiderfy());
 
+      // Panning/zooming changes which venues are "in bounds" for area
+      // ranking without touching the chip filter at all, so this needs its
+      // own listener rather than piggybacking on filterPins — debounced
+      // since bounds_changed fires continuously during a drag/zoom gesture.
+      let boundsChangeTimer = null;
+      map.addListener('bounds_changed', () => {
+        clearTimeout(boundsChangeTimer);
+        boundsChangeTimer = setTimeout(() => updateAreaRanks(), 300);
+      });
+
       setMapReady(true);
 
       // Real Chattanooga venues (Google Places-sourced, see pages/api/places/sync.js)
@@ -1298,18 +1341,17 @@ export default function WadUp() {
 
   const renderTopRankedItems = () => (
     topRanked.length === 0 ? (
-      <div className="t-empty">{sidebarLoading ? 'Loading…' : 'No ranked venues yet'}</div>
-    ) : topRanked.map((v, idx) => (
+      <div className="t-empty">{sidebarLoading ? 'Loading…' : 'No ranked venues in view'}</div>
+    ) : topRanked.map((v) => (
       <div key={v.id} className="t-item" onClick={() => flyTo(v.lng, v.lat)}>
-        <div className={`t-rank${idx === 0 ? ' rank-gold' : idx === 1 ? ' rank-silver' : idx === 2 ? ' rank-bronze' : ''}`}>
-          #{idx + 1}
+        <div className={`t-rank${v._areaRank === 1 ? ' rank-gold' : v._areaRank === 2 ? ' rank-silver' : v._areaRank === 3 ? ' rank-bronze' : ''}`}>
+          #{v._areaRank}
         </div>
         <div className="t-icon">{venueEmoji(v)}</div>
         <div className="t-info">
           <div className="t-name">{v.name}</div>
-          <div className="t-sub">{(v.vote_score || 0).toLocaleString()} pts</div>
         </div>
-        {(v.total_ratings || 0) > 0 && <div className="t-rating">⭐ {(v.average_rating || 0).toFixed(1)}</div>}
+        {(v.weighted_rating_count || 0) > 0 && <div className="t-rating">⭐ {(v.weighted_rating || 0).toFixed(1)}/10</div>}
       </div>
     ))
   );

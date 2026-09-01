@@ -171,59 +171,96 @@ export async function getLocalFavorites(city, limit = 10) {
     .slice(0, limit);
 }
 
-// ── Phase 3: WadUp Points ──────────────────────────────────────────────
-export const POINTS = {
-  WRITE_REVIEW: 50,
-  REVIEW_GETS_HELPFUL: 10,
-  CHECK_IN: 20,
-  FIRST_CHECKIN_VENUE: 50, // bonus for being first to check in somewhere
-  UPLOAD_PHOTO: 15,
-  BUY_TICKET: 100,
-  REFER_FRIEND: 200,
-  DAILY_LOGIN: 5,
-  LOCAL_REVIEW: 25, // bonus points for reviewing in your local city
-  VOTE: 5,
-};
-
-// ── Phase 7: Voting / vote-based ranking / schedule-based trending ─────
+// ── Weighted ratings — replaces the old points/vote system ─────────────
 //
-// A vote's weight scales with how much the voter's word should count:
+// A reviewer's rating counts for more the more their word should count:
 // admins/ambassadors curating their city count for a lot, verified locals
-// count for more than a drive-by tourist, everyone else counts for 1.
+// count for more than a drive-by tourist, everyone else counts for 1. Used
+// both to weight a single review's contribution to a venue's rating, and
+// (via getVoteWeight itself) nowhere else now that voting is gone — kept
+// under this name since callers already import it that way and the formula
+// is identical either way.
 export function getVoteWeight(userProfile, adminRole) {
   if (adminRole?.role === 'super_admin' || adminRole?.role === 'ambassador') return 100;
   if (userProfile?.is_local) return 10;
   return 1;
 }
 
-// Ranked by admin_rank_override[category] first (manually curated order),
-// then by vote_score — the organic community ranking — for everything else.
-// Unlike the other functions in this file, this (and getScheduleTrendingVenues
-// below) take `supabase` as a parameter rather than using the module-level
-// import, so the same function works from either a client session or an
-// admin route without duplicating the query logic.
-export async function getRankedVenues(supabase, category, city, limit = 50) {
-  let query = supabase
-    .from('venues')
-    .select(`${VENUE_CARD_FIELDS}, vote_score, admin_rank_override, venue_votes(count)`)
-    .eq('city', city)
-    .eq('is_hidden', false)
-    .order('vote_score', { ascending: false });
-  if (category && category !== 'all') query = query.overlaps('categories', [category]);
+// Recalculates a venue's weighted_rating (+ per-subcategory breakdown) from
+// scratch off every review currently on it. Called after any review is
+// written — see pages/api/reviews/submit.js. `supabaseAdmin` must be the
+// service-role client: reading every reviewer's profile/admin_roles row to
+// compute weights isn't something the reviewing user's own session is
+// allowed to do via RLS (those tables only expose a user's own row to them).
+export async function recalculateVenueRating(supabaseAdmin, venueId) {
+  const { data: reviews } = await supabaseAdmin
+    .from('reviews')
+    .select('overall_rating, subcategory_ratings, user_id')
+    .eq('venue_id', venueId);
 
-  const { data, error } = await query;
-  if (error || !data) return [];
-  return applyAdminRankOverride(data, category).slice(0, limit);
+  if (!reviews || reviews.length === 0) {
+    await supabaseAdmin.from('venues').update({
+      weighted_rating: 0,
+      weighted_rating_count: 0,
+      subcategory_weighted_ratings: {},
+    }).eq('id', venueId);
+    return;
+  }
+
+  const userIds = [...new Set(reviews.map(r => r.user_id).filter(Boolean))];
+  const [{ data: profiles }, { data: adminRoles }] = await Promise.all([
+    supabaseAdmin.from('profiles').select('id, is_local').in('id', userIds),
+    supabaseAdmin.from('admin_roles').select('user_id, role').in('user_id', userIds),
+  ]);
+  const profileById = new Map((profiles || []).map(p => [p.id, p]));
+  const adminRoleByUserId = new Map((adminRoles || []).map(r => [r.user_id, r]));
+
+  let totalWeight = 0, weightedSum = 0;
+  const subcatSums = {}, subcatWeights = {};
+
+  for (const review of reviews) {
+    const weight = getVoteWeight(profileById.get(review.user_id), adminRoleByUserId.get(review.user_id));
+    totalWeight += weight;
+    weightedSum += (review.overall_rating || 0) * weight;
+
+    if (review.subcategory_ratings) {
+      Object.entries(review.subcategory_ratings).forEach(([subcat, rating]) => {
+        subcatSums[subcat] = (subcatSums[subcat] || 0) + rating * weight;
+        subcatWeights[subcat] = (subcatWeights[subcat] || 0) + weight;
+      });
+    }
+  }
+
+  const weightedRating = totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 10) / 10 : 0;
+
+  const subcatRatings = {};
+  Object.keys(subcatSums).forEach(subcat => {
+    subcatRatings[subcat] = Math.round((subcatSums[subcat] / subcatWeights[subcat]) * 10) / 10;
+  });
+
+  await supabaseAdmin.from('venues').update({
+    weighted_rating: weightedRating,
+    weighted_rating_count: reviews.length,
+    subcategory_weighted_ratings: subcatRatings,
+  }).eq('id', venueId);
 }
 
-function applyAdminRankOverride(venues, category) {
-  const overridden = venues
-    .filter(v => v.admin_rank_override?.[category] != null)
-    .sort((a, b) => a.admin_rank_override[category] - b.admin_rank_override[category]);
-  const rest = venues
-    .filter(v => v.admin_rank_override?.[category] == null)
-    .sort((a, b) => (b.vote_score || 0) - (a.vote_score || 0));
-  return [...overridden, ...rest];
+// Ranks an already-fetched, already-scoped (e.g. to the current map viewport)
+// list of venues by weighted_rating, purely client-side — no Supabase query
+// of its own, unlike every other function in this file. Used for both the
+// on-pin area-rank label and the sidebar's Top 10 list (pages/index.js),
+// which both need this same viewport-relative ranking, not a city-wide one.
+export function rankVenuesInBounds(venues, chip) {
+  const filtered = venues.filter(v => {
+    if (v.is_hidden) return false;
+    if (chip === 'all') return true;
+    const cats = v.categories || (v.category ? [v.category] : []);
+    return cats.includes(chip);
+  });
+
+  return filtered
+    .sort((a, b) => (b.weighted_rating || 0) - (a.weighted_rating || 0))
+    .map((v, i) => ({ ...v, _areaRank: i + 1 }));
 }
 
 // A venue is "trending now" if it has a venue_event_schedule entry starting
@@ -271,28 +308,3 @@ export async function getScheduleTrendingVenues(supabase, category, city) {
     .map(s => ({ ...s.venues, _scheduleEntry: s }));
 }
 
-// Server-only. `admin` must be the service-role client from
-// pages/api/supabase-admin.js — points_log has no INSERT policy for
-// anon/authenticated at all, and profiles.wadup_points is protected by a DB
-// trigger that silently reverts the write unless auth.role() = 'service_role'.
-// Never import/call this from client-side code (that's exactly why it takes
-// the admin client as a parameter instead of constructing one itself here —
-// this module is also imported by client pages for the read-only ranking
-// functions above, and a module-scope service-role client would either
-// break those bundles or risk the key ending up somewhere it shouldn't).
-export async function awardPoints(admin, userId, points, reason) {
-  if (!admin || !userId || !points) return null;
-
-  const { error: logError } = await admin.from('points_log').insert({ user_id: userId, points, reason });
-  if (logError) throw logError;
-
-  const { data: profile, error: fetchError } = await admin
-    .from('profiles').select('wadup_points').eq('id', userId).single();
-  if (fetchError) throw fetchError;
-
-  const newTotal = (profile?.wadup_points || 0) + points;
-  const { error: updateError } = await admin.from('profiles').update({ wadup_points: newTotal }).eq('id', userId);
-  if (updateError) throw updateError;
-
-  return newTotal;
-}

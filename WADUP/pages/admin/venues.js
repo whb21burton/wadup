@@ -49,8 +49,18 @@ function EditVenueModal({ venue, onClose, onSaved, onSave, title = 'Edit Venue' 
   const [verified, setVerified] = useState(!!venue.is_verified);
   const [isPrivate, setIsPrivate] = useState(!!venue.is_private);
   const [hideNewBadge, setHideNewBadge] = useState(!!venue.hide_new_badge);
+  const [customSubcats, setCustomSubcats] = useState(venue.custom_subcategories || []);
+  const [newSubcat, setNewSubcat] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const addCustomSubcat = () => {
+    const v = newSubcat.trim();
+    if (!v || customSubcats.includes(v)) { setNewSubcat(''); return; }
+    setCustomSubcats(prev => [...prev, v]);
+    setNewSubcat('');
+  };
+  const removeCustomSubcat = (v) => setCustomSubcats(prev => prev.filter(s => s !== v));
 
   const save = async () => {
     setSaving(true);
@@ -63,6 +73,7 @@ function EditVenueModal({ venue, onClose, onSaved, onSave, title = 'Edit Venue' 
         is_verified: verified,
         is_private: isPrivate,
         hide_new_badge: hideNewBadge,
+        custom_subcategories: customSubcats,
       });
       onSaved();
     } catch (e) {
@@ -125,6 +136,29 @@ function EditVenueModal({ venue, onClose, onSaved, onSave, title = 'Edit Venue' 
             placeholder="e.g. Craft Beer Bar, Speakeasy, Golf Course"
             onChange={(e) => setSubcategory(e.target.value)}
           />
+
+          <label>Custom Subcategories</label>
+          <div className="custom-subcat-row">
+            <input
+              value={newSubcat}
+              placeholder="e.g. Margaritas, Patio, Brunch"
+              onChange={(e) => setNewSubcat(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomSubcat(); } }}
+            />
+            <button type="button" className="admin-save-btn custom-subcat-add-btn" onClick={addCustomSubcat}>
+              + Add
+            </button>
+          </div>
+          {customSubcats.length > 0 && (
+            <div className="custom-subcat-chip-row">
+              {customSubcats.map(s => (
+                <span key={s} className="custom-subcat-chip">
+                  {s}
+                  <button type="button" onClick={() => removeCustomSubcat(s)} aria-label={`Remove ${s}`}>✕</button>
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="admin-toggle-row">
             <label className="admin-toggle">
@@ -354,87 +388,9 @@ function PendingVenuesView({ pending, onApprove, onEditApprove, onReject }) {
 const SORT_OPTIONS = [
   { id: 'az',       label: 'A-Z' },
   { id: 'za',       label: 'Z-A' },
-  { id: 'rankings', label: 'Rankings' },
   { id: 'google',   label: 'Google Rating' },
-  { id: 'votes',    label: 'Vote Score' },
+  { id: 'rating',   label: 'WadUp Rating' },
 ];
-
-// Mirrors lib/rankings.js's applyAdminRankOverride (a module-private helper
-// there) — duplicated rather than exported/imported since this operates on
-// an already-in-memory venue list instead of running its own Supabase query.
-function sortByRankOverrideThenVotes(venues, category) {
-  const overridden = venues
-    .filter(v => v.admin_rank_override?.[category] != null)
-    .sort((a, b) => a.admin_rank_override[category] - b.admin_rank_override[category]);
-  const rest = venues
-    .filter(v => v.admin_rank_override?.[category] == null)
-    .sort((a, b) => (b.vote_score || 0) - (a.vote_score || 0));
-  return [...overridden, ...rest];
-}
-
-function RankingsView({ venues, category, session, onSaved }) {
-  const [order, setOrder] = useState(venues);
-  const dragIndexRef = useRef(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => { setOrder(venues); }, [venues]);
-
-  const onDragOver = (e, i) => {
-    e.preventDefault();
-    const from = dragIndexRef.current;
-    if (from === null || from === i) return;
-    setOrder(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(from, 1);
-      next.splice(i, 0, moved);
-      return next;
-    });
-    dragIndexRef.current = i;
-  };
-
-  const onDrop = async () => {
-    dragIndexRef.current = null;
-    setSaving(true);
-    setError('');
-    try {
-      await Promise.all(order.map((v, idx) =>
-        authedFetch('/api/admin/update-venue', session, {
-          venueId: v.id,
-          updates: { admin_rank_override: { ...(v.admin_rank_override || {}), [category]: idx } },
-        })
-      ));
-      onSaved();
-    } catch (e) {
-      setError(e.message);
-    }
-    setSaving(false);
-  };
-
-  if (!order.length) return <div className="admin-sync-desc">No venues in this category yet.</div>;
-
-  return (
-    <div className="admin-rankings-list">
-      {order.map((v, i) => (
-        <div
-          key={v.id}
-          className={`admin-rankings-row${v.admin_rank_override?.[category] != null ? ' overridden' : ''}`}
-          draggable
-          onDragStart={() => { dragIndexRef.current = i; }}
-          onDragOver={(e) => onDragOver(e, i)}
-          onDrop={onDrop}
-        >
-          <span className="admin-drag-handle">⠿</span>
-          <span className="admin-venue-table-icon">{venueIcon(v)}</span>
-          <span className="admin-venue-table-name">{v.name}</span>
-          <span className="admin-rankings-score">{v.vote_score || 0} pts</span>
-        </div>
-      ))}
-      {saving && <div className="admin-sync-desc">Saving order…</div>}
-      {error && <div className="admin-modal-error">⚠️ {error}</div>}
-    </div>
-  );
-}
 
 export default function AdminVenues() {
   const router = useRouter();
@@ -452,7 +408,6 @@ export default function AdminVenues() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortMode, setSortMode] = useState('az');
-  const [rankingsTab, setRankingsTab] = useState(EDITABLE_CATEGORIES[0].id);
 
   const [pendingVenues, setPendingVenues] = useState([]);
   const [loadingPending, setLoadingPending] = useState(true);
@@ -553,14 +508,9 @@ export default function AdminVenues() {
     const list = [...scopedVenues];
     if (sortMode === 'za') return list.sort((a, b) => b.name.localeCompare(a.name));
     if (sortMode === 'google') return list.sort((a, b) => (b.google_rating || 0) - (a.google_rating || 0));
-    if (sortMode === 'votes') return list.sort((a, b) => (b.vote_score || 0) - (a.vote_score || 0));
+    if (sortMode === 'rating') return list.sort((a, b) => (b.weighted_rating || 0) - (a.weighted_rating || 0));
     return list.sort((a, b) => a.name.localeCompare(b.name)); // 'az' and the default
   }, [scopedVenues, sortMode]);
-
-  const rankingsVenues = useMemo(() => {
-    const list = allVenues.filter(v => venueCategories(v).includes(rankingsTab));
-    return sortByRankOverrideThenVotes(list, rankingsTab);
-  }, [allVenues, rankingsTab]);
 
   const toggleHidden = async (venue) => {
     setActionError('');
@@ -679,31 +629,7 @@ export default function AdminVenues() {
             ))}
           </div>
 
-          {sortMode === 'rankings' ? (
-            <>
-              <div className="admin-rankings-tabs">
-                {EDITABLE_CATEGORIES.map(c => (
-                  <button
-                    key={c.id}
-                    className={`admin-rankings-tab${rankingsTab === c.id ? ' active' : ''}`}
-                    onClick={() => setRankingsTab(c.id)}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-              {loadingVenues ? (
-                <div className="admin-sync-desc">Loading venues…</div>
-              ) : (
-                <RankingsView
-                  venues={rankingsVenues}
-                  category={rankingsTab}
-                  session={session}
-                  onSaved={loadVenues}
-                />
-              )}
-            </>
-          ) : loadingVenues ? (
+          {loadingVenues ? (
             <div className="admin-sync-desc">Loading venues…</div>
           ) : visibleVenues.length === 0 ? (
             <div className="admin-sync-desc">No venues match.</div>

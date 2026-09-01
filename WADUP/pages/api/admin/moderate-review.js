@@ -14,7 +14,7 @@ const REPORT_SELECT = `
   id, reason, created_at,
   reporter:profiles!review_reports_reporter_id_fkey(username),
   reviews (
-    id, content, rating, user_id,
+    id, content, overall_rating, user_id,
     author:profiles!reviews_user_id_fkey(username),
     venues (id, name, city, state)
   )

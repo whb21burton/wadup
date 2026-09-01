@@ -4,7 +4,6 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
 import { CATEGORY_LABELS } from '../../lib/data';
-import { getUserBadges } from '../../lib/badges';
 
 const AVATAR_COLORS = ['#FF4500', '#00E5FF', '#FFD700', '#7cffb0', '#ff6fb0', '#9b8cff'];
 function avatarColor(username) {
@@ -35,7 +34,6 @@ export default function UserProfile() {
   const [loading,       setLoading]       = useState(true);
   const [notFound,      setNotFound]      = useState(false);
 
-  const [badges, setBadges] = useState([]);
   const [stats,  setStats]  = useState({ reviews: 0, checkins: 0, saved: 0, photos: 0 });
 
   const [activeTab,    setActiveTab]    = useState('reviews');
@@ -75,20 +73,17 @@ export default function UserProfile() {
     setProfile(profileData);
 
     const [
-      badgeList,
       { count: reviewCount },
       { data: checkinStats },
       { data: savedStats },
       { count: photoCount },
     ] = await Promise.all([
-      getUserBadges(profileData.id),
       supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('user_id', profileData.id),
       supabase.from('user_checkin_stats').select('total_checkins').eq('user_id', profileData.id).maybeSingle(),
       supabase.from('user_saved_stats').select('saved_count').eq('user_id', profileData.id).maybeSingle(),
       supabase.from('venue_photos').select('id', { count: 'exact', head: true }).eq('user_id', profileData.id),
     ]);
 
-    setBadges(badgeList);
     setStats({
       reviews: reviewCount || 0,
       checkins: checkinStats?.total_checkins || 0,
@@ -160,16 +155,7 @@ export default function UserProfile() {
             📍 {profile.city || 'Unknown city'}
             {profile.is_local && <span className="local-badge">📍 Local</span>}
           </div>
-          <div className="profile-hero-points">🔥 {(profile.wadup_points || 0).toLocaleString()} WadUp Points</div>
         </div>
-
-        {badges.length > 0 && (
-          <div className="profile-badges-row">
-            {badges.map(b => (
-              <div key={b.id} className="profile-badge" title={b.desc}>{b.label}</div>
-            ))}
-          </div>
-        )}
 
         <div className="profile-stats-row">
           <div className="pstat-block"><div className="pstat-num">{stats.reviews}</div><div className="pstat-label">Reviews</div></div>
@@ -208,7 +194,9 @@ export default function UserProfile() {
                       )}
                       <span className="review-date">{formatDate(r.created_at)}</span>
                     </div>
-                    <div className="review-stars">{'★'.repeat(r.rating || 0)}{'☆'.repeat(5 - (r.rating || 0))}</div>
+                    <div className="review-rating-line">
+                      <span className="review-overall-rating">{(r.overall_rating || 0).toFixed(1)}/10</span>
+                    </div>
                     {r.tags?.length > 0 && (
                       <div className="review-tags">
                         {r.tags.map(t => <span key={t} className="review-tag">{t}</span>)}

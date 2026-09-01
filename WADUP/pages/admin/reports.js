@@ -101,8 +101,10 @@ export default function AdminReports() {
                     Reported by @{r.reporter?.username || 'unknown'} · Reason: {r.reason}
                     {r.reviews?.author?.username && <> · Review by @{r.reviews.author.username}</>}
                   </div>
-                  {r.reviews?.rating != null && (
-                    <div className="review-stars">{'★'.repeat(r.reviews.rating)}{'☆'.repeat(5 - r.reviews.rating)}</div>
+                  {r.reviews?.overall_rating != null && (
+                    <div className="review-rating-line">
+                      <span className="review-overall-rating">{Number(r.reviews.overall_rating).toFixed(1)}/10</span>
+                    </div>
                   )}
                   <p className="admin-report-content">{r.reviews?.content || '(review no longer exists)'}</p>
                   <div className="admin-report-actions">

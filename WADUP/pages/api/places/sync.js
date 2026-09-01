@@ -204,9 +204,9 @@ export default async function handler(req, res) {
   // is purely a refresh of Google-sourced fields (rating, review count,
   // hours, and — unless the admin uploaded their own — the cover photo).
   // Every admin-curated field (name, custom_emoji, categories/category,
-  // is_hidden, is_private, is_verified, hide_new_badge, admin_rank_override,
-  // vote_score, description, subcategory) is left completely untouched: it's
-  // simply never included in the update payload below.
+  // is_hidden, is_private, is_verified, hide_new_badge, description,
+  // subcategory, custom_subcategories, weighted_rating) is left completely
+  // untouched: it's simply never included in the update payload below.
   // Split by custom_cover_photo so each upsert batch has a consistent set of
   // columns — PostgREST fills any column omitted from a row (but present on
   // a sibling row in the same batch) with NULL, so mixing the two shapes in

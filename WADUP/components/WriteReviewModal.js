@@ -1,79 +1,76 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { venueCategories } from '../lib/data';
 
-const REVIEW_TAGS = [
-  'Atmosphere', 'Food', 'Drinks', 'Service', 'Music',
-  'Value', 'Cleanliness', 'Location', 'Crowd',
-];
+// There's no per-venue "does it actually serve burgers" flag in the schema —
+// these presets show for every restaurant/nightlife venue regardless, as
+// optional fields a reviewer can just skip. custom_subcategories (set by an
+// admin per venue — see pages/admin/venues.js) is the real per-venue
+// mechanism and is appended on top, deduped against the presets.
+const RESTAURANT_SUBCATS = ['Burgers', 'Pizza', 'Wings', 'Mexican', 'Italian', 'Asian', 'BBQ', 'Seafood'];
+const NIGHTLIFE_SUBCATS  = ['Sports Bar', 'Speakeasy', 'Dance'];
 
-export default function WriteReviewModal({ open, onClose, venueId, session, onSubmitted, onRequireLogin }) {
-  const [rating,   setRating]   = useState(0);
-  const [hoverStar,setHoverStar] = useState(0);
-  const [tags,     setTags]     = useState([]);
-  const [content,  setContent]  = useState('');
-  const [photos,   setPhotos]   = useState([]); // File[]
-  const [error,    setError]    = useState('');
-  const [saving,   setSaving]   = useState(false);
+function subcatOptionsFor(venue) {
+  const cats = venueCategories(venue);
+  const opts = [];
+  if (cats.includes('restaurant')) opts.push(...RESTAURANT_SUBCATS);
+  if (cats.includes('nightlife'))  opts.push(...NIGHTLIFE_SUBCATS);
+  (venue.custom_subcategories || []).forEach(s => { if (!opts.includes(s)) opts.push(s); });
+  return opts;
+}
+
+export default function WriteReviewModal({ open, onClose, venue, session, onSubmitted, onRequireLogin }) {
+  const [overallRating, setOverallRating] = useState(8);
+  const [subcatRatings, setSubcatRatings] = useState({}); // { [subcat]: number }
+  const [content,       setContent]       = useState('');
+  const [error,         setError]         = useState('');
+  const [saving,        setSaving]        = useState(false);
 
   if (!open) return null;
 
-  const reset = () => {
-    setRating(0); setHoverStar(0); setTags([]); setContent(''); setPhotos([]); setError('');
-  };
+  const subcatOptions = subcatOptionsFor(venue || {});
 
+  const reset = () => {
+    setOverallRating(8); setSubcatRatings({}); setContent(''); setError('');
+  };
   const close = () => { reset(); onClose(); };
 
-  const toggleTag = (tag) => {
-    setTags(t => t.includes(tag) ? t.filter(x => x !== tag) : [...t, tag]);
-  };
-
-  const onPickPhotos = (e) => {
-    const files = Array.from(e.target.files || []).slice(0, 6);
-    setPhotos(files);
+  const setSubcatRating = (subcat, rawValue) => {
+    setSubcatRatings(prev => {
+      const next = { ...prev };
+      if (rawValue === '') { delete next[subcat]; return next; }
+      next[subcat] = Number(rawValue);
+      return next;
+    });
   };
 
   const submit = async (e) => {
     e.preventDefault();
     if (!session) { onRequireLogin(); return; }
-    if (rating < 1) { setError('Please choose a star rating.'); return; }
 
     setError('');
     setSaving(true);
     try {
-      const photoUrls = [];
-      for (let i = 0; i < photos.length; i++) {
-        const file = photos[i];
-        const path = `${session.user.id}/${Date.now()}_${i}_${file.name}`.replace(/\s+/g, '_');
-        const { error: upErr } = await supabase.storage.from('review-photos').upload(path, file);
-        if (upErr) throw upErr;
-        const { data: pub } = supabase.storage.from('review-photos').getPublicUrl(path);
-        if (pub?.publicUrl) photoUrls.push(pub.publicUrl);
-      }
-
-      const { error: insErr } = await supabase.from('reviews').insert({
-        user_id: session.user.id,
-        venue_id: venueId,
-        rating,
-        content: content.trim() || null,
-        tags,
-        photo_urls: photoUrls,
+      const res = await fetch('/api/reviews/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          overall_rating: overallRating,
+          subcategory_ratings: subcatRatings,
+          content: content.trim() || null,
+        }),
       });
-
-      if (insErr) {
-        if (insErr.code === '23505') {
-          setError("You've already reviewed this venue.");
-        } else {
-          setError(insErr.message);
-        }
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to save review');
         setSaving(false);
         return;
       }
-
       setSaving(false);
       reset();
-      onSubmitted();
+      onSubmitted(data.venue);
     } catch (err) {
-      setError(err.message || 'Something went wrong uploading your review.');
+      setError(err.message || 'Something went wrong saving your review.');
       setSaving(false);
     }
   };
@@ -95,38 +92,37 @@ export default function WriteReviewModal({ open, onClose, venueId, session, onSu
           </div>
         ) : (
           <form className="review-modal-body" onSubmit={submit}>
-            <label>Your Rating</label>
-            <div className="star-picker">
-              {[1, 2, 3, 4, 5].map(n => (
-                <button
-                  type="button"
-                  key={n}
-                  className={`star-btn${n <= (hoverStar || rating) ? ' filled' : ''}`}
-                  onMouseEnter={() => setHoverStar(n)}
-                  onMouseLeave={() => setHoverStar(0)}
-                  onClick={() => setRating(n)}
-                  aria-label={`${n} star${n === 1 ? '' : 's'}`}
-                >
-                  ★
-                </button>
-              ))}
+            <label>Rate Overall</label>
+            <div className="rating-slider-row">
+              <input
+                type="range" min="1" max="10" step="0.5"
+                value={overallRating}
+                onChange={(e) => setOverallRating(Number(e.target.value))}
+              />
+              <span className="rating-slider-value">{overallRating.toFixed(1)} /10</span>
             </div>
 
-            <label>Tags (optional)</label>
-            <div className="tag-picker">
-              {REVIEW_TAGS.map(tag => (
-                <button
-                  type="button"
-                  key={tag}
-                  className={`tag-chip${tags.includes(tag) ? ' active' : ''}`}
-                  onClick={() => toggleTag(tag)}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
+            {subcatOptions.length > 0 && (
+              <>
+                <label>Subcategories (optional)</label>
+                <div className="subcat-rating-grid">
+                  {subcatOptions.map(subcat => (
+                    <div key={subcat} className="subcat-rating-row">
+                      <span className="subcat-rating-label">{subcat}</span>
+                      <input
+                        type="number" min="1" max="10" step="0.5"
+                        placeholder="–"
+                        value={subcatRatings[subcat] ?? ''}
+                        onChange={(e) => setSubcatRating(subcat, e.target.value)}
+                      />
+                      <span className="subcat-rating-suffix">/10</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
-            <label>Your Review</label>
+            <label>Leave a review (optional)</label>
             <textarea
               rows={4}
               placeholder="What was it like?"
@@ -134,20 +130,10 @@ export default function WriteReviewModal({ open, onClose, venueId, session, onSu
               onChange={(e) => setContent(e.target.value)}
             />
 
-            <label>Photos (optional)</label>
-            <input type="file" accept="image/*" multiple onChange={onPickPhotos} />
-            {photos.length > 0 && (
-              <div className="photo-preview-row">
-                {photos.map((f, i) => (
-                  <img key={i} src={URL.createObjectURL(f)} alt="" className="photo-preview" />
-                ))}
-              </div>
-            )}
-
             {error && <div className="auth-error">{error}</div>}
 
             <button type="submit" className="auth-submit" disabled={saving}>
-              {saving ? 'Posting…' : 'Submit Review'}
+              {saving ? 'Posting…' : 'Submit Rating'}
             </button>
           </form>
         )}

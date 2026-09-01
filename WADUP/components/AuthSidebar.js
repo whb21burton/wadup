@@ -155,10 +155,6 @@ export default function AuthSidebar({ open, onClose, session, profile }) {
                 <div className="profile-username">{profile.username}</div>
                 <div className="profile-stats">
                   <div className="profile-stat">
-                    <span className="profile-stat-label">WadUp Points</span>
-                    <span className="profile-stat-value">{profile.wadup_points ?? 0}</span>
-                  </div>
-                  <div className="profile-stat">
                     <span className="profile-stat-label">Local City</span>
                     <span className="profile-stat-value">{profile.city || '—'}</span>
                   </div>
@@ -179,9 +175,6 @@ export default function AuthSidebar({ open, onClose, session, profile }) {
                   </Link>
                   <Link href={`/profile/${profile.username}?tab=saved`} className="profile-quick-link" onClick={onClose}>
                     ☆ Saved Places
-                  </Link>
-                  <Link href="/leaderboard" className="profile-quick-link" onClick={onClose}>
-                    🏆 Leaderboard
                   </Link>
                   <Link href="/settings" className="profile-quick-link" onClick={onClose}>
                     ⚙️ Settings

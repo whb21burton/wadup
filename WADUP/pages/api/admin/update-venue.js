@@ -6,11 +6,10 @@ import { canAccessCity } from '../../../lib/admin';
 // google_place_id, owner_id) through this route — only what the Edit modal
 // actually exposes.
 const EDITABLE_FIELDS = [
-  'name', 'custom_emoji', 'categories', 'category', 'subcategory',
+  'name', 'custom_emoji', 'categories', 'category', 'subcategory', 'custom_subcategories',
   'is_private', 'is_hidden', 'is_verified', 'hide_new_badge',
   'description', 'cover_photo_url', 'custom_cover_photo',
   'address', 'lat', 'lng', 'phone', 'website',
-  'admin_rank_override', // manual drag-and-drop ranking (pages/admin/venues.js) — never vote_score itself, which is trigger-computed
 ];
 
 export default async function handler(req, res) {

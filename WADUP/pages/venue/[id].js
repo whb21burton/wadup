@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
-import { CATEGORY_LABELS, hasWadupRating, venueCategories } from '../../lib/data';
+import { CATEGORY_LABELS, venueCategories } from '../../lib/data';
 import { getBestRated } from '../../lib/rankings';
 import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
@@ -98,12 +98,7 @@ export default function VenuePage() {
   const [checkedIn,    setCheckedIn]   = useState(false);
   const [checkinCount, setCheckinCount]= useState(0);
   const [checkinError, setCheckinError]= useState('');
-  const [pointsToast,  setPointsToast] = useState(null);
-  const [hasCheckedIn, setHasCheckedIn] = useState(false);
-  const [myVote,       setMyVote]       = useState(null); // 1 | -1 | null
-  const [voteCounts,   setVoteCounts]   = useState({ up: 0, down: 0 });
-  const [voting,       setVoting]       = useState(false);
-  const [voteError,    setVoteError]    = useState('');
+  const [reviewerAdminIds, setReviewerAdminIds] = useState(new Set());
   const [reportedIds,  setReportedIds] = useState(new Set());
   const [shareCopied,  setShareCopied] = useState(false);
 
@@ -216,6 +211,24 @@ export default function VenuePage() {
       .then(({ data }) => setMyLikes(new Set((data || []).map(r => r.review_id))));
   }, [session, reviewIdsKey]);
 
+  // Admin badge on a review — admin_roles' RLS only lets a user read their
+  // OWN row, so there's no way to embed "is this reviewer an admin" in the
+  // reviews query itself; is_super_admin_user is a SECURITY DEFINER RPC that
+  // safely answers that for any user id without exposing the admin_roles
+  // table. Only flags super_admins, not ambassadors — there's no equivalent
+  // public-safe RPC for the broader admin_roles check.
+  useEffect(() => {
+    const userIds = [...new Set(reviews.map(r => r.user_id).filter(Boolean))];
+    if (!userIds.length) { setReviewerAdminIds(new Set()); return; }
+    let cancelled = false;
+    Promise.all(userIds.map(id =>
+      supabase.rpc('is_super_admin_user', { check_user_id: id }).then(({ data }) => (data ? id : null))
+    )).then(results => {
+      if (!cancelled) setReviewerAdminIds(new Set(results.filter(Boolean)));
+    });
+    return () => { cancelled = true; };
+  }, [reviews]);
+
   useEffect(() => {
     if (!session?.user || !venue?.id) { setSaved(false); return; }
     supabase
@@ -238,72 +251,6 @@ export default function VenuePage() {
       .eq('venue_id', venue.id)
       .then(({ count }) => setCheckinCount(count || 0));
   }, [venue?.id]);
-
-  // Vote tallies + my own vote — venue_votes has a public SELECT policy, so
-  // one query gets both (no need to separately ask "what did I vote").
-  useEffect(() => {
-    if (!venue?.id) return;
-    supabase.from('venue_votes').select('user_id, vote').eq('venue_id', venue.id)
-      .then(({ data }) => {
-        const rows = data || [];
-        setVoteCounts({
-          up: rows.filter(r => r.vote === 1).length,
-          down: rows.filter(r => r.vote === -1).length,
-        });
-        const mine = session?.user ? rows.find(r => r.user_id === session.user.id) : null;
-        setMyVote(mine ? mine.vote : null);
-      });
-  }, [venue?.id, session]);
-
-  // Voting is gated on having checked in — checkins restricts SELECT to the
-  // acting user's own rows, which is exactly what's needed here (asking
-  // "have I checked in", not "who has").
-  useEffect(() => {
-    if (!session?.user || !venue?.id) { setHasCheckedIn(false); return; }
-    supabase.from('checkins').select('id').eq('user_id', session.user.id).eq('venue_id', venue.id).limit(1)
-      .then(({ data }) => setHasCheckedIn(!!data?.length));
-  }, [session, venue?.id]);
-
-  const castVote = async (voteValue) => {
-    if (!session) { requireLogin(); return; }
-    setVoting(true);
-    setVoteError('');
-    try {
-      const res = await fetch('/api/venues/vote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ venue_id: venue.id, vote: voteValue }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setVoteError(data.error || 'Vote failed');
-        setTimeout(() => setVoteError(''), 4000);
-        return;
-      }
-
-      const previousVote = myVote;
-      setMyVote(voteValue);
-      setVoteCounts(prev => {
-        const next = { ...prev };
-        if (previousVote === null) {
-          if (voteValue === 1) next.up++; else next.down++;
-        } else if (previousVote !== voteValue) {
-          if (voteValue === 1) { next.up++; next.down--; } else { next.down++; next.up--; }
-        }
-        return next;
-      });
-      setVenue(v => (v ? { ...v, vote_score: data.vote_score } : v));
-
-      if (data.pointsAwarded > 0) {
-        setPointsToast(`+${data.pointsAwarded} WadUp Points 🔥`);
-        setTimeout(() => setPointsToast(null), 3000);
-      }
-    } catch (e) {
-      setVoteError('Vote failed — try again');
-      setTimeout(() => setVoteError(''), 4000);
-    }
-    setVoting(false);
-  };
 
   const applyLikeDelta = (reviewId, delta, liked) => {
     setMyLikes(prev => {
@@ -377,8 +324,6 @@ export default function VenuePage() {
 
     setCheckedIn(true);
     setCheckinCount(c => c + 1);
-    setPointsToast(`+${data.pointsAwarded} WadUp Points 🔥`);
-    setTimeout(() => setPointsToast(null), 3000);
     setTimeout(() => setCheckedIn(false), 4000);
   };
 
@@ -397,8 +342,8 @@ export default function VenuePage() {
 
   const sortedReviews = [...reviews].sort((a, b) => {
     if (sortMode === 'helpful') return (b.likes || 0) - (a.likes || 0);
-    if (sortMode === 'highest') return (b.rating || 0) - (a.rating || 0);
-    if (sortMode === 'lowest')  return (a.rating || 0) - (b.rating || 0);
+    if (sortMode === 'highest') return (b.overall_rating || 0) - (a.overall_rating || 0);
+    if (sortMode === 'lowest')  return (a.overall_rating || 0) - (b.overall_rating || 0);
     return new Date(b.created_at) - new Date(a.created_at);
   });
 
@@ -428,8 +373,6 @@ export default function VenuePage() {
         <meta name="description" content={venue.description || `${venue.name} on WadUp`} />
       </Head>
 
-      {pointsToast && <div className="points-toast">{pointsToast}</div>}
-
       <div className="venue-page">
         <div className="venue-header">
           <div
@@ -454,27 +397,28 @@ export default function VenuePage() {
             {rankings.localFavorite && <div className="venue-local-favorite-badge">🏆 Local Favorite</div>}
 
             <div className="venue-rating-line">
-              {hasWadupRating(venue) ? (
+              {venue.weighted_rating_count > 0 ? (
                 <>
-                  <span>⭐ {venue.average_rating.toFixed(1)} · {venue.total_ratings} WadUp Ratings</span>
-                  {venue.google_rating != null && (
-                    <span className="venue-google-rating-secondary">
-                      Google: {venue.google_rating.toFixed(1)} ({venue.google_review_count || 0})
-                    </span>
-                  )}
-                </>
-              ) : venue.google_rating != null ? (
-                <>
-                  <span>
-                    ⭐ {venue.google_rating.toFixed(1)} <span className="venue-rating-source-label">Google Rating</span>
-                    {venue.google_review_count ? ` (${venue.google_review_count})` : ''}
+                  <span className="venue-rating-big">
+                    {(venue.weighted_rating || 0).toFixed(1)}<span className="venue-rating-big-suffix">/10</span>
                   </span>
-                  <span className="venue-new-badge">Be the first to review on WadUp!</span>
+                  <span className="venue-rating-count-label">
+                    {venue.weighted_rating_count} rating{venue.weighted_rating_count === 1 ? '' : 's'}
+                  </span>
                 </>
               ) : (
-                <span className="venue-new-badge">New on WadUp</span>
+                <span className="venue-new-badge">New on WadUp — be the first to rate!</span>
               )}
             </div>
+            {venue.subcategory_weighted_ratings && Object.keys(venue.subcategory_weighted_ratings).length > 0 && (
+              <div className="venue-subcat-ratings-row">
+                {Object.entries(venue.subcategory_weighted_ratings).map(([subcat, rating]) => (
+                  <span key={subcat} className="venue-subcat-rating-chip">
+                    {subcat}: {Number(rating).toFixed(1)}
+                  </span>
+                ))}
+              </div>
+            )}
 
             {(rankings.trending || rankings.bestRated) && (
               <div className="venue-rankings">
@@ -497,7 +441,7 @@ export default function VenuePage() {
 
             <div className="venue-actions">
               <button className="venue-action-btn" onClick={checkIn}>
-                {checkedIn ? '✅ Checked in! +20 points' : '📍 Check In'}
+                {checkedIn ? '✅ Checked in!' : '📍 Check In'}
               </button>
               <button className="venue-action-btn venue-action-primary" onClick={() => setShowReviewModal(true)}>
                 ✍️ Review
@@ -514,34 +458,6 @@ export default function VenuePage() {
         </div>
 
         <div className="venue-body">
-          <section className="venue-section venue-vote-section">
-            <h2>Rate this place</h2>
-            {!session ? (
-              <div className="venue-vote-locked">🔒 Log in and check in first to vote</div>
-            ) : !hasCheckedIn ? (
-              <div className="venue-vote-locked">🔒 Check in first to vote</div>
-            ) : (
-              <div className="venue-vote-buttons">
-                <button
-                  className={`venue-vote-btn venue-vote-up${myVote === 1 ? ' active' : ''}`}
-                  onClick={() => castVote(1)}
-                  disabled={voting}
-                >
-                  👍 Upvote
-                </button>
-                <button
-                  className={`venue-vote-btn venue-vote-down${myVote === -1 ? ' active' : ''}`}
-                  onClick={() => castVote(-1)}
-                  disabled={voting}
-                >
-                  👎 Downvote
-                </button>
-              </div>
-            )}
-            <div className="venue-vote-counts">{voteCounts.up} 👍 · {voteCounts.down} 👎</div>
-            <div className="venue-vote-score">⭐ Score: {(venue.vote_score || 0).toLocaleString()} points</div>
-            {voteError && <div className="venue-checkin-error">{voteError}</div>}
-          </section>
 
           <section className="venue-section">
             <h2>About</h2>
@@ -635,10 +551,22 @@ export default function VenuePage() {
                       {r.profiles?.is_local && r.profiles?.city === venue.city && (
                         <span className="local-badge">📍 Local</span>
                       )}
+                      {reviewerAdminIds.has(r.user_id) && (
+                        <span className="admin-badge">⚙️ Admin</span>
+                      )}
                       <span className="review-date">{formatReviewDate(r.created_at)}</span>
                     </div>
-                    <div className="review-stars">
-                      {'★'.repeat(r.rating || 0)}{'☆'.repeat(5 - (r.rating || 0))}
+                    <div className="review-rating-line">
+                      <span className="review-overall-rating">{(r.overall_rating || 0).toFixed(1)}/10</span>
+                      {r.subcategory_ratings && Object.keys(r.subcategory_ratings).length > 0 && (
+                        <span className="review-subcat-ratings">
+                          {Object.entries(r.subcategory_ratings).map(([subcat, rating]) => (
+                            <span key={subcat} className="review-subcat-rating-chip">
+                              {subcat}: {Number(rating).toFixed(1)}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                     </div>
                     {r.tags?.length > 0 && (
                       <div className="review-tags">
@@ -694,7 +622,7 @@ export default function VenuePage() {
       <WriteReviewModal
         open={showReviewModal}
         onClose={() => setShowReviewModal(false)}
-        venueId={venue.id}
+        venue={venue}
         session={session}
         onRequireLogin={() => { setShowReviewModal(false); requireLogin(); }}
         onSubmitted={() => { setShowReviewModal(false); loadVenue(); }}
