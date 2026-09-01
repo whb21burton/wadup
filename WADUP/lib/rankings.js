@@ -15,6 +15,7 @@
 // everyone's activity without exposing who did what.
 
 import { supabase } from './supabase';
+import { venueMatchesChip } from './data';
 
 const HOUR = 60 * 60 * 1000;
 const DAY  = 24 * HOUR;
@@ -251,12 +252,7 @@ export async function recalculateVenueRating(supabaseAdmin, venueId) {
 // on-pin area-rank label and the sidebar's Top 10 list (pages/index.js),
 // which both need this same viewport-relative ranking, not a city-wide one.
 export function rankVenuesInBounds(venues, chip) {
-  const filtered = venues.filter(v => {
-    if (v.is_hidden) return false;
-    if (chip === 'all') return true;
-    const cats = v.categories || (v.category ? [v.category] : []);
-    return cats.includes(chip);
-  });
+  const filtered = venues.filter(v => !v.is_hidden && venueMatchesChip(chip, v));
 
   return filtered
     .sort((a, b) => (b.weighted_rating || 0) - (a.weighted_rating || 0))
@@ -304,7 +300,7 @@ export async function getScheduleTrendingVenues(supabase, category, city) {
       const startMins = timeToMins(s.start_time);
       return nowMins >= startMins - window && nowMins < startMins + 30;
     })
-    .filter(s => s.venues && !s.venues.is_hidden && (!city || s.venues.city === city) && (category === 'all' || (s.venues.categories || []).includes(category)))
+    .filter(s => s.venues && !s.venues.is_hidden && (!city || s.venues.city === city) && venueMatchesChip(category, s.venues))
     .map(s => ({ ...s.venues, _scheduleEntry: s }));
 }
 

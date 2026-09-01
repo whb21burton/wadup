@@ -6,9 +6,20 @@
 // here" — including moving the venue by clicking a new spot on the map,
 // which only makes sense in this map-embedded context.
 import { useEffect, useState } from 'react';
-import { CATEGORY_CHIPS, EMOJI_OPTIONS, venueCategories } from '../lib/data';
+import { EMOJI_OPTIONS, venueCategories } from '../lib/data';
 
-const PANEL_CATEGORIES = CATEGORY_CHIPS.filter(c => c.id !== 'all');
+// Deliberately not sourced from lib/data's CATEGORY_CHIPS — that list's
+// Bars & Nightlife chip uses id 'bars' for the map's chip-filter UI, but a
+// venue's real stored category value is 'nightlife'. These checkboxes write
+// straight into venues.categories, so they need the real value.
+const PANEL_CATEGORIES = [
+  { id: 'events',     label: '🎵 Events' },
+  { id: 'nightlife',  label: '🍸 Bars & Nightlife' },
+  { id: 'restaurant', label: '🍔 Restaurants' },
+  { id: 'sports',     label: '🏟️ Sports' },
+  { id: 'outdoors',   label: '🌳 Outdoors' },
+  { id: 'activities', label: '🎳 Activities' },
+];
 
 function toggleInArray(arr, id) {
   return arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];

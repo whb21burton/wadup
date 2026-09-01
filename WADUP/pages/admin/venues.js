@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { supabase } from '../../lib/supabase';
 import { getAdminRole, isSuperAdmin } from '../../lib/admin';
-import { CATEGORY_CHIPS, EMOJI_OPTIONS, venueCategories } from '../../lib/data';
+import { EMOJI_OPTIONS, venueCategories } from '../../lib/data';
 import AdminSidebar from '../../components/AdminSidebar';
 
 const CATEGORY_TEXT = {
@@ -13,7 +13,13 @@ const CATEGORY_TEXT = {
 const CATEGORY_ICON = {
   nightlife: '🍸', restaurant: '🍔', events: '🎵', sports: '🏟️', outdoors: '🌳', activities: '🎳',
 };
-const EDITABLE_CATEGORIES = CATEGORY_CHIPS.filter(c => c.id !== 'all');
+// Deliberately not sourced from lib/data's CATEGORY_CHIPS — that list's
+// Bars & Nightlife chip uses id 'bars' for the map's chip-filter UI, but a
+// venue's real stored category value is 'nightlife'. This list drives both
+// the category checkboxes (write straight into venues.categories) and the
+// category filter dropdown, so it needs the real values.
+const EDITABLE_CATEGORIES = ['events', 'nightlife', 'restaurant', 'sports', 'outdoors', 'activities']
+  .map(id => ({ id, label: CATEGORY_TEXT[id] }));
 
 function venueIcon(v) {
   return v.custom_emoji || CATEGORY_ICON[venueCategories(v)[0]] || '📍';

@@ -111,13 +111,13 @@ export default function WadUp() {
   const popupCloseTimer = useRef(null);     // desktop hover: pending delayed-close timeout for the InfoWindow
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
-  const [activeChip,     setActiveChip]     = useState('all');
+  const [activeChip,     setActiveChip]     = useState('events');
   const [activeDate,     setActiveDate]     = useState(new Date().toISOString().slice(0,10));
   // filterPins reads these refs, not the state above, so it always sees the
   // current value regardless of when its own closure was created — the
   // state setters below update the ref SYNCHRONOUSLY, in the same click
   // handler, rather than waiting a render cycle for a useEffect to catch up.
-  const activeCategoryRef = useRef('all');
+  const activeCategoryRef = useRef('events');
   const activeDateRef = useRef(new Date().toISOString().slice(0,10));
   const [trendingNow,    setTrendingNow]    = useState([]);
   const [topRanked,      setTopRanked]      = useState([]);
@@ -338,7 +338,7 @@ export default function WadUp() {
     Object.entries(tmMarkers.current).forEach(([id, entry]) => {
       const ev = tmEventsRef.current.find(e => e.id === id);
       if (!ev) return;
-      const catMatch  = chip === 'all' || ev.cat === chip;
+      const catMatch  = ev.cat === chip;
       const dateMatch = !date || ev.dateStr === date;
       const show = catMatch && dateMatch;
       const registryEntry = pinRegistry.current.get(id);
@@ -371,8 +371,21 @@ export default function WadUp() {
       return bounds.contains(new window.google.maps.LatLng(v.lat, v.lng));
     });
 
-    const ranked = rankVenuesInBounds(inBounds, chip);
-    const rankedIds = new Set(ranked.filter(v => v._areaRank <= 10).map(v => v.id));
+    const ranked = rankVenuesInBounds(inBounds, chip).map(v => ({ ...v, _type: 'venue' }));
+
+    // Ticketmaster events have no WadUp rating to sort against, so rather
+    // than fabricate a score to interleave them with rated venues, they're
+    // appended after (soonest date first) and only ever considered for the
+    // Events/Sports chips — same cat===chip gate filterPins uses for TM pins.
+    const tmInBounds = (chip === 'events' || chip === 'sports')
+      ? tmEventsRef.current
+          .filter(ev => ev.cat === chip && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
+          .sort((a, b) => (a.dateStr || '').localeCompare(b.dateStr || ''))
+          .map(ev => ({ ...ev, _type: 'tm' }))
+      : [];
+
+    const combined = [...ranked, ...tmInBounds].map((item, i) => ({ ...item, _areaRank: i + 1 }));
+    const rankedIds = new Set(combined.filter(item => item._type === 'venue' && item._areaRank <= 10).map(v => v.id));
 
     pinRegistry.current.forEach((entry, id) => {
       if (entry.type !== 'venue') return;
@@ -380,11 +393,11 @@ export default function WadUp() {
       if (!nameEl) return;
       const venue = venuesRef.current.find(v => v.id === id);
       if (!venue) return;
-      const rankedMatch = ranked.find(v => v.id === id);
+      const rankedMatch = combined.find(item => item._type === 'venue' && item.id === id);
       nameEl.textContent = rankedMatch && rankedIds.has(id) ? `#${rankedMatch._areaRank} ${venue.name}` : venue.name;
     });
 
-    setTopRanked(ranked.slice(0, 10));
+    setTopRanked(combined.slice(0, 10));
   }, []);
 
   // ── WuOverlay class factory ── anchor 'bottom' = pin (tail points at the
@@ -1232,7 +1245,7 @@ export default function WadUp() {
       const events = tmEventsRef.current.filter(ev =>
         ev.name.toLowerCase().includes(q) || (ev.city || '').toLowerCase().includes(q)
       ).slice(0, 8);
-      const categories = CATEGORY_CHIPS.filter(c => c.id !== 'all' && c.label.toLowerCase().includes(q));
+      const categories = CATEGORY_CHIPS.filter(c => c.label.toLowerCase().includes(q));
       setSearchResults({ places, events, categories });
       setActiveResultIndex(0);
     }, 300);
@@ -1342,18 +1355,37 @@ export default function WadUp() {
   const renderTopRankedItems = () => (
     topRanked.length === 0 ? (
       <div className="t-empty">{sidebarLoading ? 'Loading…' : 'No ranked venues in view'}</div>
-    ) : topRanked.map((v) => (
-      <div key={v.id} className="t-item" onClick={() => flyTo(v.lng, v.lat)}>
-        <div className={`t-rank${v._areaRank === 1 ? ' rank-gold' : v._areaRank === 2 ? ' rank-silver' : v._areaRank === 3 ? ' rank-bronze' : ''}`}>
-          #{v._areaRank}
+    ) : topRanked.map((item) => {
+      const rankClass = `t-rank${item._areaRank === 1 ? ' rank-gold' : item._areaRank === 2 ? ' rank-silver' : item._areaRank === 3 ? ' rank-bronze' : ''}`;
+
+      if (item._type === 'tm') {
+        const icon = item.cat === 'sports' ? (item.sportEmoji || '🏟️') : '🎟️';
+        const dateDisplay = item.dateStr
+          ? new Date(item.dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          : 'Date TBD';
+        return (
+          <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
+            <div className={rankClass}>#{item._areaRank}</div>
+            <div className="t-icon">{icon}</div>
+            <div className="t-info">
+              <div className="t-name">{item.name}</div>
+              <div className="t-sub">📅 {dateDisplay}{item.price ? ` · ${item.price}` : ''}</div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
+          <div className={rankClass}>#{item._areaRank}</div>
+          <div className="t-icon">{venueEmoji(item)}</div>
+          <div className="t-info">
+            <div className="t-name">{item.name}</div>
+          </div>
+          {(item.weighted_rating_count || 0) > 0 && <div className="t-rating">⭐ {(item.weighted_rating || 0).toFixed(1)}/10</div>}
         </div>
-        <div className="t-icon">{venueEmoji(v)}</div>
-        <div className="t-info">
-          <div className="t-name">{v.name}</div>
-        </div>
-        {(v.weighted_rating_count || 0) > 0 && <div className="t-rating">⭐ {(v.weighted_rating || 0).toFixed(1)}/10</div>}
-      </div>
-    ))
+      );
+    })
   );
 
   const renderSidebarLists = () => (
@@ -1376,7 +1408,7 @@ export default function WadUp() {
           <div className="panel-title-dot" />
           🏆 Top 10
         </div>
-        <div className="panel-radius">{CATEGORY_LABELS[activeChip] || 'All'}</div>
+        <div className="panel-radius">{CATEGORY_CHIPS.find(c => c.id === activeChip)?.label || 'All'}</div>
       </div>
       <div className="trending-list sidebar-scroll-list">
         {renderTopRankedItems()}

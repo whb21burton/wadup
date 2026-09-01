@@ -1,17 +1,33 @@
 // lib/data.js — venue data, category chips, and Ticketmaster helpers
 
-// ── Category chips shown on the map screen ──
+// ── Category chips shown on the map screen ── Events is the default/first
+// chip (no more "All"). The Bars & Nightlife chip's id is 'bars', which does
+// NOT match the 'nightlife' value venues are actually stored under — see
+// venueMatchesChip's alias below and CATEGORY_LABELS' comment for why this
+// list is kept separate from the real category-value space.
 export const CATEGORY_CHIPS = [
-  { id: 'all',        label: 'All' },
   { id: 'events',     label: '🎵 Events' },
-  { id: 'nightlife',  label: '🍸 Bars & Nightlife' },
+  { id: 'bars',       label: '🍸 Bars & Nightlife' },
   { id: 'restaurant', label: '🍔 Restaurants' },
   { id: 'sports',     label: '🏟️ Sports' },
   { id: 'outdoors',   label: '🌳 Outdoors' },
   { id: 'activities', label: '🎳 Activities' },
 ];
 
-export const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CHIPS.map(c => [c.id, c.label]));
+// Keyed by the real category values stored on a venue (venues.categories /
+// .category) or a Ticketmaster event (.cat) — deliberately NOT derived from
+// CATEGORY_CHIPS above, since that list's 'bars' chip id doesn't match the
+// 'nightlife' value venues are actually stored under. Every other page that
+// labels a venue/event by its actual category (venue profile, discover,
+// browse, profile tabs, admin sync stats) reads this dict.
+export const CATEGORY_LABELS = {
+  events: '🎵 Events',
+  nightlife: '🍸 Bars & Nightlife',
+  restaurant: '🍔 Restaurants',
+  sports: '🏟️ Sports',
+  outdoors: '🌳 Outdoors',
+  activities: '🎳 Activities',
+};
 
 // Shared by every admin-facing venue emoji picker (pages/admin/venues.js,
 // pages/index.js's on-map admin modals, components/AdminEditPanel.js) —
@@ -43,9 +59,11 @@ export function venueCategories(v) {
 }
 
 export function venueMatchesChip(chip, venue) {
-  if (!chip || chip === 'all') return true;
+  if (!chip) return true;
   const cats = venueCategories(venue);
-  console.log('[MATCH]', venue.name, 'cats:', cats, 'chip:', chip, 'match:', cats.includes(chip));
+  // The map's chip id is 'bars', but venues are stored under 'nightlife' —
+  // match either so the chip actually finds them.
+  if (chip === 'bars') return cats.includes('nightlife') || cats.includes('bars');
   return cats.includes(chip);
 }
 
