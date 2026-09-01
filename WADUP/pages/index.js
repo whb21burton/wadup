@@ -312,10 +312,6 @@ export default function WadUp() {
   useEffect(() => { adminRoleRef.current = adminRole; }, [adminRole]);
   const [editMode,       setEditMode]       = useState(false);
   const editModeRef = useRef(false);
-  useEffect(() => {
-    editModeRef.current = editMode;
-    console.log('[EditMode] editMode is now', editMode);
-  }, [editMode]);
   // Confirms whether adminRole ever resolves non-null at all — if this never
   // logs "toolbar rendering", the whole feature is dead before any pin/map-
   // click code even matters, since the toolbar (and therefore the only way
@@ -323,6 +319,25 @@ export default function WadUp() {
   useEffect(() => {
     console.log('[AdminToolbar] adminRole changed:', adminRole, adminRole ? '→ toolbar WILL render' : '→ toolbar hidden (adminRole is null — not logged in as an admin, or admin_roles lookup hasn\'t resolved yet)');
   }, [adminRole]);
+  // Bare-bones debug trace, exactly as requested: confirms both pieces the
+  // whole feature is gated on, in one place, every time either changes.
+  useEffect(() => {
+    console.log('[DEBUG] adminRole:', adminRole);
+    console.log('[DEBUG] session:', session);
+  }, [adminRole, session]);
+  // Updates the ref SYNCHRONOUSLY, in the same tick as the click that
+  // toggles the button — not via a useEffect keyed on `editMode`, which
+  // would only update the ref on the NEXT render after React commits the
+  // state change. In practice that gap is usually sub-frame and harmless,
+  // but this removes even that theoretical race between "button clicked"
+  // and "a pin's click handler reads editModeRef.current".
+  const toggleEditMode = () => {
+    const newVal = !editModeRef.current;
+    editModeRef.current = newVal;
+    setEditMode(newVal);
+    console.log('[DEBUG] Edit mode toggled to:', newVal);
+    return newVal;
+  };
   const [mapContextMenu, setMapContextMenu] = useState(null); // { x, y, venueId } | { x, y, lat, lng } | null
   useEffect(() => {
     if (mapContextMenu) console.log('[EditMode] mapContextMenu state set:', mapContextMenu);
@@ -828,8 +843,9 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      console.log('[DEBUG] venue pin clicked:', v.name, '— editModeRef:', editModeRef.current, 'adminRoleRef:', adminRoleRef.current);
       if (editModeRef.current && adminRoleRef.current) {
-        console.log('[EditMode] venue pin clicked while Edit Mode is on — opening edit panel instead of popup:', v.id, v.name);
+        console.log('[DEBUG] Opening edit panel for venue:', v.name);
         openEditPanel(v);
         return;
       }
@@ -962,13 +978,14 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      console.log('[DEBUG] TM pin clicked:', ev.name, '— editModeRef:', editModeRef.current, 'adminRoleRef:', adminRoleRef.current);
       if (editModeRef.current && adminRoleRef.current) {
         // Ticketmaster pins are events pulled live from the TM API, not rows
         // in our own `venues` table — there's nothing for /api/admin/* to
         // update or delete, so there's no edit panel to open. Still suppress
         // the normal popup while Edit Mode is on, per spec, rather than
         // silently falling through to it.
-        console.log('[EditMode] TM pin clicked while Edit Mode is on — not editable (no backing venues row), ignoring:', ev.id, ev.name);
+        console.log('[DEBUG] TM pin not editable (no backing venues row), ignoring:', ev.id, ev.name);
         setMapActionError('Ticketmaster events aren’t editable — not part of the venues database');
         return;
       }
@@ -1937,14 +1954,29 @@ export default function WadUp() {
           </button>
 
           {adminRole && (
-            <div className="map-admin-toolbar">
-              <button
-                className={`map-admin-edit-btn${editMode ? ' active' : ''}`}
-                onClick={() => setEditMode(v => { console.log('[EditMode] Edit Mode button clicked, toggling to', !v); return !v; })}
-              >
-                ✏️ Edit Mode
-              </button>
-            </div>
+            <button
+              id="edit-mode-btn"
+              onClick={() => {
+                const newVal = toggleEditMode();
+                alert('Edit mode is now: ' + (newVal ? 'ON' : 'OFF'));
+              }}
+              style={{
+                position: 'fixed',
+                top: '80px',
+                right: '16px',
+                zIndex: 99999,
+                background: editMode ? '#FFFC00' : '#050d1a',
+                color: editMode ? '#000' : '#fff',
+                border: '2px solid #FFFC00',
+                borderRadius: '8px',
+                padding: '10px 16px',
+                fontWeight: 800,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+              }}
+            >
+              {editMode ? '✏️ EDIT ON' : '✏️ Edit Mode'}
+            </button>
           )}
 
           {/* Mobile HUD */}
