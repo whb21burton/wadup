@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { supabase } from '../../lib/supabase';
 import { getAdminRole, isSuperAdmin } from '../../lib/admin';
-import { CATEGORY_CHIPS, venueCategories } from '../../lib/data';
+import { CATEGORY_CHIPS, EMOJI_OPTIONS, venueCategories } from '../../lib/data';
 import AdminSidebar from '../../components/AdminSidebar';
 
 const CATEGORY_TEXT = {
@@ -13,23 +13,6 @@ const CATEGORY_TEXT = {
 const CATEGORY_ICON = {
   nightlife: '🍸', restaurant: '🍔', events: '🎵', sports: '🏟️', outdoors: '🌳', activities: '🎳',
 };
-const EMOJI_OPTIONS = [
-  // Food & Drink
-  '🍔', '🍕', '🌮', '🍣', '🍜', '🥢', '🍱', '🥩', '🍗', '🥗',
-  '🍺', '🍸', '🍷', '☕', '🧃', '🥂', '🍾', '🧉',
-  // Activities
-  '🎳', '⛳', '🏌️', '🧗', '🚣', '🏊', '🎯', '🎮', '🎪', '🎠',
-  '🎭', '🎬', '🎵', '🎤', '🎸', '🎺',
-  // Sports
-  '🏈', '⚾', '🏀', '🏒', '⚽', '🎾', '🏋️', '🤼', '🏇', '🥊',
-  // Nature & Outdoors
-  '🌳', '🌲', '⛰️', '🏔️', '🌊', '🏕️', '🌿', '🌺',
-  // Places & Vibes
-  '🍽️', '🕯️', '✨', '👑', '🔥', '⭐', '💎', '🏆',
-  '🎉', '🎊', '🌙', '🌅', '🏙️', '🗺️',
-  // Specific
-  '🎰', '🎲', '🃏',
-];
 const EDITABLE_CATEGORIES = CATEGORY_CHIPS.filter(c => c.id !== 'all');
 
 function venueIcon(v) {

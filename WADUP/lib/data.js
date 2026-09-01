@@ -13,6 +13,27 @@ export const CATEGORY_CHIPS = [
 
 export const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CHIPS.map(c => [c.id, c.label]));
 
+// Shared by every admin-facing venue emoji picker (pages/admin/venues.js,
+// pages/index.js's on-map admin modals, components/AdminEditPanel.js) —
+// centralized here after the third copy would otherwise have been pasted.
+export const EMOJI_OPTIONS = [
+  // Food & Drink
+  '🍔', '🍕', '🌮', '🍣', '🍜', '🥢', '🍱', '🥩', '🍗', '🥗',
+  '🍺', '🍸', '🍷', '☕', '🧃', '🥂', '🍾', '🧉',
+  // Activities
+  '🎳', '⛳', '🏌️', '🧗', '🚣', '🏊', '🎯', '🎮', '🎪', '🎠',
+  '🎭', '🎬', '🎵', '🎤', '🎸', '🎺',
+  // Sports
+  '🏈', '⚾', '🏀', '🏒', '⚽', '🎾', '🏋️', '🤼', '🏇', '🥊',
+  // Nature & Outdoors
+  '🌳', '🌲', '⛰️', '🏔️', '🌊', '🏕️', '🌿', '🌺',
+  // Places & Vibes
+  '🍽️', '🕯️', '✨', '👑', '🔥', '⭐', '💎', '🏆',
+  '🎉', '🎊', '🌙', '🌅', '🏙️', '🗺️',
+  // Specific
+  '🎰', '🎲', '🃏',
+];
+
 // venues.categories is the array column (Phase 8); venues.category is kept
 // as a single-value fallback for any row that predates the backfill or any
 // write path that hasn't been updated to send the array yet.

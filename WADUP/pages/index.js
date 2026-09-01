@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import {
-  CATEGORY_CHIPS, CATEGORY_LABELS,
+  CATEGORY_CHIPS, CATEGORY_LABELS, EMOJI_OPTIONS,
   isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
   venueMatchesChip, venueCategories,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
@@ -11,21 +11,8 @@ import { getTrendingVenues, getBestRated, getScheduleTrendingVenues, getRankedVe
 import { supabase } from '../lib/supabase';
 import { getAdminRole, isSuperAdmin } from '../lib/admin';
 import AuthSidebar from '../components/AuthSidebar';
+import AdminEditPanel from '../components/AdminEditPanel';
 
-// Same picker as pages/admin/venues.js's EditVenueModal — duplicated rather
-// than shared, since the on-map admin edit modal below is a self-contained
-// sibling of that page's modal, not a shared component.
-const MAP_EMOJI_OPTIONS = [
-  '🍔', '🍕', '🌮', '🍣', '🍜', '🥢', '🍱', '🥩', '🍗', '🥗',
-  '🍺', '🍸', '🍷', '☕', '🧃', '🥂', '🍾', '🧉',
-  '🎳', '⛳', '🏌️', '🧗', '🚣', '🏊', '🎯', '🎮', '🎪', '🎠',
-  '🎭', '🎬', '🎵', '🎤', '🎸', '🎺',
-  '🏈', '⚾', '🏀', '🏒', '⚽', '🎾', '🏋️', '🤼', '🏇', '🥊',
-  '🌳', '🌲', '⛰️', '🏔️', '🌊', '🏕️', '🌿', '🌺',
-  '🍽️', '🕯️', '✨', '👑', '🔥', '⭐', '💎', '🏆',
-  '🎉', '🎊', '🌙', '🌅', '🏙️', '🗺️',
-  '🎰', '🎲', '🃏',
-];
 const MAP_EDITABLE_CATEGORIES = CATEGORY_CHIPS.filter(c => c.id !== 'all');
 
 function toggleInArray(arr, id) {
@@ -167,125 +154,6 @@ function trendingReasonBadge(v) {
   return `${icon} ${label} in ${diff}min`;
 }
 
-// On-map "Edit Venue" modal, opened from the admin right-click/long-press
-// context menu. Mirrors pages/admin/venues.js's EditVenueModal field-for-field
-// (name, emoji, categories, subcategory, visible/private/hide-new-badge
-// toggles) but is a separate component, not a shared one — this page's admin
-// controls are a self-contained overlay on the map, not a navigation into the
-// full venue manager.
-function MapEditVenueModal({ venue, onClose, onSave }) {
-  const [name, setName] = useState(venue.name || '');
-  const [categories, setCategories] = useState(venueCategories(venue));
-  const [subcategory, setSubcategory] = useState(venue.subcategory || '');
-  const [emoji, setEmoji] = useState(venue.custom_emoji || '');
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [visible, setVisible] = useState(!venue.is_hidden);
-  const [isPrivate, setIsPrivate] = useState(!!venue.is_private);
-  const [hideNewBadge, setHideNewBadge] = useState(!!venue.hide_new_badge);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const save = async () => {
-    console.log('[EditMode] MapEditVenueModal: Save clicked for', venue.id);
-    setSaving(true);
-    setError('');
-    try {
-      await onSave({
-        name, categories, subcategory: subcategory || null,
-        custom_emoji: emoji || null,
-        is_hidden: !visible,
-        is_private: isPrivate,
-        hide_new_badge: hideNewBadge,
-      });
-      console.log('[EditMode] MapEditVenueModal: save succeeded');
-    } catch (e) {
-      console.error('[EditMode] MapEditVenueModal: save FAILED:', e.message);
-      setError(e.message);
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="admin-modal-backdrop" onClick={onClose}>
-      <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="admin-modal-header">
-          <span>Edit Venue</span>
-          <button className="admin-modal-close" onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div className="admin-modal-body">
-          <label>Name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} />
-
-          <label>Emoji</label>
-          <div className="admin-emoji-row">
-            <button type="button" className="admin-emoji-current" onClick={() => setPickerOpen(v => !v)}>
-              {emoji || CATEGORY_ICONS[categories[0]] || '📍'}
-            </button>
-            <span className="admin-emoji-hint">Click to change</span>
-          </div>
-          {pickerOpen && (
-            <div className="admin-emoji-picker">
-              {MAP_EMOJI_OPTIONS.map(e => (
-                <button
-                  key={e} type="button" className="admin-emoji-choice"
-                  onClick={() => { setEmoji(e); setPickerOpen(false); }}
-                >
-                  {e}
-                </button>
-              ))}
-              <button type="button" className="admin-emoji-choice admin-emoji-clear" onClick={() => { setEmoji(''); setPickerOpen(false); }}>
-                Auto
-              </button>
-            </div>
-          )}
-
-          <label>Categories</label>
-          <div className="admin-checkbox-grid">
-            {MAP_EDITABLE_CATEGORIES.map(c => (
-              <label key={c.id} className="admin-checkbox-item">
-                <input
-                  type="checkbox"
-                  checked={categories.includes(c.id)}
-                  onChange={() => setCategories(prev => toggleInArray(prev, c.id))}
-                />
-                {c.label}
-              </label>
-            ))}
-          </div>
-
-          <label>Subcategory</label>
-          <input
-            value={subcategory}
-            placeholder="e.g. Craft Beer Bar, Speakeasy, Golf Course"
-            onChange={(e) => setSubcategory(e.target.value)}
-          />
-
-          <div className="admin-toggle-row">
-            <label className="admin-toggle">
-              <input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
-              Visible
-            </label>
-            <label className="admin-toggle">
-              <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} />
-              Private Venue 🔒
-            </label>
-            <label className="admin-toggle">
-              <input type="checkbox" checked={hideNewBadge} onChange={(e) => setHideNewBadge(e.target.checked)} />
-              Hide New Badge
-            </label>
-          </div>
-
-          {error && <div className="admin-modal-error">⚠️ {error}</div>}
-
-          <button className="admin-save-btn" onClick={save} disabled={saving || !name || !categories.length}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // On-map "Add Venue Here" modal — opened from a right-click/long-press on
 // empty map background while Edit Mode is on. Lat/lng come straight from the
 // click location and aren't editable; everything else is a minimal manual
@@ -355,7 +223,7 @@ function MapAddVenueModal({ lat, lng, onClose, onSave }) {
           </div>
           {pickerOpen && (
             <div className="admin-emoji-picker">
-              {MAP_EMOJI_OPTIONS.map(e => (
+              {EMOJI_OPTIONS.map(e => (
                 <button
                   key={e} type="button" className="admin-emoji-choice"
                   onClick={() => { setEmoji(e); setPickerOpen(false); }}
@@ -440,16 +308,18 @@ export default function WadUp() {
 
   // ── Admin map controls ──
   const [adminRole,      setAdminRole]      = useState(null);
+  const adminRoleRef = useRef(null);
+  useEffect(() => { adminRoleRef.current = adminRole; }, [adminRole]);
   const [editMode,       setEditMode]       = useState(false);
   const editModeRef = useRef(false);
   useEffect(() => {
     editModeRef.current = editMode;
     console.log('[EditMode] editMode is now', editMode);
   }, [editMode]);
-  // Item 1: confirms whether adminRole ever resolves non-null at all — if
-  // this never logs "toolbar rendering", the whole feature is dead before
-  // any pin/map-click code even matters, since the toolbar (and therefore
-  // the only way to turn Edit Mode on) is gated entirely on adminRole.
+  // Confirms whether adminRole ever resolves non-null at all — if this never
+  // logs "toolbar rendering", the whole feature is dead before any pin/map-
+  // click code even matters, since the toolbar (and therefore the only way
+  // to turn Edit Mode on) is gated entirely on adminRole.
   useEffect(() => {
     console.log('[AdminToolbar] adminRole changed:', adminRole, adminRole ? '→ toolbar WILL render' : '→ toolbar hidden (adminRole is null — not logged in as an admin, or admin_roles lookup hasn\'t resolved yet)');
   }, [adminRole]);
@@ -457,7 +327,13 @@ export default function WadUp() {
   useEffect(() => {
     if (mapContextMenu) console.log('[EditMode] mapContextMenu state set:', mapContextMenu);
   }, [mapContextMenu]);
-  const [mapEditingVenue, setMapEditingVenue] = useState(null);
+  // The slide-in AdminEditPanel — opened either by clicking a pin directly
+  // while Edit Mode is on, or via the right-click context menu's Edit Venue.
+  const [editPanelVenue, setEditPanelVenue] = useState(null);
+  const [relocating,     setRelocating]     = useState(false);
+  const relocatingRef = useRef(false);
+  useEffect(() => { relocatingRef.current = relocating; }, [relocating]);
+  const [relocateTarget, setRelocateTarget] = useState(null); // { lat, lng } | null
   const [mapAddingAt,     setMapAddingAt]     = useState(null); // { lat, lng } | null
   const [mapActionError,   setMapActionError]   = useState('');
   const [mapActionSuccess, setMapActionSuccess] = useState('');
@@ -952,6 +828,11 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (editModeRef.current && adminRoleRef.current) {
+        console.log('[EditMode] venue pin clicked while Edit Mode is on — opening edit panel instead of popup:', v.id, v.name);
+        openEditPanel(v);
+        return;
+      }
       handlePinInteraction(v.id);
     });
     // Admin Edit Mode: right-click (desktop) or long-press (mobile) a pin to
@@ -995,6 +876,15 @@ export default function WadUp() {
 
     const entry = { id: v.id, type: 'venue', marker, overlay, el, lat: v.lat, lng: v.lng, chipVisible: true, openPopup };
     pinRegistry.current.set(v.id, entry);
+    // `openEditPanel` is deliberately NOT in this deps array: it's declared
+    // further down in this component (after dropVenuePin), so listing it
+    // here would evaluate the reference before its `const` initializes —
+    // a real ReferenceError this exact change once threw at render time.
+    // The click handler above only reads `openEditPanel` when it actually
+    // fires (long after the full component body has run), so the closure
+    // is correct regardless; its identity is also stable across renders
+    // (see cancelRelocate/openEditPanel's own empty-ish dep chains), so
+    // omitting it here costs nothing.
   }, [zoomClass]);
 
   // ── Drop a TM pin ──
@@ -1072,6 +962,16 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (editModeRef.current && adminRoleRef.current) {
+        // Ticketmaster pins are events pulled live from the TM API, not rows
+        // in our own `venues` table — there's nothing for /api/admin/* to
+        // update or delete, so there's no edit panel to open. Still suppress
+        // the normal popup while Edit Mode is on, per spec, rather than
+        // silently falling through to it.
+        console.log('[EditMode] TM pin clicked while Edit Mode is on — not editable (no backing venues row), ignoring:', ev.id, ev.name);
+        setMapActionError('Ticketmaster events aren’t editable — not part of the venues database');
+        return;
+      }
       handlePinInteraction(ev.id);
     });
     el.addEventListener('mouseenter', () => {
@@ -1288,8 +1188,19 @@ export default function WadUp() {
     setMapContextMenu(null);
   }, [authedFetchIndex, removePinFromMap, flashMapSuccess]);
 
+  // Shared by the context menu's quick "Delete" action (which owns its own
+  // confirm() below) and AdminEditPanel's Delete button (which already
+  // confirms internally) — no confirm dialog here, so it's safe for both.
+  const deleteVenueViaApi = useCallback(async (venue) => {
+    console.log('[EditMode] deleting venue via API', venue.id, venue.name);
+    await authedFetchIndex('/api/admin/delete-venue', { venueId: venue.id });
+    console.log('[EditMode] delete-venue succeeded');
+    removePinFromMap(venue.id);
+    flashMapSuccess(`Deleted "${venue.name}"`);
+  }, [authedFetchIndex, removePinFromMap, flashMapSuccess]);
+
   const mapDeleteVenue = useCallback(async (venue) => {
-    console.log('[EditMode] Delete clicked for venue', venue.id, venue.name);
+    console.log('[EditMode] context-menu Delete clicked for venue', venue.id, venue.name);
     setMapContextMenu(null);
     if (!window.confirm(`Permanently delete "${venue.name}"? This cannot be undone.`)) {
       console.log('[EditMode] delete cancelled by admin');
@@ -1297,29 +1208,89 @@ export default function WadUp() {
     }
     setMapActionError('');
     try {
-      await authedFetchIndex('/api/admin/delete-venue', { venueId: venue.id });
-      console.log('[EditMode] delete-venue succeeded');
-      removePinFromMap(venue.id);
-      flashMapSuccess(`Deleted "${venue.name}"`);
+      await deleteVenueViaApi(venue);
     } catch (e) {
       console.error('[EditMode] delete-venue FAILED:', e);
       setMapActionError(e.message);
     }
-  }, [authedFetchIndex, removePinFromMap, flashMapSuccess]);
+  }, [deleteVenueViaApi]);
 
-  const mapSaveEditedVenue = useCallback(async (fields) => {
-    console.log('[EditMode] saving Edit Venue for', mapEditingVenue?.id, fields);
-    try {
-      await authedFetchIndex('/api/admin/update-venue', { venueId: mapEditingVenue.id, updates: fields });
-      console.log('[EditMode] update-venue succeeded for Edit Venue');
-      setMapEditingVenue(null);
-      flashMapSuccess(`Saved "${fields.name || mapEditingVenue?.name}"`);
-      loadVenuesFromSupabase();
-    } catch (e) {
-      console.error('[EditMode] update-venue FAILED for Edit Venue:', e);
-      throw e; // MapEditVenueModal shows this inline via its own error state
+  // Cancels an in-progress "click map to move" without discarding the panel
+  // itself — called when relocate completes, the panel closes, or a
+  // different venue's panel opens while one relocate was still pending.
+  const relocateListenerRef = useRef(null);
+  const cancelRelocate = useCallback(() => {
+    if (relocateListenerRef.current) {
+      relocateListenerRef.current.remove();
+      relocateListenerRef.current = null;
     }
-  }, [authedFetchIndex, mapEditingVenue, loadVenuesFromSupabase, flashMapSuccess]);
+    mapObj.current?.setOptions({ draggableCursor: null });
+    setRelocating(false);
+  }, []);
+
+  const openEditPanel = useCallback((venue) => {
+    console.log('[EditMode] opening edit panel for venue', venue.id, venue.name);
+    cancelRelocate();
+    setRelocateTarget(null);
+    setEditPanelVenue(venue);
+  }, [cancelRelocate]);
+
+  const closeEditPanel = useCallback(() => {
+    console.log('[EditMode] closing edit panel');
+    cancelRelocate();
+    setRelocateTarget(null);
+    setEditPanelVenue(null);
+  }, [cancelRelocate]);
+
+  const startRelocate = useCallback(() => {
+    const map = mapObj.current;
+    if (!map || !editPanelVenue) return;
+    console.log('[EditMode] entering relocate mode for venue', editPanelVenue.id, '— click the map to set its new position');
+    cancelRelocate();
+    setRelocating(true);
+    map.setOptions({ draggableCursor: 'crosshair' });
+    const targetVenue = editPanelVenue;
+    const listener = map.addListener('click', (e) => {
+      const newLat = e.latLng.lat();
+      const newLng = e.latLng.lng();
+      console.log('[EditMode] relocate click captured at', newLat, newLng);
+      setRelocateTarget({ lat: newLat, lng: newLng });
+      cancelRelocate();
+      // Move the pin right away as a visual preview — the DB row isn't
+      // touched until Save is clicked in the panel.
+      dropVenuePin({ ...targetVenue, lat: newLat, lng: newLng, live: true });
+      filterPinsRef.current?.();
+    });
+    relocateListenerRef.current = listener;
+  }, [editPanelVenue, cancelRelocate, dropVenuePin]);
+
+  const saveEditPanelVenue = useCallback(async (fields) => {
+    if (!editPanelVenue) return;
+    console.log('[EditMode] saving edit panel for', editPanelVenue.id, fields);
+    await authedFetchIndex('/api/admin/update-venue', { venueId: editPanelVenue.id, updates: fields });
+    console.log('[EditMode] update-venue succeeded');
+    flashMapSuccess(`Saved "${fields.name || editPanelVenue.name}"`);
+
+    // Reflect the change on the map immediately — no full page reload, and
+    // no waiting on a fresh Supabase fetch either: merge the saved fields
+    // into this venue's in-memory record and redraw just that one pin (or
+    // remove it outright if it was just hidden).
+    const updated = { ...editPanelVenue, ...fields, live: true };
+    venuesRef.current = venuesRef.current.map(v => (v.id === editPanelVenue.id ? updated : v));
+    if (fields.is_hidden) {
+      removePinFromMap(editPanelVenue.id);
+    } else if (isVenueEligible(updated)) {
+      dropVenuePin(updated);
+      filterPinsRef.current?.();
+    }
+    closeEditPanel();
+  }, [authedFetchIndex, editPanelVenue, flashMapSuccess, removePinFromMap, dropVenuePin, closeEditPanel]);
+
+  const deleteEditPanelVenue = useCallback(async () => {
+    if (!editPanelVenue) return;
+    await deleteVenueViaApi(editPanelVenue); // throws on failure — AdminEditPanel shows it inline
+    closeEditPanel();
+  }, [editPanelVenue, deleteVenueViaApi, closeEditPanel]);
 
   const mapAddVenueHere = useCallback(async (fields) => {
     console.log('[EditMode] Add Venue Here submitted at', mapAddingAt, fields);
@@ -2026,7 +1997,7 @@ export default function WadUp() {
                   }
                   return (
                     <>
-                      <button onClick={() => { console.log('[EditMode] Edit Venue clicked for', v.id); setMapContextMenu(null); setMapEditingVenue(v); }}>✏️ Edit Venue</button>
+                      <button onClick={() => { console.log('[EditMode] Edit Venue clicked for', v.id); setMapContextMenu(null); openEditPanel(v); }}>✏️ Edit Venue</button>
                       <button onClick={() => mapHideVenue(v)}>👁️ Hide/Show</button>
                       {isSuperAdmin(adminRole) && (
                         <button className="map-context-danger" onClick={() => mapDeleteVenue(v)}>🗑️ Delete</button>
@@ -2046,11 +2017,15 @@ export default function WadUp() {
             </div>
           )}
 
-          {mapEditingVenue && (
-            <MapEditVenueModal
-              venue={mapEditingVenue}
-              onClose={() => setMapEditingVenue(null)}
-              onSave={mapSaveEditedVenue}
+          {editPanelVenue && (
+            <AdminEditPanel
+              venue={editPanelVenue}
+              relocateTarget={relocateTarget}
+              relocating={relocating}
+              onStartRelocate={startRelocate}
+              onClose={closeEditPanel}
+              onSave={saveEditPanelVenue}
+              onDelete={deleteEditPanelVenue}
             />
           )}
 
