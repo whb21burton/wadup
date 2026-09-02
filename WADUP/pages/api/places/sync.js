@@ -60,7 +60,24 @@ const FIELD_MASK = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.location',
   'places.rating', 'places.userRatingCount', 'places.internationalPhoneNumber',
   'places.websiteUri', 'places.regularOpeningHours', 'places.photos', 'places.primaryType',
+  'places.types',
 ].join(',');
+
+// A lot of bars/taverns/breweries get typed by Google as "restaurant" (their
+// primaryType) with the bar-ish signal only showing up elsewhere in their
+// broader `types` list (or as a specific primaryType like "bar_and_grill") —
+// meaning they'd only ever surface from the SEARCH_TYPES restaurant query
+// above and get stuck with wadupCat 'restaurant', never the nightlife one.
+// This overrides that per-search-group default using the place's OWN type
+// data, so it doesn't matter which searchNearby call actually returned it.
+const NIGHTLIFE_TYPES = ['bar', 'night_club', 'pub', 'brewery', 'wine_bar', 'cocktail_bar', 'sports_bar', 'tavern', 'lounge'];
+
+function resolveWadupCat(place, searchGroupCat) {
+  const primary = (place.primaryType || '').toLowerCase();
+  const allTypes = (place.types || []).map(t => t.toLowerCase());
+  const isNightlife = NIGHTLIFE_TYPES.some(n => primary.includes(n) || allTypes.some(t => t.includes(n)));
+  return isNightlife ? 'nightlife' : searchGroupCat;
+}
 
 async function searchNearby(types) {
   const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
@@ -149,8 +166,9 @@ export default async function handler(req, res) {
       places.forEach(place => {
         if (!place.id || byPlaceId.has(place.id)) return; // first matching group wins
         if (isChain(place.displayName?.text)) { skippedChains++; return; }
-        byCategory[wadupCat] = (byCategory[wadupCat] || 0) + 1;
-        byPlaceId.set(place.id, mapPlaceToRow(place, wadupCat));
+        const resolvedCat = resolveWadupCat(place, wadupCat);
+        byCategory[resolvedCat] = (byCategory[resolvedCat] || 0) + 1;
+        byPlaceId.set(place.id, mapPlaceToRow(place, resolvedCat));
       });
     } catch (e) {
       errors.push(`${types.join('/')}: ${e.message}`);

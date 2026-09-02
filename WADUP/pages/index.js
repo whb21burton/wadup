@@ -1183,17 +1183,17 @@ export default function WadUp() {
         gestureHandling: 'greedy',
         clickableIcons: false,
         styles: [
-          { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-          { featureType: 'poi', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+          { featureType: 'poi.park', stylers: [{ visibility: 'off' }] },
           { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
           { featureType: 'poi.attraction', stylers: [{ visibility: 'off' }] },
           { featureType: 'poi.government', stylers: [{ visibility: 'off' }] },
           { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
-          { featureType: 'poi.park', elementType: 'labels', stylers: [{ visibility: 'off' }] },
           { featureType: 'poi.place_of_worship', stylers: [{ visibility: 'off' }] },
           { featureType: 'poi.school', stylers: [{ visibility: 'off' }] },
           { featureType: 'poi.sports_complex', stylers: [{ visibility: 'off' }] },
-          { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+          { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+          { featureType: 'transit.station', stylers: [{ visibility: 'off' }] },
         ],
       });
 
@@ -1208,6 +1208,17 @@ export default function WadUp() {
         if (!venue) return;
         infoWindow.current.close();
         openEditPanel(venue);
+      };
+
+      // TEMP DEBUG — remove once the "too few venues on the map" investigation
+      // is closed out. Callable from the console as window.__debugVenues(),
+      // also wired to a visible "🐞 Debug Venues" button (see JSX below).
+      window.__debugVenues = () => {
+        const chip = activeCategoryRef.current;
+        const matching = venuesRef.current.filter(v => venueMatchesChip(chip, v));
+        console.log('[DEBUG] Total venues in memory:', venuesRef.current.length);
+        console.log('[DEBUG] Matching chip', chip, ':', matching.length);
+        matching.forEach(v => console.log('[DEBUG]', v.name, v.lat, v.lng, v.categories, v.is_hidden));
       };
 
       // Desktop hover: keep the popup open while the mouse is over the popup
@@ -1773,6 +1784,20 @@ export default function WadUp() {
             aria-label="Account"
           >
             {profile ? (profile.username || '?').slice(0, 1).toUpperCase() : '👤'}
+          </button>
+
+          {/* TEMP DEBUG — remove once the "too few venues on the map" investigation
+              is closed out. Logs venuesRef.current + the active chip's matches. */}
+          <button
+            onClick={() => window.__debugVenues?.()}
+            style={{
+              position: 'absolute', top: 8, left: 8, zIndex: 1000,
+              padding: '6px 10px', fontSize: '0.75rem', fontWeight: 700,
+              background: '#111', color: '#fff', border: 'none',
+              borderRadius: 6, cursor: 'pointer', opacity: 0.85,
+            }}
+          >
+            🐞 Debug Venues
           </button>
 
           {/* Mobile HUD */}
