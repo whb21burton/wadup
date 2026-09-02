@@ -4,10 +4,10 @@ import Link from 'next/link';
 import {
   CATEGORY_CHIPS, CATEGORY_LABELS, EMOJI_OPTIONS,
   isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
-  venueMatchesChip, venueCategories,
+  venueMatchesChip, venueCategories, isChain,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
-import { getLiveTrendingVenueIds, getBestRated, getScheduleTrendingVenues, rankVenuesInBounds } from '../lib/rankings';
+import { getLiveTrendingVenueIds, getBestRated, getScheduleTrendingVenues } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
 import { getAdminRole } from '../lib/admin';
 import AuthSidebar from '../components/AuthSidebar';
@@ -68,6 +68,30 @@ function venueEmoji(v) {
   return v.custom_emoji || CATEGORY_ICONS[venueCategories(v)[0]] || '📍';
 }
 
+// ── Two-tier pin system ── the rating used to ORDER pins/sidebar items falls
+// back to a venue's Google rating only so a freshly-synced, highly-rated
+// venue doesn't sort behind a middling one just for lacking WadUp reviews
+// yet. Never used for DISPLAY — a 4.8 Google rating and a 4.8 WadUp rating
+// aren't the same scale (5 vs 10), so only the real weighted_rating (out of
+// 10) is ever shown on a pin/card, and only once it's nonzero.
+function areaRatingOf(v) {
+  return v.weighted_rating > 0 ? v.weighted_rating : (v.google_rating || 0);
+}
+
+// A venue's _areaRank is scoped to the current map viewport (see
+// updateAreaRanks) — undefined/null (never computed, e.g. currently outside
+// the viewport) falls through to 'discovery' same as any rank beyond 10.
+function getVenueTier(areaRank) {
+  return areaRank != null && areaRank <= 10 ? 'top10' : 'discovery';
+}
+
+function getRankStyle(rank) {
+  if (rank === 1) return { bg: '#FFD700', color: '#000', shadow: '0 2px 14px rgba(255,215,0,0.65)', prefix: '👑 #1' };
+  if (rank === 2) return { bg: '#C0C0C0', color: '#000', shadow: '0 2px 14px rgba(192,192,192,0.6)', prefix: '🥈 #2' };
+  if (rank === 3) return { bg: '#CD7F32', color: '#fff', shadow: '0 2px 14px rgba(205,127,50,0.6)', prefix: '🥉 #3' };
+  return { bg: '#fff', color: '#171717', shadow: '0 2px 8px rgba(0,0,0,0.18)', prefix: `#${rank}` };
+}
+
 const EVENT_TYPE_ICON  = { live_music: '🎵', trivia: '🧠', happy_hour: '⏰', specials: '🏷️', activities: '🎳', sports_game: '🏟️', event: '🎫' };
 const EVENT_TYPE_LABEL = { live_music: 'Live Music', trivia: 'Trivia', happy_hour: 'Happy Hour', specials: 'Specials', activities: 'Activities', sports_game: 'Game', event: 'Event' };
 
@@ -102,6 +126,12 @@ export default function WadUp() {
   const eventVenueIdsTodayRef = useRef(new Set());
   const mapInitStarted = useRef(false);
   const filterPinsRef = useRef(null);
+  // updateAreaRanks (defined earlier in this component than dropVenuePin)
+  // needs to call the CURRENT dropVenuePin — going through a ref instead of
+  // closing over the identifier directly avoids the temporal-dead-zone
+  // ReferenceError this exact cross-callback-reference pattern hit earlier
+  // this session (see the dropVenuePin/openEditPanel fix).
+  const dropVenuePinRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const searchInputRef = useRef(null);
 
@@ -353,25 +383,38 @@ export default function WadUp() {
   useEffect(() => { filterPinsRef.current = filterPins; }, [filterPins]);
 
   // Ranks whatever venues are currently inside the map viewport by
-  // weighted_rating — drives both the #N label baked into a pin's name and
-  // the sidebar's "🏆 Top 10" list, which both need this same
-  // viewport-relative ranking (not a city-wide one). Called from filterPins
-  // (covers chip changes and any point pins get (re)dropped) and separately
-  // from the map's own 'bounds_changed' listener (panning/zooming changes
-  // what's "in bounds" without touching the chip filter at all).
+  // areaRatingOf (weighted_rating, falling back to google_rating) — drives
+  // both the two-tier pin system (top 10 in view get the Olympic-styled
+  // pill; everything else becomes a Tier 2 discovery dot) and the sidebar's
+  // "🏆 Top 10" list. Every live/eligible/chip-matching venue always gets a
+  // pin redropped here (never pop-in/out while panning) — only the RANK is
+  // viewport-relative, since "#4 in this area" is inherently scoped to what's
+  // currently on screen; a venue outside the viewport (or ranked below 10
+  // within it) simply renders as a Tier 2 dot. Called from filterPins
+  // (covers chip changes and initial load) and separately from the map's own
+  // 'bounds_changed' listener (panning/zooming changes what's "in bounds"
+  // without touching the chip filter at all).
   const updateAreaRanks = useCallback(() => {
     const map = mapObj.current;
     if (!map) return;
     const bounds = map.getBounds();
     const chip = activeCategoryRef.current;
 
-    const inBounds = venuesRef.current.filter(v => {
-      if (!v.live) return false;
-      if (!bounds) return true;
-      return bounds.contains(new window.google.maps.LatLng(v.lat, v.lng));
-    });
+    const eligible = venuesRef.current.filter(v =>
+      v.live && !v.is_hidden && isVenueEligible(v) && venueMatchesChip(chip, v)
+    );
+    const inBounds = eligible.filter(v => !bounds || bounds.contains(new window.google.maps.LatLng(v.lat, v.lng)));
+    const ranked = inBounds
+      .slice()
+      .sort((a, b) => areaRatingOf(b) - areaRatingOf(a))
+      .map((v, i) => ({ ...v, _areaRank: i + 1 }));
+    const rankById = new Map(ranked.map(v => [v.id, v._areaRank]));
 
-    const ranked = rankVenuesInBounds(inBounds, chip).map(v => ({ ...v, _type: 'venue' }));
+    // A chip/bounds change supersedes whatever fan-out was showing, and every
+    // pin about to be redropped below would leave the fan-out holding stale
+    // marker/overlay references otherwise.
+    collapseSpiderfy();
+    eligible.forEach(v => dropVenuePinRef.current?.(v, rankById.get(v.id)));
 
     // Ticketmaster events have no WadUp rating to sort against, so rather
     // than fabricate a score to interleave them with rated venues, they're
@@ -384,26 +427,17 @@ export default function WadUp() {
           .map(ev => ({ ...ev, _type: 'tm' }))
       : [];
 
-    const combined = [...ranked, ...tmInBounds].map((item, i) => ({ ...item, _areaRank: i + 1 }));
-    const rankedIds = new Set(combined.filter(item => item._type === 'venue' && item._areaRank <= 10).map(v => v.id));
-
-    pinRegistry.current.forEach((entry, id) => {
-      if (entry.type !== 'venue') return;
-      const nameEl = entry.el?.querySelector('.wu-name');
-      if (!nameEl) return;
-      const venue = venuesRef.current.find(v => v.id === id);
-      if (!venue) return;
-      const rankedMatch = combined.find(item => item._type === 'venue' && item.id === id);
-      nameEl.textContent = rankedMatch && rankedIds.has(id) ? `#${rankedMatch._areaRank} ${venue.name}` : venue.name;
-    });
-
+    const combined = [...ranked.map(v => ({ ...v, _type: 'venue' })), ...tmInBounds]
+      .map((item, i) => ({ ...item, _areaRank: i + 1 }));
     setTopRanked(combined.slice(0, 10));
   }, []);
 
   // ── WuOverlay class factory ── anchor 'bottom' = pin (tail points at the
-  // coordinate); anchor 'center' = bubble centered directly on the coordinate.
+  // coordinate); anchor 'center' = bubble centered directly on the coordinate;
+  // anchor 'top' = the coordinate sits at el's top edge (discovery pins, so
+  // the dot itself — el's first child — lands exactly on the venue's spot).
   function makeOverlay(pos, el, map, anchor = 'bottom') {
-    const base = anchor === 'center' ? 'translate(-50%, -50%)' : 'translate(-50%, -100%)';
+    const base = anchor === 'center' ? 'translate(-50%, -50%)' : anchor === 'top' ? 'translate(-50%, 0)' : 'translate(-50%, -100%)';
     const overlay = new window.google.maps.OverlayView();
     overlay.onAdd = function() {
       this.getPanes().overlayMouseTarget.appendChild(el);
@@ -435,9 +469,11 @@ export default function WadUp() {
     const proj = clickedEntry.overlay.getProjection();
     if (!map || !proj) return [clickedEntry];
     const clickedPt = proj.fromLatLngToDivPixel(new window.google.maps.LatLng(clickedEntry.lat, clickedEntry.lng));
+    const zoom = map.getZoom();
     const nearby = [];
     pinRegistry.current.forEach((entry) => {
       if (entry.marker.getMap() !== map) return; // hidden by the active chip/date filter
+      if (entry.tier === 'discovery' && zoom < 17) return; // hidden by the zoom-17 discovery threshold
       const pt = proj.fromLatLngToDivPixel(new window.google.maps.LatLng(entry.lat, entry.lng));
       const dx = pt.x - clickedPt.x, dy = pt.y - clickedPt.y;
       if (Math.sqrt(dx * dx + dy * dy) <= 40) nearby.push(entry);
@@ -553,8 +589,12 @@ export default function WadUp() {
     entry.openPopup();
   }
 
-  // ── Drop a venue pin ──
-  const dropVenuePin = useCallback((v) => {
+  // ── Drop a venue pin ── `areaRank` (1-based, scoped to the current
+  // viewport — see updateAreaRanks) decides which of the two tiers this pin
+  // renders as: rank 1-10 gets an Olympic-styled Top 10 pill, anything else
+  // (including "not currently ranked at all", e.g. undefined during a
+  // relocate-preview drop) becomes a Tier 2 discovery dot.
+  const dropVenuePin = useCallback((v, areaRank) => {
     const map = mapObj.current;
     if (!map || !v.lng || !v.lat) return;
 
@@ -576,28 +616,49 @@ export default function WadUp() {
     const rating = effectiveRating(v);
     const ratingCount = effectiveRatingCount(v);
     const hasRating = rating != null && (ratingCount || 0) > 0;
+    // The rank badge's own rating line uses the NEW weighted (1-10) system,
+    // not the legacy average/google pair above — see areaRatingOf's comment.
+    const areaRating = v.weighted_rating > 0 ? v.weighted_rating : null;
 
-    // Parks and golf courses get a plain, larger emoji marker instead of the
-    // usual white pill — they read better on the map as a landmark icon than
-    // as a name-bearing bubble, and there isn't a badge/rating worth cramming
-    // onto them.
+    // Parks and golf courses get a plain, larger emoji marker instead of a
+    // pill or a discovery dot — regardless of tier — they read better on the
+    // map as a persistent landmark icon than as a name-bearing bubble or a
+    // dot that vanishes below zoom 17.
     const cats = venueCategories(v);
     const isParkPin = cats.includes('outdoors') && /park/i.test(v.name || '');
     const isGolfPin = cats.includes('activities') && (/golf/i.test(v.name || '') || /golf/i.test(v.subcategory || ''));
     const specialIcon = isParkPin ? '🌳' : isGolfPin ? '⛳' : null;
+    const tier = specialIcon ? null : getVenueTier(areaRank);
+    const rankStyle = tier === 'top10' ? getRankStyle(areaRank) : null;
 
     const el = document.createElement('div');
-    el.className = `wu-pin ${zoomClass}${specialIcon ? ' wu-pin-emoji' : ''}`;
     if (v.is_private) el.style.opacity = '0.5';
 
     if (specialIcon) {
+      el.className = `wu-pin ${zoomClass} wu-pin-emoji`;
       const iconSpan = document.createElement('span');
       iconSpan.className = 'wu-emoji-icon';
       iconSpan.textContent = specialIcon;
       el.appendChild(iconSpan);
+    } else if (tier === 'discovery') {
+      el.className = 'wu-pin-discovery';
+      if (map.getZoom() >= 17) el.classList.add('visible');
+
+      const dot = document.createElement('div');
+      dot.className = 'wu-discovery-dot';
+
+      const label = document.createElement('div');
+      label.className = 'wu-discovery-label';
+      label.textContent = v.name;
+
+      el.appendChild(dot);
+      el.appendChild(label);
     } else {
+      el.className = `wu-pin ${zoomClass}`;
       const pill = document.createElement('div');
       pill.className = 'wu-pill';
+      pill.style.background = rankStyle.bg;
+      pill.style.boxShadow = rankStyle.shadow;
 
       if (topBadge) {
         const badgeEl = document.createElement('span');
@@ -611,13 +672,15 @@ export default function WadUp() {
 
       const nameSpan = document.createElement('span');
       nameSpan.className = 'wu-name';
-      nameSpan.textContent = v.name;
+      nameSpan.textContent = `${rankStyle.prefix} ${v.name}`;
+      nameSpan.style.color = rankStyle.color;
       textWrap.appendChild(nameSpan);
 
-      if (hasRating) {
+      if (areaRating != null) {
         const ratingSpan = document.createElement('span');
         ratingSpan.className = 'wu-rating';
-        ratingSpan.textContent = `⭐ ${rating.toFixed(1)}`;
+        ratingSpan.textContent = `⭐${areaRating.toFixed(1)}`;
+        ratingSpan.style.color = rankStyle.color;
         textWrap.appendChild(ratingSpan);
       }
 
@@ -625,6 +688,7 @@ export default function WadUp() {
 
       const tail = document.createElement('div');
       tail.className = 'wu-tail';
+      tail.style.borderTopColor = rankStyle.bg;
 
       el.appendChild(pill);
       el.appendChild(tail);
@@ -660,9 +724,10 @@ export default function WadUp() {
     const marker = new window.google.maps.Marker({
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
-      zIndex: topBadge ? 15 : 10,
+      zIndex: tier === 'discovery' ? 1 : (topBadge ? 15 : 10),
     });
-    const overlay = makeOverlay(pos, el, map, specialIcon ? 'center' : 'bottom');
+    const overlayAnchor = specialIcon ? 'center' : tier === 'discovery' ? 'top' : 'bottom';
+    const overlay = makeOverlay(pos, el, map, overlayAnchor);
 
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
@@ -673,8 +738,10 @@ export default function WadUp() {
       e.stopPropagation();
       handlePinInteraction(v.id);
     });
-    // Park/golf emoji pins open on click only — no hover-triggered popup.
-    if (!specialIcon) {
+    // Park/golf emoji pins and discovery dots open on click only — no
+    // hover-triggered popup (hover-opening a packed cluster of 10px dots at
+    // zoom 17+ would be too fiddly to be usable).
+    if (!specialIcon && tier !== 'discovery') {
       el.addEventListener('mouseenter', () => {
         if (!window.matchMedia('(hover: hover)').matches) return;
         cancelPopupClose();
@@ -689,18 +756,21 @@ export default function WadUp() {
     mapMarkers.current[v.id] = { marker };
     overlays.current[v.id]   = overlay;
 
-    const entry = { id: v.id, type: 'venue', marker, overlay, el, lat: v.lat, lng: v.lng, chipVisible: true, openPopup };
+    const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, el, lat: v.lat, lng: v.lng, chipVisible: true, openPopup };
     pinRegistry.current.set(v.id, entry);
   }, [zoomClass]);
+
+  useEffect(() => { dropVenuePinRef.current = dropVenuePin; }, [dropVenuePin]);
 
   // dropVenuePin bakes the "✏️ Edit Venue" popup button into a cached HTML
   // string at drop time, read from adminRoleRef — so a venue pin dropped
   // before the async admin-role lookup resolves would be stuck without the
   // button until something else happened to redraw it. Re-dropping every
-  // live pin whenever adminRole changes closes that race.
+  // live pin whenever adminRole changes closes that race — routed through
+  // filterPinsRef (→ updateAreaRanks) rather than a direct loop here, since
+  // that's the only path that also knows each venue's current tier/rank.
   useEffect(() => {
     if (!mapReady) return;
-    venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
     filterPinsRef.current?.();
   }, [adminRole, mapReady, dropVenuePin]);
 
@@ -889,8 +959,10 @@ export default function WadUp() {
     // The rest of this file was written against the earlier mock venue shape
     // (`cat` instead of `category`, and a `live` flag every mock row hardcoded
     // to true) — map real rows into that same shape rather than touching every
-    // call site.
-    venuesRef.current = data.map(v => ({ ...v, live: true }));
+    // call site. National/regional chains are excluded from the public map
+    // entirely — WadUp is meant to surface local spots (see isChain in
+    // lib/data.js).
+    venuesRef.current = data.filter(v => !isChain(v.name)).map(v => ({ ...v, live: true }));
 
     // Bulk-fetch today's venue_events once (rather than one query per pin) so
     // dropVenuePin can flag "🎫 Event Today" per venue via a plain Set lookup.
@@ -921,8 +993,9 @@ export default function WadUp() {
         .map(v => v.id)
     );
 
-    // Drop venue pins — ineligible venues (e.g. a restaurant with nothing on today) never get one
-    venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
+    // Drop venue pins — filterPins → updateAreaRanks owns this now (it's the
+    // only path that knows each venue's tier/rank), and already skips
+    // ineligible venues (e.g. a restaurant with nothing on today).
     filterPinsRef.current?.();
 
     // Phase 2: layer the real ⭐ Best Rated ranking (lib/rankings.js, backed
@@ -950,11 +1023,10 @@ export default function WadUp() {
           .map(v => v.name));
 
         if (!changed) return;
-        venuesRef.current.forEach(v => { if (v.live && isVenueEligible(v)) dropVenuePin(v); });
         filterPinsRef.current?.();
       })
       .catch(() => { /* rankings are a nice-to-have — pins already show without them */ });
-  }, [dropVenuePin]);
+  }, []);
 
   // ── Admin map controls: Edit/Delete, both triggered from the "✏️ Edit
   // Venue" button inside a venue's popup ──
@@ -1034,12 +1106,15 @@ export default function WadUp() {
       setRelocateTarget({ lat: newLat, lng: newLng });
       cancelRelocate();
       // Move the pin right away as a visual preview — the DB row isn't
-      // touched until Save is clicked in the panel.
-      dropVenuePin({ ...targetVenue, lat: newLat, lng: newLng, live: true });
+      // touched until Save is clicked in the panel. Reuses whatever tier/rank
+      // this venue's pin last had (rather than recomputing) so the preview
+      // doesn't flash down to a plain discovery dot mid-drag.
+      const lastRank = pinRegistry.current.get(targetVenue.id)?.rank;
+      dropVenuePinRef.current?.({ ...targetVenue, lat: newLat, lng: newLng, live: true }, lastRank);
       filterPinsRef.current?.();
     });
     relocateListenerRef.current = listener;
-  }, [editPanelVenue, cancelRelocate, dropVenuePin]);
+  }, [editPanelVenue, cancelRelocate]);
 
   const saveEditPanelVenue = useCallback(async (fields) => {
     if (!editPanelVenue) return;
@@ -1055,11 +1130,13 @@ export default function WadUp() {
     if (fields.is_hidden) {
       removePinFromMap(editPanelVenue.id);
     } else if (isVenueEligible(updated)) {
-      dropVenuePin(updated);
+      // filterPins → updateAreaRanks redraws every eligible venue (this one
+      // included, already reflected in venuesRef.current above) with its
+      // freshly-computed tier/rank — no need to drop this one pin directly.
       filterPinsRef.current?.();
     }
     closeEditPanel();
-  }, [authedFetchIndex, editPanelVenue, flashMapSuccess, removePinFromMap, dropVenuePin, closeEditPanel]);
+  }, [authedFetchIndex, editPanelVenue, flashMapSuccess, removePinFromMap, closeEditPanel]);
 
   const deleteEditPanelVenue = useCallback(async () => {
     if (!editPanelVenue) return;
@@ -1144,6 +1221,11 @@ export default function WadUp() {
         document.querySelectorAll('.wu-pin').forEach(el => {
           el.classList.remove('zoom-far','zoom-mid','zoom-near');
           el.classList.add(zc);
+        });
+        // Tier 2 discovery dots only ever show at zoom 17+.
+        const showDiscovery = z >= 17;
+        document.querySelectorAll('.wu-pin-discovery').forEach(el => {
+          el.classList.toggle('visible', showDiscovery);
         });
       });
 
@@ -1369,7 +1451,9 @@ export default function WadUp() {
     topRanked.length === 0 ? (
       <div className="t-empty">{sidebarLoading ? 'Loading…' : 'No ranked venues in view'}</div>
     ) : topRanked.map((item) => {
-      const rankClass = `t-rank${item._areaRank === 1 ? ' rank-gold' : item._areaRank === 2 ? ' rank-silver' : item._areaRank === 3 ? ' rank-bronze' : ''}`;
+      const rank = item._areaRank;
+      const medal = rank === 1 ? '👑' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+      const rowClass = `t-item rank-${rank <= 3 ? rank : 'other'}`;
 
       if (item._type === 'tm') {
         const icon = item.cat === 'sports' ? (item.sportEmoji || '🏟️') : '🎟️';
@@ -1377,8 +1461,8 @@ export default function WadUp() {
           ? new Date(item.dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
           : 'Date TBD';
         return (
-          <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
-            <div className={rankClass}>#{item._areaRank}</div>
+          <div key={item.id} className={rowClass} onClick={() => flyTo(item.lng, item.lat)}>
+            <div className="t-rank">{medal} #{rank}</div>
             <div className="t-icon">{icon}</div>
             <div className="t-info">
               <div className="t-name">{item.name}</div>
@@ -1389,8 +1473,8 @@ export default function WadUp() {
       }
 
       return (
-        <div key={item.id} className="t-item" onClick={() => flyTo(item.lng, item.lat)}>
-          <div className={rankClass}>#{item._areaRank}</div>
+        <div key={item.id} className={rowClass} onClick={() => flyTo(item.lng, item.lat)}>
+          <div className="t-rank">{medal} #{rank}</div>
           <div className="t-icon">{venueEmoji(item)}</div>
           <div className="t-info">
             <div className="t-name">{item.name}</div>

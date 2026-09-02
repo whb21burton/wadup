@@ -67,6 +67,27 @@ export function venueMatchesChip(chip, venue) {
   return cats.includes(chip);
 }
 
+// National/regional chains are filtered out of the public map entirely —
+// WadUp is meant to surface local spots, not the same 30 chains every city
+// already has. No `is_chain` column exists on venues, so this is a
+// name-substring check applied client-side wherever venues are loaded for
+// the map (see pages/index.js's loadVenuesFromSupabase).
+const CHAIN_NAMES = [
+  'mcdonald', 'taco bell', 'burger king', 'subway', 'starbucks',
+  'chick-fil-a', 'wendy', 'domino', 'pizza hut', 'kfc', 'popeyes', 'sonic',
+  'cracker barrel', 'buffalo wild wings', 'applebee', 'olive garden', 'red lobster',
+  'ihop', 'waffle house', 'dunkin', 'panera', 'chipotle', 'five guys',
+  'jersey mike', 'jimmy john', 'wingstop', 'raising cane', 'zaxby',
+  'golden corral', 'texas roadhouse', 'outback', 'longhorn', 'walmart',
+  'target', 'whole foods', 'publix', 'barnes & noble', 'planet fitness',
+];
+
+export function isChain(name) {
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return CHAIN_NAMES.some(c => n.includes(c));
+}
+
 // Business categories offered on venue-owner signup — mirrors the map's
 // database-backed chips. Events/Sports are Ticketmaster-only on the map, so
 // they aren't real self-serve business categories.
