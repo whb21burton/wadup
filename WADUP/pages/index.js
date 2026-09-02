@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   CATEGORY_CHIPS, CATEGORY_LABELS, EMOJI_OPTIONS,
   isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
-  venueMatchesChip, venueCategories, isChain, distanceMiles,
+  venueMatchesChip, venueCategories, isChain,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
 import { getLiveTrendingVenueIds, getBestRated, getScheduleTrendingVenues } from '../lib/rankings';
@@ -84,10 +84,6 @@ function areaRatingOf(v) {
 function getVenueTier(areaRank) {
   return areaRank != null && areaRank <= 10 ? 'top10' : 'discovery';
 }
-
-// See updateAreaRanks — the "top 10" pool is a fixed-radius search around
-// the map's current center, not the live viewport bounds.
-const RANK_RADIUS_MILES = 2;
 
 function getRankStyle(rank) {
   if (rank === 1) return { bg: '#FFD700', color: '#000', shadow: '0 2px 14px rgba(255,215,0,0.65)', prefix: '👑 #1' };
@@ -386,48 +382,56 @@ export default function WadUp() {
 
   useEffect(() => { filterPinsRef.current = filterPins; }, [filterPins]);
 
-  // Ranks venues near the map's current center by areaRatingOf
-  // (weighted_rating, falling back to google_rating) — drives both the
-  // two-tier pin system (top 10 nearby get the Olympic-styled pill;
-  // everything else becomes a Tier 2 discovery dot) and the sidebar's
-  // "🏆 Top 10" list. Every live/eligible/chip-matching venue always gets a
-  // pin redropped here (never pop-in/out while panning).
-  //
-  // Deliberately NOT scoped to the live map.getBounds() — that shrinks to a
-  // few blocks at zoom 17+ (exactly where discovery pins are supposed to
-  // appear), so at street level the visible area would almost always hold
-  // ≤10 venues and EVERY one of them would rank inside the top 10, leaving
-  // nothing to ever render as a discovery dot. A fixed-radius search around
-  // the center keeps the "top 10" pool a stable size regardless of zoom.
+  // Ranks ONLY the venues currently visible in the map viewport by
+  // areaRatingOf (weighted_rating, falling back to google_rating) — the top
+  // 10 of what's on screen get the Olympic-styled pill, everything else
+  // in view becomes a Tier 2 discovery dot, and anything outside the
+  // viewport is hidden entirely. This is fully viewport-relative on purpose:
+  // panning/zooming into a single neighborhood re-ranks against just that
+  // neighborhood (so a genuinely great local spot isn't buried under
+  // city-wide competition), and zooming back out re-ranks city-wide. A direct
+  // consequence: a sparse viewport with fewer than 11 chip-matching venues
+  // will show zero discovery dots — that's correct, not a bug, since there's
+  // no "#11" to demote when only a handful of venues are on screen at all.
   const updateAreaRanks = useCallback(() => {
     const map = mapObj.current;
     if (!map) return;
     const bounds = map.getBounds();
-    const center = map.getCenter();
     const chip = activeCategoryRef.current;
 
     const eligible = venuesRef.current.filter(v =>
       v.live && !v.is_hidden && isVenueEligible(v) && venueMatchesChip(chip, v)
     );
-    const nearby = eligible.filter(v =>
-      !center || distanceMiles(center.lat(), center.lng(), v.lat, v.lng) <= RANK_RADIUS_MILES
+    const inViewport = eligible.filter(v =>
+      v.lat != null && v.lng != null && bounds && bounds.contains(new window.google.maps.LatLng(v.lat, v.lng))
     );
-    const ranked = nearby
+    const outsideViewport = eligible.filter(v => !inViewport.includes(v));
+
+    const ranked = inViewport
       .slice()
       .sort((a, b) => areaRatingOf(b) - areaRatingOf(a))
       .map((v, i) => ({ ...v, _areaRank: i + 1 }));
-    const rankById = new Map(ranked.map(v => [v.id, v._areaRank]));
+
+    // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
+    console.log('[TIER] zoom:', map.getZoom(), 'chip:', chip, 'eligible:', eligible.length,
+      'inViewport:', inViewport.length, 'top10:', Math.min(ranked.length, 10),
+      'discovery:', Math.max(ranked.length - 10, 0));
 
     // A chip/bounds change supersedes whatever fan-out was showing, and every
     // pin about to be redropped below would leave the fan-out holding stale
     // marker/overlay references otherwise.
     collapseSpiderfy();
-    eligible.forEach(v => dropVenuePinRef.current?.(v, rankById.get(v.id)));
 
-    // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
-    console.log('[TIER] zoom:', map.getZoom(), 'eligible:', eligible.length,
-      'nearby(top10 pool):', nearby.length, 'top10:', ranked.filter(v => v._areaRank <= 10).length,
-      'discovery:', eligible.length - ranked.filter(v => v._areaRank <= 10).length);
+    // Venues that scrolled out of the viewport since the last pass are hidden
+    // outright (not redropped as discovery dots) — they'll get a fresh pin
+    // with a fresh rank the moment they're back in view.
+    outsideViewport.forEach(v => {
+      const entry = mapMarkers.current[v.id];
+      if (entry) entry.marker.setMap(null);
+      if (overlays.current[v.id]) overlays.current[v.id].setMap(null);
+    });
+
+    ranked.forEach(v => dropVenuePinRef.current?.(v, v._areaRank));
 
     // Ticketmaster events have no WadUp rating to sort against, so rather
     // than fabricate a score to interleave them with rated venues, they're
@@ -1254,12 +1258,16 @@ export default function WadUp() {
 
       // Panning/zooming changes which venues are "in bounds" for area
       // ranking without touching the chip filter at all, so this needs its
-      // own listener rather than piggybacking on filterPins — debounced
-      // since bounds_changed fires continuously during a drag/zoom gesture.
+      // own listener rather than piggybacking on filterPins. Rankings are
+      // now fully viewport-based (see updateAreaRanks), so this needs to
+      // track pans/zooms closely — kept to a short 100ms debounce (rather
+      // than none at all) since bounds_changed still fires many times per
+      // second during a drag/zoom gesture, and a full pin redrop on every
+      // single one of those would be a real jank/performance risk.
       let boundsChangeTimer = null;
       map.addListener('bounds_changed', () => {
         clearTimeout(boundsChangeTimer);
-        boundsChangeTimer = setTimeout(() => updateAreaRanks(), 300);
+        boundsChangeTimer = setTimeout(() => updateAreaRanks(), 100);
       });
 
       setMapReady(true);

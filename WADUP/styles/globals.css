@@ -993,11 +993,12 @@ html, body {
   pointer-events: all;
 }
 .wu-discovery-dot {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: #aaa;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  background: #888;
+  border: 1.5px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
 }
 .wu-discovery-label {
   font-family: 'Inter', sans-serif;
