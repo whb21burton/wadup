@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   CATEGORY_CHIPS, CATEGORY_LABELS, EMOJI_OPTIONS,
   isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
-  venueMatchesChip, venueCategories, isChain,
+  venueMatchesChip, venueCategories, isChain, distanceMiles,
   tmSegmentToCat, tmSportEmoji, TM_REGIONS
 } from '../lib/data';
 import { getLiveTrendingVenueIds, getBestRated, getScheduleTrendingVenues } from '../lib/rankings';
@@ -84,6 +84,10 @@ function areaRatingOf(v) {
 function getVenueTier(areaRank) {
   return areaRank != null && areaRank <= 10 ? 'top10' : 'discovery';
 }
+
+// See updateAreaRanks — the "top 10" pool is a fixed-radius search around
+// the map's current center, not the live viewport bounds.
+const RANK_RADIUS_MILES = 2;
 
 function getRankStyle(rank) {
   if (rank === 1) return { bg: '#FFD700', color: '#000', shadow: '0 2px 14px rgba(255,215,0,0.65)', prefix: '👑 #1' };
@@ -382,29 +386,33 @@ export default function WadUp() {
 
   useEffect(() => { filterPinsRef.current = filterPins; }, [filterPins]);
 
-  // Ranks whatever venues are currently inside the map viewport by
-  // areaRatingOf (weighted_rating, falling back to google_rating) — drives
-  // both the two-tier pin system (top 10 in view get the Olympic-styled
-  // pill; everything else becomes a Tier 2 discovery dot) and the sidebar's
+  // Ranks venues near the map's current center by areaRatingOf
+  // (weighted_rating, falling back to google_rating) — drives both the
+  // two-tier pin system (top 10 nearby get the Olympic-styled pill;
+  // everything else becomes a Tier 2 discovery dot) and the sidebar's
   // "🏆 Top 10" list. Every live/eligible/chip-matching venue always gets a
-  // pin redropped here (never pop-in/out while panning) — only the RANK is
-  // viewport-relative, since "#4 in this area" is inherently scoped to what's
-  // currently on screen; a venue outside the viewport (or ranked below 10
-  // within it) simply renders as a Tier 2 dot. Called from filterPins
-  // (covers chip changes and initial load) and separately from the map's own
-  // 'bounds_changed' listener (panning/zooming changes what's "in bounds"
-  // without touching the chip filter at all).
+  // pin redropped here (never pop-in/out while panning).
+  //
+  // Deliberately NOT scoped to the live map.getBounds() — that shrinks to a
+  // few blocks at zoom 17+ (exactly where discovery pins are supposed to
+  // appear), so at street level the visible area would almost always hold
+  // ≤10 venues and EVERY one of them would rank inside the top 10, leaving
+  // nothing to ever render as a discovery dot. A fixed-radius search around
+  // the center keeps the "top 10" pool a stable size regardless of zoom.
   const updateAreaRanks = useCallback(() => {
     const map = mapObj.current;
     if (!map) return;
     const bounds = map.getBounds();
+    const center = map.getCenter();
     const chip = activeCategoryRef.current;
 
     const eligible = venuesRef.current.filter(v =>
       v.live && !v.is_hidden && isVenueEligible(v) && venueMatchesChip(chip, v)
     );
-    const inBounds = eligible.filter(v => !bounds || bounds.contains(new window.google.maps.LatLng(v.lat, v.lng)));
-    const ranked = inBounds
+    const nearby = eligible.filter(v =>
+      !center || distanceMiles(center.lat(), center.lng(), v.lat, v.lng) <= RANK_RADIUS_MILES
+    );
+    const ranked = nearby
       .slice()
       .sort((a, b) => areaRatingOf(b) - areaRatingOf(a))
       .map((v, i) => ({ ...v, _areaRank: i + 1 }));
@@ -415,6 +423,11 @@ export default function WadUp() {
     // marker/overlay references otherwise.
     collapseSpiderfy();
     eligible.forEach(v => dropVenuePinRef.current?.(v, rankById.get(v.id)));
+
+    // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
+    console.log('[TIER] zoom:', map.getZoom(), 'eligible:', eligible.length,
+      'nearby(top10 pool):', nearby.length, 'top10:', ranked.filter(v => v._areaRank <= 10).length,
+      'discovery:', eligible.length - ranked.filter(v => v._areaRank <= 10).length);
 
     // Ticketmaster events have no WadUp rating to sort against, so rather
     // than fabricate a score to interleave them with rated venues, they're
@@ -641,6 +654,9 @@ export default function WadUp() {
       iconSpan.textContent = specialIcon;
       el.appendChild(iconSpan);
     } else if (tier === 'discovery') {
+      // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
+      console.log('[DISCOVERY] creating pin for:', v.name, 'rank:', areaRank, 'zoom:', map.getZoom());
+
       el.className = 'wu-pin-discovery';
       if (map.getZoom() >= 17) el.classList.add('visible');
 
@@ -1224,7 +1240,10 @@ export default function WadUp() {
         });
         // Tier 2 discovery dots only ever show at zoom 17+.
         const showDiscovery = z >= 17;
-        document.querySelectorAll('.wu-pin-discovery').forEach(el => {
+        const discoveryEls = document.querySelectorAll('.wu-pin-discovery');
+        // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
+        console.log('[ZOOM] current zoom:', z, 'showDiscovery:', showDiscovery, 'discovery pins in DOM:', discoveryEls.length);
+        discoveryEls.forEach(el => {
           el.classList.toggle('visible', showDiscovery);
         });
       });
