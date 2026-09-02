@@ -8,24 +8,124 @@
 // never creates duplicates in either table.
 import { supabaseAdmin } from '../supabase-admin';
 
-const CHATTANOOGA_CENTER = { lat: 35.0456, lng: -85.3096 };
-const RADIUS_METERS = 20000; // 20km covers greater Chattanooga
-
-const SEARCH_TYPES = [
-  { types: ['bar', 'night_club', 'pub'],                        wadupCat: 'nightlife' },
-  // 'food' isn't a real Places API (New) type (it's a legacy-API-only value) —
-  // Google rejects the whole request when it's included. Split restaurant
-  // coverage across its actual New-API subtypes instead.
-  { types: ['restaurant'],                                      wadupCat: 'restaurant' },
-  { types: ['cafe'],                                            wadupCat: 'restaurant' },
-  { types: ['bakery'],                                          wadupCat: 'restaurant' },
-  { types: ['meal_takeaway'],                                   wadupCat: 'restaurant' },
-  { types: ['live_music_venue', 'concert_hall'],                wadupCat: 'events' },
-  { types: ['bowling_alley', 'golf_course', 'amusement_center'],wadupCat: 'activities' },
-  { types: ['park', 'campground', 'hiking_area'],                wadupCat: 'outdoors' },
-  { types: ['stadium', 'sports_complex', 'athletic_field'],      wadupCat: 'sports' },
-  { types: ['movie_theater', 'comedy_club'],                     wadupCat: 'events' },
+// Every combination of SEARCH_GROUPS × SEARCH_CENTERS below is its own
+// Google Places API call (56 groups × 5 centers = 280 calls per sync run).
+// That's a deliberate, real cost/time tradeoff for comprehensive coverage —
+// each single-type search only gets Google's 20-result cap to itself
+// (rather than sharing it across several types bundled into one call), and
+// each of the 5 overlapping search circles gives Google's ranking a
+// different, smaller candidate pool to pick its "top 20" from, surfacing
+// venues that would otherwise get crowded out by one city-wide search.
+// Flag this to whoever's paying the Google Cloud bill before running it
+// often — this is roughly 40x the call volume of the sync it replaces.
+const SEARCH_CENTERS = [
+  { lat: 35.0456, lng: -85.3096, radius: 15000 }, // Downtown Chattanooga
+  { lat: 35.0456, lng: -85.3096, radius: 8000 },  // Inner downtown, tighter search
+  { lat: 35.0200, lng: -85.2200, radius: 10000 }, // Hamilton Place / East Brainerd
+  { lat: 35.0700, lng: -85.3000, radius: 8000 },  // North Shore / Hixson
+  { lat: 35.0300, lng: -85.3300, radius: 8000 },  // Lookout Mountain / Southside
 ];
+
+// Listed nightlife-first, then restaurants, then events/sports/outdoors/
+// activities — a place matching more than one group's type (rare, but
+// possible for a hybrid venue) is assigned to whichever group appears
+// FIRST here, via the byPlaceId dedup in the handler below. Not every one
+// of these type strings is guaranteed to be a currently-valid Places API
+// (New) type; an invalid one just fails that one call (caught, logged to
+// `errors`) without affecting any other search.
+const SEARCH_GROUPS = [
+  // Bars & Nightlife — comprehensive
+  { types: ['bar'],                    wadupCat: 'nightlife' },
+  { types: ['night_club'],             wadupCat: 'nightlife' },
+  { types: ['pub'],                    wadupCat: 'nightlife' },
+  { types: ['brewery'],                wadupCat: 'nightlife' },
+  { types: ['wine_bar'],               wadupCat: 'nightlife' },
+  { types: ['cocktail_bar'],           wadupCat: 'nightlife' },
+  { types: ['sports_bar'],             wadupCat: 'nightlife' },
+  { types: ['karaoke'],                wadupCat: 'nightlife' },
+  { types: ['dance_hall'],             wadupCat: 'nightlife' },
+
+  // Restaurants — comprehensive. 'food' isn't a real Places API (New) type
+  // (it's a legacy-API-only value) — Google rejects the whole request when
+  // it's included, so restaurant coverage is split across real subtypes.
+  { types: ['restaurant'],             wadupCat: 'restaurant' },
+  { types: ['american_restaurant'],    wadupCat: 'restaurant' },
+  { types: ['italian_restaurant'],     wadupCat: 'restaurant' },
+  { types: ['mexican_restaurant'],     wadupCat: 'restaurant' },
+  { types: ['chinese_restaurant'],     wadupCat: 'restaurant' },
+  { types: ['japanese_restaurant'],    wadupCat: 'restaurant' },
+  { types: ['thai_restaurant'],        wadupCat: 'restaurant' },
+  { types: ['seafood_restaurant'],     wadupCat: 'restaurant' },
+  { types: ['steak_house'],            wadupCat: 'restaurant' },
+  { types: ['pizza_restaurant'],       wadupCat: 'restaurant' },
+  { types: ['sandwich_shop'],          wadupCat: 'restaurant' },
+  { types: ['hamburger_restaurant'],   wadupCat: 'restaurant' },
+  { types: ['bbq_restaurant'],         wadupCat: 'restaurant' },
+  { types: ['brunch_restaurant'],      wadupCat: 'restaurant' },
+  { types: ['breakfast_restaurant'],   wadupCat: 'restaurant' },
+  { types: ['cafe'],                   wadupCat: 'restaurant' },
+  { types: ['coffee_shop'],            wadupCat: 'restaurant' },
+  { types: ['bakery'],                 wadupCat: 'restaurant' },
+  { types: ['ice_cream_shop'],         wadupCat: 'restaurant' },
+  { types: ['food_court'],             wadupCat: 'restaurant' },
+
+  // Events & Entertainment
+  { types: ['concert_hall'],           wadupCat: 'events' },
+  { types: ['event_venue'],            wadupCat: 'events' },
+  { types: ['live_music_venue'],       wadupCat: 'events' },
+  { types: ['comedy_club'],            wadupCat: 'events' },
+  { types: ['movie_theater'],          wadupCat: 'events' },
+  { types: ['performing_arts_theater'],wadupCat: 'events' },
+  { types: ['cultural_center'],        wadupCat: 'events' },
+  { types: ['art_gallery'],            wadupCat: 'events' },
+  { types: ['museum'],                 wadupCat: 'events' },
+
+  // Sports
+  { types: ['stadium'],                wadupCat: 'sports' },
+  { types: ['sports_complex'],         wadupCat: 'sports' },
+  { types: ['athletic_field'],         wadupCat: 'sports' },
+  { types: ['sports_club'],            wadupCat: 'sports' },
+
+  // Outdoors
+  { types: ['park'],                   wadupCat: 'outdoors' },
+  { types: ['national_park'],          wadupCat: 'outdoors' },
+  { types: ['hiking_area'],            wadupCat: 'outdoors' },
+  { types: ['campground'],             wadupCat: 'outdoors' },
+  { types: ['boat_rental'],            wadupCat: 'outdoors' },
+  { types: ['kayaking_area'],          wadupCat: 'outdoors' },
+  { types: ['rock_climbing'],          wadupCat: 'outdoors' },
+
+  // Activities
+  { types: ['bowling_alley'],          wadupCat: 'activities' },
+  { types: ['golf_course'],            wadupCat: 'activities' },
+  { types: ['miniature_golf_course'],  wadupCat: 'activities' },
+  { types: ['amusement_center'],       wadupCat: 'activities' },
+  { types: ['escape_room'],            wadupCat: 'activities' },
+  { types: ['axe_throwing'],           wadupCat: 'activities' },
+  { types: ['laser_tag'],              wadupCat: 'activities' },
+  { types: ['go_kart_track'],          wadupCat: 'activities' },
+  { types: ['billiards'],              wadupCat: 'activities' },
+];
+
+// Bounded-concurrency task runner — 280 sequential API calls (even with a
+// light throttle) would very plausibly blow past a serverless function's
+// execution timeout. Running a handful in parallel keeps total wall time
+// low while still respecting Google's per-key rate limits. `results[i]` is
+// always the outcome of `tasks[i]` regardless of completion order, so
+// dedup priority (see SEARCH_GROUPS' comment) is unaffected by concurrency.
+async function runWithConcurrency(tasks, limit) {
+  const results = new Array(tasks.length);
+  let next = 0;
+  async function worker() {
+    while (next < tasks.length) {
+      const i = next++;
+      results[i] = await tasks[i]();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+const SEARCH_CONCURRENCY = 8;
 
 // WadUp is meant to surface local/independent spots, not national chains —
 // skip any place whose name matches one of these (case-insensitive substring).
@@ -60,26 +160,16 @@ const FIELD_MASK = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.location',
   'places.rating', 'places.userRatingCount', 'places.internationalPhoneNumber',
   'places.websiteUri', 'places.regularOpeningHours', 'places.photos', 'places.primaryType',
-  'places.types',
 ].join(',');
 
-// A lot of bars/taverns/breweries get typed by Google as "restaurant" (their
-// primaryType) with the bar-ish signal only showing up elsewhere in their
-// broader `types` list (or as a specific primaryType like "bar_and_grill") —
-// meaning they'd only ever surface from the SEARCH_TYPES restaurant query
-// above and get stuck with wadupCat 'restaurant', never the nightlife one.
-// This overrides that per-search-group default using the place's OWN type
-// data, so it doesn't matter which searchNearby call actually returned it.
-const NIGHTLIFE_TYPES = ['bar', 'night_club', 'pub', 'brewery', 'wine_bar', 'cocktail_bar', 'sports_bar', 'tavern', 'lounge'];
-
-function resolveWadupCat(place, searchGroupCat) {
-  const primary = (place.primaryType || '').toLowerCase();
-  const allTypes = (place.types || []).map(t => t.toLowerCase());
-  const isNightlife = NIGHTLIFE_TYPES.some(n => primary.includes(n) || allTypes.some(t => t.includes(n)));
-  return isNightlife ? 'nightlife' : searchGroupCat;
-}
-
-async function searchNearby(types) {
+// The search GROUP determines the category, full stop — no per-place
+// override based on Google's primaryType/types. With single-type searches
+// now this granular (a dedicated 'bar' search, a dedicated 'pub' search,
+// etc. — see SEARCH_GROUPS), Google's own type-matching does the nightlife
+// classification; any hybrid venue that still slips through with the wrong
+// category is meant to be caught by the name-pattern SQL cleanup run after
+// a sync, not by string-sniffing primaryType here.
+async function searchNearby(types, center) {
   const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
     method: 'POST',
     headers: {
@@ -92,8 +182,8 @@ async function searchNearby(types) {
       maxResultCount: 20,
       locationRestriction: {
         circle: {
-          center: { latitude: CHATTANOOGA_CENTER.lat, longitude: CHATTANOOGA_CENTER.lng },
-          radius: RADIUS_METERS,
+          center: { latitude: center.lat, longitude: center.lng },
+          radius: center.radius,
         },
       },
     }),
@@ -103,10 +193,11 @@ async function searchNearby(types) {
   return data.places || [];
 }
 
-// Search results are scoped to a 20km circle around Chattanooga, but
-// Google's formattedAddress free text can list a neighboring town (East
-// Ridge, Red Bank, Hixson…) — hardcoding city/state keeps every synced
-// venue matching the map's `.eq('city', 'Chattanooga')` query.
+// Search results are scoped to the SEARCH_CENTERS circles around greater
+// Chattanooga, but Google's formattedAddress free text can list a
+// neighboring town (East Ridge, Red Bank, Hixson…) — hardcoding city/state
+// keeps every synced venue matching the map's `.eq('city', 'Chattanooga')`
+// query.
 function mapPlaceToRow(place, wadupCat) {
   const streetAddress = (place.formattedAddress || '').split(',')[0]?.trim() || null;
   const photoName = place.photos?.[0]?.name; // "places/PLACE_ID/photos/PHOTO_ID"
@@ -137,6 +228,15 @@ function mapPlaceToRow(place, wadupCat) {
   };
 }
 
+// 280 Google API calls (even bounded to 8-at-a-time) can run well past
+// Vercel's default Serverless Function timeout — this raises the ceiling as
+// far as it goes without a paid-plan-specific override. On a Hobby plan
+// this is effectively a no-op (60s is already that plan's hard cap); on Pro
+// it actually unlocks the extra time.
+export const config = {
+  maxDuration: 60,
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -155,24 +255,37 @@ export default async function handler(req, res) {
 
   const byCategory = {};
   const errors = [];
-  const byPlaceId = new Map(); // dedupe places matched by more than one type group
+  const byPlaceId = new Map(); // dedupe places matched by more than one type group/center
   let skippedChains = 0;
 
-  for (let i = 0; i < SEARCH_TYPES.length; i++) {
-    const { types, wadupCat } = SEARCH_TYPES[i];
-    if (i > 0) await new Promise(r => setTimeout(r, 200)); // light throttle between requests
-    try {
-      const places = await searchNearby(types);
-      places.forEach(place => {
-        if (!place.id || byPlaceId.has(place.id)) return; // first matching group wins
-        if (isChain(place.displayName?.text)) { skippedChains++; return; }
-        const resolvedCat = resolveWadupCat(place, wadupCat);
-        byCategory[resolvedCat] = (byCategory[resolvedCat] || 0) + 1;
-        byPlaceId.set(place.id, mapPlaceToRow(place, resolvedCat));
+  // Flattened in SEARCH_GROUPS-major order (all 5 centers for group 0, then
+  // all 5 for group 1, …) so that even under concurrent execution, results
+  // get folded into byPlaceId in the same group-priority order as before —
+  // runWithConcurrency guarantees results[i] matches tasks[i] regardless of
+  // which one actually finishes first over the network.
+  const searchTasks = [];
+  for (const group of SEARCH_GROUPS) {
+    for (const center of SEARCH_CENTERS) {
+      searchTasks.push(async () => {
+        try {
+          return { group, places: await searchNearby(group.types, center) };
+        } catch (e) {
+          return { group, places: [], error: `${group.types.join('/')} @ (${center.lat},${center.lng}): ${e.message}` };
+        }
       });
-    } catch (e) {
-      errors.push(`${types.join('/')}: ${e.message}`);
     }
+  }
+
+  const searchResults = await runWithConcurrency(searchTasks, SEARCH_CONCURRENCY);
+
+  for (const { group, places, error } of searchResults) {
+    if (error) { errors.push(error); continue; }
+    places.forEach(place => {
+      if (!place.id || byPlaceId.has(place.id)) return; // first matching group wins
+      if (isChain(place.displayName?.text)) { skippedChains++; return; }
+      byCategory[group.wadupCat] = (byCategory[group.wadupCat] || 0) + 1;
+      byPlaceId.set(place.id, mapPlaceToRow(place, group.wadupCat));
+    });
   }
 
   const allRows = [...byPlaceId.values()];
