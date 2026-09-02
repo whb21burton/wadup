@@ -2551,6 +2551,7 @@ html, body {
 .admin-gate {
   display: flex;
   gap: 8px;
+  margin-bottom: 12px;
 }
 .admin-gate input {
   flex: 1;
@@ -2566,7 +2567,7 @@ html, body {
   font-size: 0.88rem;
   color: #9fc3cc;
   line-height: 1.5;
-  margin-bottom: 20px;
+  margin: 16px 0 20px;
 }
 .admin-sync-desc code {
   background: rgba(255,255,255,0.08);
@@ -2575,13 +2576,15 @@ html, body {
   font-size: 0.85em;
 }
 .admin-sync-btn {
-  padding: 12px 20px;
+  display: block;
+  width: 100%;
+  padding: 14px 20px;
   border-radius: 10px;
   border: none;
   background: linear-gradient(135deg, var(--yellow), var(--yellow-dark));
   color: var(--black);
   font-family: 'Exo 2', sans-serif;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 800;
   cursor: pointer;
 }

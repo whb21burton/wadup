@@ -193,6 +193,14 @@ export default function WadUp() {
 
   const days = buildDays();
 
+  // ── Auto-sync Chattanooga venues from Google Places — fire-and-forget;
+  // the route itself checks venues.last_google_sync and only actually
+  // triggers a sync if it's been 7+ days, so this is nearly always a no-op
+  // network call on page load. ──
+  useEffect(() => {
+    fetch('/api/places/auto-sync').catch(() => {});
+  }, []);
+
   // ── Add-to-home-screen banner (mobile, not already installed, not dismissed) ──
   useEffect(() => {
     if (typeof window === 'undefined') return;
