@@ -1012,6 +1012,37 @@ html, body {
   text-align: center;
 }
 
+/* ── Bar/nightlife icon pins — dropBarPin's non-ranked tier (pages/index.js) ── */
+.wu-bar-icon-pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+.wu-beer-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+  transition: transform 0.15s;
+}
+.wu-bar-icon-pin:hover .wu-beer-icon {
+  transform: scale(1.2);
+}
+.wu-flame-ring {
+  font-size: 12px;
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  animation: flamePulse 1.5s ease-in-out infinite;
+}
+.wu-flame-ring.flame-1 { filter: hue-rotate(0deg); }
+.wu-flame-ring.flame-2 { filter: hue-rotate(-30deg); }
+.wu-flame-ring.flame-3 { filter: hue-rotate(-60deg); animation-duration: 0.8s; }
+@keyframes flamePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+}
+
 /* ── SPIDER LEGS (thin connectors from the fan-out center to each pin) ── */
 .wu-spider-legs {
   position: absolute;
@@ -1038,6 +1069,7 @@ html, body {
 .gm-iw .popup-rating { font-size: 0.72rem; font-weight: 700; color: #d99a00; margin-bottom: 6px; }
 .gm-iw .popup-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
 .gm-iw .popup-badge { font-size: 0.6rem; font-weight: 700; background: #f5f5f5; border-radius: 10px; padding: 3px 8px; color: #444; }
+.gm-iw .popup-flame { font-size: 0.72rem; font-weight: 700; margin-bottom: 6px; }
 .gm-iw .popup-address { font-size: 0.65rem; color: #999; margin-top: 2px; }
 .gm-iw .popup-view-reviews {
   display: block;
@@ -1781,6 +1813,62 @@ html, body {
   font-size: 0.9rem;
 }
 
+/* ── Google photos gallery (top of venue-body) ── */
+.google-photos-gallery {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin-bottom: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+.google-photos-gallery img {
+  width: 220px;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+/* ── Flame voting ("how busy is it right now") ── */
+.flame-section h3 {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #111;
+  margin-bottom: 12px;
+}
+.flame-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.flame-btn {
+  flex: 1;
+  min-width: 100px;
+  padding: 10px 8px;
+  border-radius: 10px;
+  border: 1px solid #eee;
+  background: var(--gray);
+  color: #333;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.flame-btn.active {
+  border-color: var(--cyan);
+  background: rgba(0,229,255,0.1);
+  color: #111;
+}
+.flame-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.flame-count {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.8rem;
+  color: #999;
+  margin-top: 10px;
+  text-align: center;
+}
+
 .venue-hours { margin-bottom: 14px; }
 .venue-hours-row {
   display: flex;
@@ -2022,6 +2110,55 @@ html, body {
   font-family: 'Rajdhani', sans-serif;
   font-size: 0.85rem;
   color: #444;
+}
+
+/* ── Google reviews (below WadUp's own reviews) ── */
+.google-reviews-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #f0f0f0;
+}
+.google-reviews-header {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #999;
+  text-align: center;
+  margin-bottom: 14px;
+}
+.google-review-item {
+  padding: 10px 0;
+  border-top: 1px solid #f5f5f5;
+}
+.google-review-item:first-of-type { border-top: none; }
+.google-review-item .review-author {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #111;
+}
+.google-review-item .review-rating {
+  font-size: 0.75rem;
+  margin: 2px 0 4px;
+}
+.google-review-item .review-text {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.88rem;
+  color: #444;
+  line-height: 1.45;
+}
+.google-review-item .review-time {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.72rem;
+  color: #999;
+  margin-top: 3px;
+}
+.google-attribution {
+  text-align: center;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.68rem;
+  color: #bbb;
+  margin-top: 10px;
 }
 
 /* ── Claim business ── */

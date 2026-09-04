@@ -530,6 +530,19 @@ export default function AdminVenues() {
     }
   };
 
+  const updateAdminRank = async (venueId, rawValue) => {
+    const rank = rawValue === '' ? null : parseInt(rawValue, 10);
+    if (rawValue !== '' && (Number.isNaN(rank) || rank < 1 || rank > 10)) return;
+    setAllVenues(prev => prev.map(v => (v.id === venueId ? { ...v, admin_rank_number: rank } : v)));
+    try {
+      await authedFetch('/api/admin/update-venue', session, {
+        venueId, updates: { admin_rank_number: rank },
+      });
+    } catch (e) {
+      setActionError(e.message);
+    }
+  };
+
   const deleteVenue = async (venue) => {
     if (!window.confirm(`Permanently delete "${venue.name}"? This cannot be undone.`)) return;
     setActionError('');
@@ -651,6 +664,17 @@ export default function AdminVenues() {
                   <span className={`admin-venue-table-status${v.is_hidden ? ' hidden' : ''}`}>
                     {v.is_hidden ? '❌ Hidden' : '✅ Visible'}
                   </span>
+                  {venueCategories(v).includes('nightlife') && (
+                    <input
+                      type="number"
+                      min="1" max="10"
+                      value={v.admin_rank_number || ''}
+                      onChange={(e) => updateAdminRank(v.id, e.target.value)}
+                      placeholder="Rank"
+                      title="Admin rank override (1-10)"
+                      style={{ width: '60px' }}
+                    />
+                  )}
                   <div className="admin-venue-table-actions">
                     <button onClick={() => setEditingVenue(v)}>Edit</button>
                     <button onClick={() => toggleHidden(v)}>{v.is_hidden ? 'Show' : 'Hide'}</button>

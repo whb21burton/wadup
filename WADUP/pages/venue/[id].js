@@ -98,6 +98,9 @@ export default function VenuePage() {
   const [checkedIn,    setCheckedIn]   = useState(false);
   const [checkinCount, setCheckinCount]= useState(0);
   const [checkinError, setCheckinError]= useState('');
+  const [currentFlame,   setCurrentFlame]   = useState(0);
+  const [flameVoteCount, setFlameVoteCount] = useState(0);
+  const [flameVoting,    setFlameVoting]    = useState(false);
   const [reviewerAdminIds, setReviewerAdminIds] = useState(new Set());
   const [reportedIds,  setReportedIds] = useState(new Set());
   const [shareCopied,  setShareCopied] = useState(false);
@@ -143,8 +146,10 @@ export default function VenuePage() {
       return;
     }
     setVenue(venueData);
+    setCurrentFlame(venueData.current_flame || 0);
 
-    const [{ data: reviewData }, { data: eventData }, { data: scheduleData }] = await Promise.all([
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const [{ data: reviewData }, { data: eventData }, { data: scheduleData }, { data: flameData }] = await Promise.all([
       // profiles!reviews_user_id_fkey disambiguates the embed — reviews also
       // reaches profiles indirectly via review_likes (many-to-many), so the
       // bare `profiles(...)` embed is ambiguous and PostgREST rejects it
@@ -156,10 +161,12 @@ export default function VenuePage() {
       // end_time instead so ongoing events stay included until they're over.
       supabase.from('venue_events').select('*').eq('venue_id', id).gte('end_time', new Date().toISOString()).order('start_time', { ascending: true }),
       supabase.from('venue_schedule').select('*').eq('venue_id', id).order('day_of_week', { ascending: true }),
+      supabase.from('venue_flames').select('id').eq('venue_id', id).eq('vote_date', todayIso),
     ]);
     setReviews(reviewData || []);
     setEvents(eventData || []);
     setSchedule(scheduleData || []);
+    setFlameVoteCount((flameData || []).length);
 
     // Rankings within the same city — gated on having enough peers for the
     // number to mean anything, rather than trivially always being "#1".
@@ -327,6 +334,28 @@ export default function VenuePage() {
     setTimeout(() => setCheckedIn(false), 4000);
   };
 
+  const voteFlame = async (level) => {
+    if (flameVoting) return;
+    setFlameVoting(true);
+    try {
+      const res = await fetch('/api/venues/flame', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ venue_id: venue.id, flame_level: level }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCurrentFlame(data.current_flame);
+        const counts = data.vote_counts || {};
+        setFlameVoteCount((counts[1] || 0) + (counts[2] || 0) + (counts[3] || 0));
+      }
+    } catch (e) { /* vote failed — non-critical, leave state as-is */ }
+    setFlameVoting(false);
+  };
+
   const share = async () => {
     const url = typeof window !== 'undefined' ? window.location.href : '';
     if (navigator.share) {
@@ -458,6 +487,32 @@ export default function VenuePage() {
         </div>
 
         <div className="venue-body">
+
+          {venue.google_photo_refs?.length > 0 && (
+            <div className="google-photos-gallery">
+              {venue.google_photo_refs.slice(0, 3).map((ref, i) => (
+                <img key={i} src={`/api/places/photo?ref=${encodeURIComponent(ref)}&maxWidth=400`} alt={venue.name} />
+              ))}
+            </div>
+          )}
+
+          {venueCategories(venue).includes('nightlife') && (
+            <section className="venue-section flame-section">
+              <h3>How busy is it right now?</h3>
+              <div className="flame-buttons">
+                <button onClick={() => voteFlame(1)} className={`flame-btn${currentFlame === 1 ? ' active' : ''}`} disabled={flameVoting}>
+                  🟡 Getting There
+                </button>
+                <button onClick={() => voteFlame(2)} className={`flame-btn${currentFlame === 2 ? ' active' : ''}`} disabled={flameVoting}>
+                  🟠 Getting Busy
+                </button>
+                <button onClick={() => voteFlame(3)} className={`flame-btn${currentFlame === 3 ? ' active' : ''}`} disabled={flameVoting}>
+                  🔴 Packed!
+                </button>
+              </div>
+              <p className="flame-count">{flameVoteCount} people voted today</p>
+            </section>
+          )}
 
           <section className="venue-section">
             <h2>About</h2>
@@ -602,6 +657,21 @@ export default function VenuePage() {
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {venue.google_reviews?.length > 0 && (
+              <div className="google-reviews-section">
+                <div className="google-reviews-header">— Reviews from Google —</div>
+                {venue.google_reviews.map((review, i) => (
+                  <div key={i} className="google-review-item">
+                    <div className="review-author">{review.authorAttribution?.displayName || 'Google user'}</div>
+                    <div className="review-rating">{'⭐'.repeat(review.rating || 0)}</div>
+                    <div className="review-text">{review.text?.text}</div>
+                    <div className="review-time">{review.relativePublishTimeDescription}</div>
+                  </div>
+                ))}
+                <div className="google-attribution">Reviews provided by Google</div>
               </div>
             )}
           </section>

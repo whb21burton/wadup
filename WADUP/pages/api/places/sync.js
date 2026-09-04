@@ -156,10 +156,24 @@ function isChain(name) {
   return CHAIN_BLOCKLIST.some(chain => lower.includes(chain));
 }
 
+// A 'nightlife' SEARCH_GROUP's includedTypes (bar, pub, brewery, etc.) only
+// controls what Google searches FOR — Google still freely returns a place
+// whose actual primaryType is 'restaurant' if that place also carries a
+// 'bar' secondary type. Every nightlife result is re-checked against this
+// list (exact primaryType match required) below, so a bar-and-grill that
+// Google classifies as primaryType 'restaurant' gets excluded rather than
+// polluting the bars list.
+const BAR_PRIMARY_TYPES = [
+  'bar', 'night_club', 'pub', 'brewery', 'wine_bar',
+  'cocktail_bar', 'sports_bar', 'tavern', 'karaoke',
+  'dance_hall', 'jazz_club', 'comedy_club',
+];
+
 const FIELD_MASK = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.location',
   'places.rating', 'places.userRatingCount', 'places.internationalPhoneNumber',
-  'places.websiteUri', 'places.regularOpeningHours', 'places.photos', 'places.primaryType',
+  'places.websiteUri', 'places.regularOpeningHours', 'places.currentOpeningHours',
+  'places.photos', 'places.primaryType', 'places.types', 'places.reviews',
 ].join(',');
 
 // The search GROUP determines the category, full stop — no per-place
@@ -221,7 +235,12 @@ function mapPlaceToRow(place, wadupCat) {
     google_rating: place.rating ?? null,
     google_review_count: place.userRatingCount ?? null,
     cover_photo_url: photoName ? `/api/places/photo?ref=${encodeURIComponent(photoName)}&maxWidth=800` : null,
-    hours: place.regularOpeningHours || null,
+    // currentOpeningHours (which reflects today's actual hours, holiday
+    // closures, etc.) is preferred over the generic weekly regularOpeningHours
+    // when Google returns both.
+    hours: place.currentOpeningHours || place.regularOpeningHours || null,
+    google_reviews: (place.reviews || []).slice(0, 5),
+    google_photo_refs: (place.photos || []).slice(0, 3).map(p => p.name),
     is_claimed: false,
     source: 'google_places',
     custom_cover_photo: false,
@@ -253,10 +272,25 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GOOGLE_PLACES_KEY is not configured on the server' });
   }
 
+  // ?category=<wadupCat> scopes the sync to just that category's SEARCH_GROUPS
+  // (e.g. ?category=nightlife runs only the bar/pub/brewery/etc. searches).
+  // For 'nightlife' specifically this also switches the write path below to a
+  // full delete-and-rebuild instead of the normal pending-queue flow — see
+  // isNightlifeRebuild.
+  const categoryFilter = req.query.category || null;
+  const activeGroups = categoryFilter
+    ? SEARCH_GROUPS.filter(g => g.wadupCat === categoryFilter)
+    : SEARCH_GROUPS;
+  if (categoryFilter && !activeGroups.length) {
+    return res.status(400).json({ error: `Unknown category "${categoryFilter}"` });
+  }
+  const isNightlifeRebuild = categoryFilter === 'nightlife';
+
   const byCategory = {};
   const errors = [];
   const byPlaceId = new Map(); // dedupe places matched by more than one type group/center
   let skippedChains = 0;
+  let skippedNonBar = 0;
 
   // Flattened in SEARCH_GROUPS-major order (all 5 centers for group 0, then
   // all 5 for group 1, …) so that even under concurrent execution, results
@@ -264,7 +298,7 @@ export default async function handler(req, res) {
   // runWithConcurrency guarantees results[i] matches tasks[i] regardless of
   // which one actually finishes first over the network.
   const searchTasks = [];
-  for (const group of SEARCH_GROUPS) {
+  for (const group of activeGroups) {
     for (const center of SEARCH_CENTERS) {
       searchTasks.push(async () => {
         try {
@@ -283,6 +317,10 @@ export default async function handler(req, res) {
     places.forEach(place => {
       if (!place.id || byPlaceId.has(place.id)) return; // first matching group wins
       if (isChain(place.displayName?.text)) { skippedChains++; return; }
+      // Every nightlife result must have Google's OWN primaryType exactly in
+      // BAR_PRIMARY_TYPES — a restaurant that merely has a 'bar' secondary
+      // type does not qualify (see BAR_PRIMARY_TYPES comment above).
+      if (group.wadupCat === 'nightlife' && !BAR_PRIMARY_TYPES.includes(place.primaryType)) { skippedNonBar++; return; }
       byCategory[group.wadupCat] = (byCategory[group.wadupCat] || 0) + 1;
       byPlaceId.set(place.id, mapPlaceToRow(place, group.wadupCat));
     });
@@ -290,7 +328,35 @@ export default async function handler(req, res) {
 
   const allRows = [...byPlaceId.values()];
   if (!allRows.length) {
-    return res.status(200).json({ success: true, added_to_queue: 0, already_live: 0, skipped: 0, totalFetched: 0, byCategory, skippedChains, errors });
+    return res.status(200).json({ success: true, added_to_queue: 0, already_live: 0, skipped: 0, totalFetched: 0, byCategory, skippedChains, skippedNonBar, errors });
+  }
+
+  // Nightlife rebuild: wipe every existing google_places-sourced nightlife
+  // venue before re-inserting the freshly-filtered set below, rather than
+  // going through the usual incremental refresh/pending-queue flow. Manually
+  // added venues (source != 'google_places') are untouched.
+  //
+  // Deleted one row at a time (not a single bulk DELETE) because a venue
+  // with real dependent rows — a checkin, review, save, etc. — hits an
+  // ON DELETE RESTRICT/NO ACTION foreign key and would abort the whole
+  // batch. Any row that fails to delete this way is simply left alone
+  // rather than losing that real user data; it falls through to the normal
+  // liveByPlaceId match below and gets its Google-sourced fields refreshed
+  // in place (same as a regular incremental sync) instead of being replaced.
+  let rebuildDeleteFailures = 0;
+  if (isNightlifeRebuild) {
+    const { data: existingNightlifeRows, error: existingError } = await supabaseAdmin
+      .from('venues')
+      .select('id')
+      .eq('category', 'nightlife')
+      .eq('source', 'google_places');
+    if (existingError) {
+      return res.status(500).json({ error: 'Failed to read existing nightlife venues', detail: existingError.message });
+    }
+    for (const row of existingNightlifeRows || []) {
+      const { error: rowDeleteError } = await supabaseAdmin.from('venues').delete().eq('id', row.id);
+      if (rowDeleteError) rebuildDeleteFailures++;
+    }
   }
 
   // Three exclusion lists, checked before anything touches `venues` or
@@ -378,6 +444,31 @@ export default async function handler(req, res) {
     if (error) return res.status(500).json({ error: 'Update failed', detail: error.message });
   }
 
+  // Nightlife rebuild: every candidate here just had its old row deleted
+  // above, so this is a straight re-insert into the live `venues` table —
+  // not the pending queue. mapPlaceToRow's output already matches venues'
+  // columns exactly (unlike venues_pending, which lacks is_claimed/
+  // custom_cover_photo), so no field-stripping is needed.
+  if (isNightlifeRebuild) {
+    if (pendingCandidates.length) {
+      const { error } = await supabaseAdmin.from('venues').insert(pendingCandidates);
+      if (error) return res.status(500).json({ error: 'Nightlife rebuild insert failed', detail: error.message });
+    }
+    return res.status(200).json({
+      success: true,
+      rebuilt: true,
+      inserted: pendingCandidates.length,
+      refreshed: liveUpdateCandidates.length,
+      keptDueToRealData: rebuildDeleteFailures,
+      skipped,
+      totalFetched: allRows.length,
+      byCategory,
+      skippedChains,
+      skippedNonBar,
+      errors,
+    });
+  }
+
   // Everything else — a place never seen before, or one still sitting in the
   // pending queue from an earlier sync — is (re-)upserted into
   // venues_pending for an admin to review via the Pending Approval tab. This
@@ -404,6 +495,7 @@ export default async function handler(req, res) {
     totalFetched: allRows.length,
     byCategory,
     skippedChains,
+    skippedNonBar,
     errors,
   });
 }

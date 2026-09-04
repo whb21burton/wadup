@@ -9,7 +9,7 @@ const EDITABLE_FIELDS = [
   'name', 'custom_emoji', 'categories', 'category', 'subcategory', 'custom_subcategories',
   'is_private', 'is_hidden', 'is_verified', 'hide_new_badge',
   'description', 'cover_photo_url', 'custom_cover_photo',
-  'address', 'lat', 'lng', 'phone', 'website',
+  'address', 'lat', 'lng', 'phone', 'website', 'admin_rank_number',
 ];
 
 export default async function handler(req, res) {

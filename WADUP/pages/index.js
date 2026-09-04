@@ -132,6 +132,7 @@ export default function WadUp() {
   // ReferenceError this exact cross-callback-reference pattern hit earlier
   // this session (see the dropVenuePin/openEditPanel fix).
   const dropVenuePinRef = useRef(null);
+  const dropBarPinRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const searchInputRef = useRef(null);
 
@@ -439,7 +440,7 @@ export default function WadUp() {
       if (overlays.current[v.id]) overlays.current[v.id].setMap(null);
     });
 
-    ranked.forEach(v => dropVenuePinRef.current?.(v, v._areaRank));
+    ranked.forEach(v => dropPinForVenue(v, v._areaRank));
 
     // Ticketmaster events have no WadUp rating to sort against, so rather
     // than fabricate a score to interleave them with rated venues, they're
@@ -612,6 +613,17 @@ export default function WadUp() {
       return;
     }
     entry.openPopup();
+  }
+
+  // Bars/nightlife get their own pin treatment (dropBarPin, below) — flame
+  // status + a compact beer-icon pin outside the top ranks — everything else
+  // keeps the standard rank pill/discovery dot (dropVenuePin).
+  function dropPinForVenue(v, areaRank) {
+    if (venueCategories(v).includes('nightlife')) {
+      dropBarPinRef.current?.(v, areaRank);
+    } else {
+      dropVenuePinRef.current?.(v, areaRank);
+    }
   }
 
   // ── Drop a venue pin ── `areaRank` (1-based, scoped to the current
@@ -801,6 +813,152 @@ export default function WadUp() {
     if (!mapReady) return;
     filterPinsRef.current?.();
   }, [adminRole, mapReady, dropVenuePin]);
+
+  // ── Drop a bar/nightlife pin ── same viewport-scoped areaRank as
+  // dropVenuePin (a venues.admin_rank_number override, when set, wins over
+  // it — see calculateDisplayRank in lib/rankings.js for the same
+  // precedence used server-side), but bars get a compact 🍺 icon pin outside
+  // the top ranks instead of a small dot, and always carry a flame-vote
+  // badge (🟡/🟠/🔴) reflecting how busy the crowd says it is right now.
+  // `showName` (full ranked pill vs. icon-only) tightens as you zoom in —
+  // top 10 city/area-wide, narrowing to top 5 once individual bars are
+  // already easy enough to tap without a name-bearing pill.
+  const dropBarPin = useCallback((v, areaRank) => {
+    const map = mapObj.current;
+    if (!map || !v.lng || !v.lat) return;
+
+    if (mapMarkers.current[v.id]) {
+      mapMarkers.current[v.id].marker.setMap(null);
+      if (overlays.current[v.id]) overlays.current[v.id].setMap(null);
+    }
+    if (pinRegistry.current.has(v.id)) {
+      pinRegistry.current.delete(v.id);
+    }
+    if (!v.live) return;
+
+    const rank = v.admin_rank_number || areaRank;
+    const isTop10 = rank != null && rank <= 10;
+    const isTop5 = rank != null && rank <= 5;
+    const showName = rank != null && (map.getZoom() < 14 ? isTop10 : isTop5);
+    const rankStyle = showName ? getRankStyle(rank) : null;
+
+    const flameLevel = v.current_flame || 0;
+    const flameEmoji = flameLevel === 3 ? '🔴' : flameLevel === 2 ? '🟠' : flameLevel === 1 ? '🟡' : null;
+
+    const el = document.createElement('div');
+    if (v.is_private) el.style.opacity = '0.5';
+
+    if (showName) {
+      el.className = `wu-pin ${zoomClass}`;
+      const pill = document.createElement('div');
+      pill.className = 'wu-pill';
+      pill.style.background = rankStyle.bg;
+      pill.style.boxShadow = rankStyle.shadow;
+
+      if (flameEmoji) {
+        const badgeEl = document.createElement('span');
+        badgeEl.className = 'wu-badge';
+        badgeEl.textContent = flameEmoji;
+        pill.appendChild(badgeEl);
+      }
+
+      const textWrap = document.createElement('div');
+      textWrap.className = 'wu-pill-text';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'wu-name';
+      nameSpan.textContent = `${rankStyle.prefix} ${v.name}`;
+      nameSpan.style.color = rankStyle.color;
+      textWrap.appendChild(nameSpan);
+
+      const areaRating = v.weighted_rating > 0 ? v.weighted_rating : null;
+      if (areaRating != null) {
+        const ratingSpan = document.createElement('span');
+        ratingSpan.className = 'wu-rating';
+        ratingSpan.textContent = `⭐${areaRating.toFixed(1)}`;
+        ratingSpan.style.color = rankStyle.color;
+        textWrap.appendChild(ratingSpan);
+      }
+
+      pill.appendChild(textWrap);
+
+      const tail = document.createElement('div');
+      tail.className = 'wu-tail';
+      tail.style.borderTopColor = rankStyle.bg;
+
+      el.appendChild(pill);
+      el.appendChild(tail);
+    } else {
+      el.className = 'wu-bar-icon-pin';
+      el.innerHTML = flameEmoji
+        ? `<div class="wu-flame-ring flame-${flameLevel}">${flameEmoji}</div><div class="wu-beer-icon">🍺</div>`
+        : '<div class="wu-beer-icon">🍺</div>';
+    }
+
+    const rating = effectiveRating(v);
+    const ratingCount = effectiveRatingCount(v);
+    const hasRating = rating != null && (ratingCount || 0) > 0;
+    const ratingHtml = hasRating
+      ? `<div class="popup-rating">⭐ ${rating.toFixed(1)} (${ratingCount} ${hasWadupRating(v) ? 'WadUp ' : 'Google '}review${ratingCount === 1 ? '' : 's'})</div>`
+      : '';
+    const flameHtml = flameEmoji
+      ? `<div class="popup-flame">${flameEmoji} ${flameLevel === 3 ? 'Packed!' : flameLevel === 2 ? 'Getting Busy' : 'Getting There'}</div>`
+      : '';
+    const editBtnHtml = adminRoleRef.current
+      ? `<button onclick="window.__wadupEditVenue('${v.id}')" class="popup-edit-venue-btn">✏️ Edit Venue</button>`
+      : '';
+
+    const iwHtml = `
+      <div class="gm-iw">
+        <div class="popup-name">${escapeHtml(v.name)}</div>
+        <div class="popup-type">${escapeHtml(CATEGORY_LABELS.nightlife || 'Nightlife')}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
+        ${ratingHtml}
+        ${flameHtml}
+        <div class="popup-address">📍 ${escapeHtml(v.address)}</div>
+        <a class="popup-view-reviews" href="/venue/${encodeURIComponent(v.id)}">View Reviews</a>
+        ${editBtnHtml}
+      </div>`;
+
+    const pos    = new window.google.maps.LatLng(v.lat, v.lng);
+    const marker = new window.google.maps.Marker({
+      position: pos, map,
+      icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
+      zIndex: showName ? 15 : 5,
+    });
+    const overlay = makeOverlay(pos, el, map, showName ? 'bottom' : 'center');
+
+    const openPopup = () => {
+      infoWindow.current.setContent(iwHtml);
+      infoWindow.current.open(map, marker);
+    };
+
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlePinInteraction(v.id);
+    });
+    el.addEventListener('mouseenter', () => {
+      if (!window.matchMedia('(hover: hover)').matches) return;
+      cancelPopupClose();
+      handlePinInteraction(v.id);
+    });
+    el.addEventListener('mouseleave', () => {
+      if (!window.matchMedia('(hover: hover)').matches) return;
+      schedulePopupClose();
+    });
+
+    mapMarkers.current[v.id] = { marker };
+    overlays.current[v.id]   = overlay;
+
+    const entry = { id: v.id, type: 'venue', tier: showName ? 'top10' : 'discovery', rank: areaRank, marker, overlay, el, lat: v.lat, lng: v.lng, chipVisible: true, openPopup };
+    pinRegistry.current.set(v.id, entry);
+  }, [zoomClass]);
+
+  useEffect(() => { dropBarPinRef.current = dropBarPin; }, [dropBarPin]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    filterPinsRef.current?.();
+  }, [adminRole, mapReady, dropBarPin]);
 
   // ── Drop a TM pin ──
   const dropTMPin = useCallback((ev) => {
@@ -1138,7 +1296,7 @@ export default function WadUp() {
       // this venue's pin last had (rather than recomputing) so the preview
       // doesn't flash down to a plain discovery dot mid-drag.
       const lastRank = pinRegistry.current.get(targetVenue.id)?.rank;
-      dropVenuePinRef.current?.({ ...targetVenue, lat: newLat, lng: newLng, live: true }, lastRank);
+      dropPinForVenue({ ...targetVenue, lat: newLat, lng: newLng, live: true }, lastRank);
       filterPinsRef.current?.();
     });
     relocateListenerRef.current = listener;

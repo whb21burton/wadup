@@ -331,3 +331,18 @@ export async function getLiveTrendingVenueIds(supabase, city) {
   return ids;
 }
 
+// ── Bars & Nightlife admin ranking — a venue's displayed 1-10 rank badge.
+// An admin-set venues.admin_rank_number always wins outright; otherwise the
+// rank is the weighted average of that venue's user ratings (falling back to
+// google_rating with no user ratings at all), rounded to the nearest whole
+// number. `userVotes` is an array of { rating, weight } for this one venue.
+export function calculateDisplayRank(venue, userVotes) {
+  if (venue.admin_rank_number) return venue.admin_rank_number;
+
+  const weightedSum = (userVotes || []).reduce((sum, v) => sum + v.rating * v.weight, 0);
+  const totalWeight = (userVotes || []).reduce((sum, v) => sum + v.weight, 0);
+  const userRating = totalWeight > 0 ? weightedSum / totalWeight : venue.google_rating || 0;
+
+  return Math.round(userRating);
+}
+
