@@ -1,124 +1,117 @@
 import { useState } from 'react';
-import Head from 'next/head';
-import Link from 'next/link';
-import { CATEGORY_LABELS } from '../../lib/data';
+import { useRouter } from 'next/router';
 
-// The password prompt below is a convenience UI gate only — the real check
-// happens server-side in pages/api/places/sync.js (X-Admin-Password vs
-// process.env.ADMIN_SYNC_PASSWORD). A wrong password here just means every
-// sync attempt gets a 401 back from the API; nothing sensitive is decided
-// on the client.
-//
-// This page used to also have its own venue hide/delete list, but that's
-// now fully superseded by /admin/venues (Edit/Hide/Show/Delete, category
-// management, and real admin_roles-based auth instead of a shared
-// password) — see pages/admin/venues.js.
-export default function AdminSync() {
+export default function SyncPage() {
   const [password, setPassword] = useState('');
-  const [syncing, setSyncing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
 
   const runSync = async () => {
-    if (!password) { setError('Enter the admin password first'); return; }
-    setSyncing(true);
-    setError('');
+    setLoading(true);
     setResult(null);
+    setError(null);
     try {
       const res = await fetch('/api/places/sync', {
         method: 'POST',
-        headers: { 'X-Admin-Password': password },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': password
+        }
       });
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Sync failed');
-      } else {
-        setResult(data);
-      }
+      setResult(data);
     } catch (e) {
-      setError('Sync failed — network error');
+      setError(e.message);
+    } finally {
+      setLoading(false);
     }
-    setSyncing(false);
   };
 
   return (
-    <>
-      <Head>
-        <title>Admin — Sync Venues</title>
-        <meta name="robots" content="noindex, nofollow" />
-      </Head>
+    <div style={{
+      minHeight: '100vh',
+      background: '#050d1a',
+      color: '#fff',
+      padding: '40px',
+      fontFamily: 'Inter, sans-serif'
+    }}>
+      <h1 style={{ color: '#FFFC00', marginBottom: '32px' }}>
+        🔄 Venue Sync
+      </h1>
 
-      <div className="admin-sync-page">
-        <h1>🔄 Sync Chattanooga Venues</h1>
+      <div style={{ maxWidth: '500px' }}>
+        <label style={{ display: 'block', marginBottom: '8px', color: '#aaa' }}>
+          Admin Password
+        </label>
+        <input
+          type="password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          placeholder="Enter admin password"
+          style={{
+            width: '100%',
+            padding: '12px',
+            background: '#0a1628',
+            border: '1px solid #00e5ff',
+            borderRadius: '8px',
+            color: '#fff',
+            fontSize: '1rem',
+            marginBottom: '16px'
+          }}
+        />
 
-        {/* The button is always visible up front — no separate "Unlock" step
-            hiding it. Typing the password is still required to actually run
-            a sync: it's sent straight through to pages/api/places/sync.js,
-            which checks it server-side against process.env.ADMIN_SYNC_PASSWORD.
-            The password is never baked into the page itself (that would mean
-            shipping it to every visitor's browser bundle) — it has to be
-            typed here, same as before. */}
-        <div className="admin-gate">
-          <input
-            type="password"
-            placeholder="Admin password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && password && !syncing) runSync(); }}
-          />
-        </div>
-
-        <button className="admin-sync-btn" onClick={runSync} disabled={syncing || !password}>
-          {syncing ? 'Syncing…' : 'Sync Chattanooga Venues'}
+        <button
+          onClick={runSync}
+          disabled={loading || !password}
+          style={{
+            width: '100%',
+            padding: '16px',
+            background: loading ? '#666' : '#FFFC00',
+            color: '#000',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '1rem',
+            fontWeight: '800',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            marginBottom: '24px'
+          }}
+        >
+          {loading ? '⏳ Syncing... (this takes ~20 seconds)' : '🔄 Sync Chattanooga Venues'}
         </button>
 
-        <p className="admin-sync-desc">
-          Pulls real venues from Google Places (New) across ~56 specific place-type searches
-          (bars, breweries, a dozen+ restaurant subtypes, concert halls, museums, parks, golf
-          courses, and more) run against 5 overlapping search areas covering greater
-          Chattanooga (downtown, Hamilton Place, North Shore/Hixson, Lookout Mountain/Southside),
-          skips national chains, and upserts the rest into a review queue for approval — see the{' '}
-          <Link href="/admin/venues">Venue Manager</Link>&apos;s Pending tab. Keyed on
-          <code> google_place_id</code>, so re-running this is always safe — existing venues get
-          refreshed, not duplicated. This is a much larger sync than it used to be (~280 API
-          calls) and can take up to a minute.
-        </p>
-
-        {error && <div className="admin-sync-error">⚠️ {error}</div>}
+        {error && (
+          <div style={{ background: '#ff000022', border: '1px solid #ff4444', borderRadius: '8px', padding: '16px', color: '#ff4444' }}>
+            ❌ Error: {error}
+          </div>
+        )}
 
         {result && (
-          <div className="admin-sync-result">
-            <div className="admin-sync-summary">
-              📋 {result.added_to_queue} added to review queue &nbsp;·&nbsp;
-              🔄 {result.already_live} live venues refreshed &nbsp;·&nbsp;
-              📦 {result.totalFetched} total fetched &nbsp;·&nbsp;
-              🚫 {result.skippedChains || 0} chains skipped
-            </div>
-            {Object.keys(result.byCategory || {}).length > 0 && (
-              <ul className="admin-sync-breakdown">
-                {Object.entries(result.byCategory).map(([cat, n]) => (
-                  <li key={cat}>{CATEGORY_LABELS[cat] || cat}: {n}</li>
+          <div style={{ background: '#00ff0011', border: '1px solid #00e676', borderRadius: '8px', padding: '16px' }}>
+            <div style={{ color: '#00e676', fontWeight: '800', marginBottom: '8px' }}>✅ Sync Complete!</div>
+            <div>Added to queue: {result.added_to_queue || result.added || 0}</div>
+            <div>Already live: {result.already_live || result.updated || 0}</div>
+            <div>Skipped: {result.skipped || 0}</div>
+            <div>Total fetched: {result.totalFetched || 0}</div>
+            {result.byCategory && (
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ fontWeight: '700', marginBottom: '4px' }}>By Category:</div>
+                {Object.entries(result.byCategory).map(([cat, count]) => (
+                  <div key={cat}>• {cat}: {count}</div>
                 ))}
-              </ul>
+              </div>
             )}
-            {result.errors?.length > 0 && (
-              <div className="admin-sync-warnings">
-                ⚠️ {result.errors.length} search(es) had errors:
-                <ul>{result.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+            {result.errors && result.errors.length > 0 && (
+              <div style={{ marginTop: '12px', color: '#ff8844' }}>
+                <div>⚠️ Errors ({result.errors.length}):</div>
+                {result.errors.slice(0, 5).map((e, i) => (
+                  <div key={i} style={{ fontSize: '0.8rem' }}>• {e}</div>
+                ))}
               </div>
             )}
           </div>
         )}
-
-        <div className="admin-venues-section">
-          <p className="admin-sync-desc">
-            Need to edit, hide, or delete a venue? Head to the{' '}
-            <Link href="/admin/venues">Venue Manager</Link> — it has full edit/hide/delete
-            controls and requires a real WadUp admin account rather than this page&apos;s
-            shared password.
-          </p>
-        </div>
       </div>
-    </>
+    </div>
   );
 }
