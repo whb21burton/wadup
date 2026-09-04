@@ -169,12 +169,69 @@ const BAR_PRIMARY_TYPES = [
   'dance_hall', 'jazz_club', 'comedy_club',
 ];
 
+// 'reviews' is deliberately NOT requested here — Places API (New) only
+// populates it on the per-place Get Place (Place Details) endpoint, never
+// on searchNearby/searchText, regardless of field mask. See fetchPlaceDetails
+// below, which is what actually fills google_reviews/google_photo_refs.
 const FIELD_MASK = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.location',
   'places.rating', 'places.userRatingCount', 'places.internationalPhoneNumber',
   'places.websiteUri', 'places.regularOpeningHours', 'places.currentOpeningHours',
-  'places.photos', 'places.primaryType', 'places.types', 'places.reviews',
+  'places.photos', 'places.primaryType', 'places.types',
 ].join(',');
+
+// Place Details (Get Place) — the only endpoint that actually returns
+// `reviews`. Called once per bar AFTER the nightlife rebuild's search+dedup
+// pass, so it only spends extra API calls on places that actually made it
+// past the chain/primaryType filters (see the isNightlifeRebuild branch in
+// the handler below), not on all ~280 search results.
+const DETAILS_FIELD_MASK = 'reviews,photos,regularOpeningHours,currentOpeningHours,rating,userRatingCount';
+
+async function fetchPlaceDetails(placeId) {
+  const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+    headers: {
+      'X-Goog-Api-Key': process.env.GOOGLE_PLACES_KEY,
+      'X-Goog-FieldMask': DETAILS_FIELD_MASK,
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || `Place Details error (${res.status})`);
+  return data;
+}
+
+// Fetches Place Details for each given venue row (bounded concurrency, same
+// limit as the search pass) and writes google_reviews/google_photo_refs/
+// hours straight to `venues`. Returns per-place errors rather than throwing,
+// so one bad place doesn't take down the whole rebuild's response.
+async function enrichWithPlaceDetails(rows) {
+  const tasks = rows.map(row => async () => {
+    try {
+      const details = await fetchPlaceDetails(row.google_place_id);
+      const googleReviews = (details.reviews || []).slice(0, 5).map(r => ({
+        authorName: r.authorAttribution?.displayName || 'Anonymous',
+        authorPhoto: r.authorAttribution?.photoUri || null,
+        rating: r.rating,
+        text: r.text?.text || '',
+        time: r.relativePublishTimeDescription || '',
+        publishTime: r.publishTime,
+      }));
+      const googlePhotoRefs = (details.photos || []).slice(0, 5).map(p => p.name);
+      const { error } = await supabaseAdmin
+        .from('venues')
+        .update({
+          google_reviews: googleReviews,
+          google_photo_refs: googlePhotoRefs,
+          hours: details.currentOpeningHours || details.regularOpeningHours || null,
+        })
+        .eq('google_place_id', row.google_place_id);
+      return error ? `${row.name} (${row.google_place_id}): ${error.message}` : null;
+    } catch (e) {
+      return `${row.name} (${row.google_place_id}): ${e.message}`;
+    }
+  });
+  const results = await runWithConcurrency(tasks, SEARCH_CONCURRENCY);
+  return results.filter(Boolean);
+}
 
 // The search GROUP determines the category, full stop — no per-place
 // override based on Google's primaryType/types. With single-type searches
@@ -239,8 +296,11 @@ function mapPlaceToRow(place, wadupCat) {
     // closures, etc.) is preferred over the generic weekly regularOpeningHours
     // when Google returns both.
     hours: place.currentOpeningHours || place.regularOpeningHours || null,
-    google_reviews: (place.reviews || []).slice(0, 5),
-    google_photo_refs: (place.photos || []).slice(0, 3).map(p => p.name),
+    // google_reviews/google_photo_refs are left unset here (falling through
+    // to their '[]'::jsonb column defaults) — searchNearby's `place` never
+    // carries reviews, and photos is inconsistent at best. For nightlife,
+    // enrichWithPlaceDetails fills both in immediately after this row lands
+    // in `venues` — see the isNightlifeRebuild branch in the handler.
     is_claimed: false,
     source: 'google_places',
     custom_cover_photo: false,
@@ -454,12 +514,20 @@ export default async function handler(req, res) {
       const { error } = await supabaseAdmin.from('venues').insert(pendingCandidates);
       if (error) return res.status(500).json({ error: 'Nightlife rebuild insert failed', detail: error.message });
     }
+
+    // One Place Details call per bar that's actually live now (freshly
+    // inserted or just refreshed) — reviews/photos, which searchNearby can
+    // never provide (see FIELD_MASK's comment above).
+    const enrichmentErrors = await enrichWithPlaceDetails([...pendingCandidates, ...liveUpdateCandidates]);
+
     return res.status(200).json({
       success: true,
       rebuilt: true,
       inserted: pendingCandidates.length,
       refreshed: liveUpdateCandidates.length,
       keptDueToRealData: rebuildDeleteFailures,
+      enriched: pendingCandidates.length + liveUpdateCandidates.length - enrichmentErrors.length,
+      enrichmentErrors,
       skipped,
       totalFetched: allRows.length,
       byCategory,

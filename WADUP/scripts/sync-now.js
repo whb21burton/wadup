@@ -18,9 +18,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('Starting Chattanooga venue sync...');
+  console.log('Starting Chattanooga nightlife (bar) sync...');
 
-  const res = await fetch('https://www.wadup.app/api/places/sync', {
+  const res = await fetch('https://www.wadup.app/api/places/sync?category=nightlife', {
     method: 'POST',
     headers: {
       'x-admin-password': process.env.ADMIN_SYNC_PASSWORD,
