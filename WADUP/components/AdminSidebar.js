@@ -32,6 +32,11 @@ export default function AdminSidebar({ adminRole }) {
             📊 Analytics
           </span>
         )}
+        {superAdmin && (
+          <Link href="/admin/sync" className={`admin-nav-link${isActive('/admin/sync') ? ' active' : ''}`}>
+            🔄 Sync Manager
+          </Link>
+        )}
         <Link href="/admin/reports" className={`admin-nav-link${isActive('/admin/reports') ? ' active' : ''}`}>
           🚩 Reports
         </Link>
