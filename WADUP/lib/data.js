@@ -5,13 +5,21 @@
 // NOT match the 'nightlife' value venues are actually stored under — see
 // venueMatchesChip's alias below and CATEGORY_LABELS' comment for why this
 // list is kept separate from the real category-value space.
+//
+// `subcategories` backs the desktop sidebar's dropdown (pages/index.js's
+// renderDesktopCategoryList) — a category only gets a ▼ arrow once its list
+// is non-empty. Each entry's `id` must be typed EXACTLY as it's stored on
+// venues.subcategory (Google's primaryType with underscores turned into
+// spaces, e.g. 'night club', 'italian restaurant' — see
+// lib/placesSync.js's mapPlaceToRow), since venueMatchesChip compares it
+// with a plain ===.
 export const CATEGORY_CHIPS = [
-  { id: 'events',     label: '🎵 Events' },
-  { id: 'bars',       label: '🍸 Bars & Nightlife' },
-  { id: 'restaurant', label: '🍔 Restaurants' },
-  { id: 'sports',     label: '🏟️ Sports' },
-  { id: 'outdoors',   label: '🌳 Outdoors' },
-  { id: 'activities', label: '🎳 Activities' },
+  { id: 'events',     label: '🎵 Events',              subcategories: [] },
+  { id: 'bars',       label: '🍸 Bars & Nightlife',     subcategories: [] },
+  { id: 'restaurant', label: '🍔 Restaurants',          subcategories: [] },
+  { id: 'sports',     label: '🏟️ Sports',              subcategories: [] },
+  { id: 'outdoors',   label: '🌳 Outdoors',             subcategories: [] },
+  { id: 'activities', label: '🎳 Activities',           subcategories: [] },
 ];
 
 // Keyed by the real category values stored on a venue (venues.categories /
@@ -58,13 +66,21 @@ export function venueCategories(v) {
   return v.category ? [v.category] : [];
 }
 
-export function venueMatchesChip(chip, venue) {
+// `subcategory`, when given, narrows a category match down to venues whose
+// stored .subcategory is an exact match (see CATEGORY_CHIPS' comment) — used
+// by the sidebar dropdown's per-subcategory filtering. Omitted/falsy means
+// "match the whole category", same as before.
+export function venueMatchesChip(chip, venue, subcategory) {
   if (!chip) return true;
   const cats = venueCategories(venue);
   // The map's chip id is 'bars', but venues are stored under 'nightlife' —
   // match either so the chip actually finds them.
-  if (chip === 'bars') return cats.includes('nightlife') || cats.includes('bars');
-  return cats.includes(chip);
+  const chipMatches = chip === 'bars'
+    ? (cats.includes('nightlife') || cats.includes('bars'))
+    : cats.includes(chip);
+  if (!chipMatches) return false;
+  if (subcategory) return venue.subcategory === subcategory;
+  return true;
 }
 
 // National/regional chains are filtered out of the public map entirely —

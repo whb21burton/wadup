@@ -282,7 +282,7 @@ function timeToMins(t) {
 // Ticketmaster events aren't in this calculation — they're a separate,
 // client-fetched data source (pages/index.js's tmEventsRef), not something a
 // Supabase query here can see; a caller that wants both merges them itself.
-export async function getScheduleTrendingVenues(supabase, category, city) {
+export async function getScheduleTrendingVenues(supabase, category, city, subcategory) {
   const now = new Date();
   const dayOfWeek = now.getDay();
   const nowMins = timeToMins(now.toTimeString().slice(0, 5));
@@ -300,7 +300,7 @@ export async function getScheduleTrendingVenues(supabase, category, city) {
       const startMins = timeToMins(s.start_time);
       return nowMins >= startMins - window && nowMins < startMins + 30;
     })
-    .filter(s => s.venues && !s.venues.is_hidden && (!city || s.venues.city === city) && venueMatchesChip(category, s.venues))
+    .filter(s => s.venues && !s.venues.is_hidden && (!city || s.venues.city === city) && venueMatchesChip(category, s.venues, subcategory))
     .map(s => ({ ...s.venues, _scheduleEntry: s }));
 }
 

@@ -150,6 +150,12 @@ export default function WadUp() {
   // handler, rather than waiting a render cycle for a useEffect to catch up.
   const activeCategoryRef = useRef('events');
   const activeDateRef = useRef(new Date().toISOString().slice(0,10));
+  // Desktop sidebar's category dropdown — see onCategoryClick/onSubcategoryClick
+  // and renderDesktopCategoryList. Same synchronous-ref pattern as
+  // activeCategoryRef: filterPins always reads the ref, never the state.
+  const [activeSubcategory, setActiveSubcategory] = useState(null);
+  const activeSubcategoryRef = useRef(null);
+  const [openDropdown, setOpenDropdown] = useState(null); // which category's subcategory list is expanded
   const [trendingNow,    setTrendingNow]    = useState([]);
   const [topRanked,      setTopRanked]      = useState([]);
   const [sidebarLoading, setSidebarLoading] = useState(true);
@@ -317,10 +323,10 @@ export default function WadUp() {
   // the active chip only (not the day strip or Tonight/Weekend, which only
   // affect TM event pins). Independent of the map/viewport entirely, unlike
   // the old viewport-scoped trending list this replaces. ──
-  const loadSidebarLists = useCallback(async (chip) => {
+  const loadSidebarLists = useCallback(async (chip, subcategory) => {
     setSidebarLoading(true);
     try {
-      const nowList = await getScheduleTrendingVenues(supabase, chip, 'Chattanooga');
+      const nowList = await getScheduleTrendingVenues(supabase, chip, 'Chattanooga', subcategory);
       setTrendingNow(nowList);
     } catch (e) {
       /* sidebar lists are a nice-to-have — leave whatever was showing */
@@ -328,7 +334,7 @@ export default function WadUp() {
     setSidebarLoading(false);
   }, []);
 
-  useEffect(() => { loadSidebarLists(activeChip); }, [activeChip, loadSidebarLists]);
+  useEffect(() => { loadSidebarLists(activeChip, activeSubcategory); }, [activeChip, activeSubcategory, loadSidebarLists]);
 
   // ── Filter map pins — flags drive direct marker/overlay visibility ──
   // Reads activeCategoryRef/activeDateRef (never the activeChip/activeDate
@@ -341,8 +347,9 @@ export default function WadUp() {
 
     const chip = activeCategoryRef.current;
     const date = activeDateRef.current;
+    const subcategory = activeSubcategoryRef.current;
 
-    console.log('[FILTER] chip:', chip, 'date:', date);
+    console.log('[FILTER] chip:', chip, 'subcategory:', subcategory, 'date:', date);
     console.log('[FILTER] venue count:', Object.keys(mapMarkers.current).length);
     console.log('[FILTER] tm count:', Object.keys(tmMarkers.current).length);
 
@@ -357,7 +364,7 @@ export default function WadUp() {
         console.log('[FILTER] venue not found for id:', id);
         return;
       }
-      const show = venueMatchesChip(chip, venue);
+      const show = venueMatchesChip(chip, venue, subcategory);
       // pinRegistry's own chipVisible flag is kept in sync too — findNearbyPins
       // (the spiderfy fan-out) checks a pin's live map state to decide what's
       // "hidden by the active filter", so this has to stay accurate even
@@ -407,9 +414,10 @@ export default function WadUp() {
     if (!map) return;
     const bounds = map.getBounds();
     const chip = activeCategoryRef.current;
+    const subcategory = activeSubcategoryRef.current;
 
     const eligible = venuesRef.current.filter(v =>
-      v.live && !v.is_hidden && isVenueEligible(v) && venueMatchesChip(chip, v)
+      v.live && !v.is_hidden && isVenueEligible(v) && venueMatchesChip(chip, v, subcategory)
     );
     const inViewport = eligible.filter(v =>
       v.lat != null && v.lng != null && bounds && bounds.contains(new window.google.maps.LatLng(v.lat, v.lng))
@@ -1499,17 +1507,44 @@ export default function WadUp() {
     return () => { window.removeEventListener('resize', onResize); clearTimeout(t); };
   }, [nudgeMap]);
 
-  // ── Chip change ── (also triggers the loadSidebarLists effect above, via activeChip)
+  // ── Chip change (mobile HUD's flat chip row) ── (also triggers the
+  // loadSidebarLists effect above, via activeChip). No subcategory UI exists
+  // on mobile, so any subcategory picked earlier on desktop is cleared here
+  // — otherwise it'd keep silently narrowing the mobile chip's results.
   const onChipClick = (chip) => {
     console.log('[CHIP] clicked:', chip);
     activeCategoryRef.current = chip;
+    activeSubcategoryRef.current = null;
     setActiveChip(chip);
+    setActiveSubcategory(null);
 
     // Debug: log first 5 venues and their categories
     venuesRef.current.slice(0, 5).forEach(v => {
       console.log('[CHIP] venue:', v.name, 'categories:', v.categories, 'category:', v.category);
     });
 
+    filterPins();
+  };
+
+  // ── Desktop sidebar category dropdown ── clicking a category row both
+  // selects it (filters the map) and toggles that category's subcategory
+  // list open/closed; clicking a subcategory row selects the category +
+  // subcategory together without touching which dropdown is open.
+  const onCategoryClick = (catId) => {
+    activeCategoryRef.current = catId;
+    activeSubcategoryRef.current = null;
+    setActiveChip(catId);
+    setActiveSubcategory(null);
+    setOpenDropdown(prev => (prev === catId ? null : catId));
+    filterPins();
+  };
+
+  const onSubcategoryClick = (catId, subcatId, e) => {
+    e.stopPropagation();
+    activeCategoryRef.current = catId;
+    activeSubcategoryRef.current = subcatId;
+    setActiveChip(catId);
+    setActiveSubcategory(subcatId);
     filterPins();
   };
 
@@ -1620,6 +1655,45 @@ export default function WadUp() {
     </div>
   );
 
+  // Desktop-only replacement for renderChips' flat row — mobile's HUD still
+  // uses renderChips('chips') untouched. A category only shows a ▼ arrow
+  // once it actually has subcategories (see CATEGORY_CHIPS' comment).
+  const renderDesktopCategoryList = () => (
+    <div className="sidebar-categories">
+      <div className="cat-list">
+        {CATEGORY_CHIPS.map(c => {
+          const hasSubcats = c.subcategories?.length > 0;
+          const isActive = activeChip === c.id;
+          const isOpen = openDropdown === c.id;
+          return (
+            <div key={c.id}>
+              <div
+                className={`cat-item${isActive ? ' active' : ''}`}
+                onClick={() => onCategoryClick(c.id)}
+              >
+                <span>{c.label}</span>
+                {hasSubcats && <span className={`cat-arrow${isOpen ? ' open' : ''}`}>▼</span>}
+              </div>
+              {hasSubcats && (
+                <div className={`subcat-list${isOpen ? ' open' : ''}`}>
+                  {c.subcategories.map(sub => (
+                    <div
+                      key={sub.id}
+                      className={`subcat-item${isActive && activeSubcategory === sub.id ? ' active' : ''}`}
+                      onClick={(e) => onSubcategoryClick(c.id, sub.id, e)}
+                    >
+                      {sub.label}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   const renderDayStrip = (containerClass) => (
     <div className={containerClass}>
       {days.map(d => (
@@ -1709,7 +1783,11 @@ export default function WadUp() {
           <div className="panel-title-dot" />
           🏆 Top 10
         </div>
-        <div className="panel-radius">{CATEGORY_CHIPS.find(c => c.id === activeChip)?.label || 'All'}</div>
+        <div className="panel-radius">
+          {activeSubcategory
+            ? CATEGORY_CHIPS.find(c => c.id === activeChip)?.subcategories.find(s => s.id === activeSubcategory)?.label
+            : CATEGORY_CHIPS.find(c => c.id === activeChip)?.label || 'All'}
+        </div>
       </div>
       <div className="trending-list sidebar-scroll-list">
         {renderTopRankedItems()}
@@ -1926,7 +2004,7 @@ export default function WadUp() {
             <Link href="/discover" className="sidebar-discover-btn">🔥 Discover</Link>
           </div>
 
-          {renderChips('sidebar-chips')}
+          {renderDesktopCategoryList()}
           {renderDayStrip('sidebar-days')}
 
           <div className="sidebar-trending">
