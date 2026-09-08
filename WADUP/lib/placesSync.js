@@ -4,6 +4,17 @@
 // pages/api/places/sync-save.js (write only, no search) — kept in one place
 // so "what counts as a match" can never drift between preview and the real
 // sync.
+//
+// Quota note: searchNearby is billed per SEARCH CALL, not per place
+// returned — Google has no "exclude places I already have" option, so
+// runSearch/runSearchForPreview always spend the full SEARCH_GROUPS ×
+// SEARCH_CENTERS call count regardless of how many results turn out to
+// already be in the DB. The callers (sync.js, sync-preview.js) instead skip
+// the WRITE side for already-known places, and — the actual API-cost lever
+// — skip the per-place Place Details enrichment call for anything that
+// already has reviews/photos stored. Deleted-venue results are dropped
+// outright (never written, never re-shown), matching deleted_venues'
+// permanent-blocklist purpose.
 
 // Every combination of SEARCH_GROUPS × SEARCH_CENTERS is its own Google
 // Places API call (56 groups × 5 centers = 280 calls per full sync run).

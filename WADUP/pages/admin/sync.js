@@ -47,6 +47,7 @@ export default function SyncManager() {
 
   const [category, setCategory] = useState('nightlife');
   const [previewResults, setPreviewResults] = useState(null);
+  const [previewSummary, setPreviewSummary] = useState(null);
   const [approvedIds, setApprovedIds] = useState(new Set());
   const [rejectedIds, setRejectedIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
@@ -89,10 +90,12 @@ export default function SyncManager() {
     setLoading(true);
     setPreviewError('');
     setPreviewResults(null);
+    setPreviewSummary(null);
     try {
       const data = await authedFetch(`/api/places/sync-preview?category=${category}`, session, null, 'GET');
       const venues = data.venues || [];
       setPreviewResults(venues);
+      setPreviewSummary({ totalFound: data.totalFound ?? venues.length, alreadyKnown: data.alreadyKnown ?? 0, refreshed: data.refreshed ?? 0 });
       // Auto-approve non-chains, auto-reject known bad types — admin can
       // still flip any individual card before saving.
       const approved = new Set();
@@ -207,10 +210,17 @@ export default function SyncManager() {
 
           {previewError && <div style={{ color: '#ff6666', marginBottom: '16px' }}>⚠️ {previewError}</div>}
 
+          {previewSummary && (
+            <div style={{ color: '#9fc3cc', marginBottom: '12px', fontSize: '0.85rem' }}>
+              Found {previewSummary.totalFound} places from Google → {previewSummary.totalFound - previewSummary.alreadyKnown} are new
+              {previewSummary.alreadyKnown > 0 && ` (${previewSummary.alreadyKnown} already in your database, rating/hours refreshed)`}
+            </div>
+          )}
+
           {previewResults && (
             <div style={{ marginBottom: '40px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                <h2 style={{ color: '#00e5ff' }}>Preview ({previewResults.length} found)</h2>
+                <h2 style={{ color: '#00e5ff' }}>Preview ({previewResults.length} new)</h2>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     onClick={approveAll}

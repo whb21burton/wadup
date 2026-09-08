@@ -104,7 +104,7 @@ export default async function handler(req, res) {
     { data: pendingRowsRaw, error: pendingError },
   ] = await Promise.all([
     supabaseAdmin.from('deleted_venues').select('google_place_id').in('google_place_id', placeIds),
-    supabaseAdmin.from('venues').select('google_place_id, custom_cover_photo, name').in('google_place_id', placeIds),
+    supabaseAdmin.from('venues').select('google_place_id, custom_cover_photo, name, google_reviews, google_photo_refs').in('google_place_id', placeIds),
     supabaseAdmin.from('venues_pending').select('google_place_id, status').in('google_place_id', placeIds),
   ]);
   if (deletedError) return res.status(500).json({ error: 'Failed to read deleted_venues blocklist', detail: deletedError.message });
@@ -186,10 +186,17 @@ export default async function handler(req, res) {
       if (error) return res.status(500).json({ error: 'Nightlife rebuild insert failed', detail: error.message });
     }
 
-    // One Place Details call per bar that's actually live now (freshly
-    // inserted or just refreshed) — reviews/photos, which searchNearby can
-    // never provide (see lib/placesSync.js's FIELD_MASK comment).
-    const enrichmentErrors = await enrichWithPlaceDetails([...pendingCandidates, ...liveUpdateCandidates], supabaseAdmin);
+    // One Place Details call per bar — reviews/photos, which searchNearby
+    // can never provide (see lib/placesSync.js's FIELD_MASK comment). Every
+    // freshly-inserted bar needs it, but an already-live one only does if
+    // it's never been enriched before — re-spending a Details call on a bar
+    // that already has reviews/photos stored would be pure waste.
+    const needsEnrichment = liveUpdateCandidates.filter(r => {
+      const existing = liveByPlaceId.get(r.google_place_id);
+      return !(existing?.google_reviews?.length) && !(existing?.google_photo_refs?.length);
+    });
+    console.log(`[sync] nightlife rebuild: ${pendingCandidates.length} new bars + ${needsEnrichment.length}/${liveUpdateCandidates.length} already-live bars need Place Details (rest already have reviews/photos).`);
+    const enrichmentErrors = await enrichWithPlaceDetails([...pendingCandidates, ...needsEnrichment], supabaseAdmin);
 
     return res.status(200).json({
       success: true,
@@ -197,7 +204,7 @@ export default async function handler(req, res) {
       inserted: pendingCandidates.length,
       refreshed: liveUpdateCandidates.length,
       keptDueToRealData: rebuildDeleteFailures,
-      enriched: pendingCandidates.length + liveUpdateCandidates.length - enrichmentErrors.length,
+      enriched: pendingCandidates.length + needsEnrichment.length - enrichmentErrors.length,
       enrichmentErrors,
       skipped,
       totalFetched: allRows.length,
