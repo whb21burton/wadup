@@ -16,18 +16,21 @@ import AdminEditPanel from '../components/AdminEditPanel';
 
 
 const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY || 'AIzaSyBoXf6UAa_SckH9gxfbiOK9OPpaySNH76w';
-const TM_AFFILIATE_ID = process.env.NEXT_PUBLIC_TM_AFFILIATE_ID || 'YOUR_AFFILIATE_ID';
+// Falls back to the real Impact affiliate ID (not a placeholder) so this
+// works today even before NEXT_PUBLIC_TM_AFFILIATE_ID is set on Vercel.
+const TM_AFFILIATE_ID = process.env.NEXT_PUBLIC_TM_AFFILIATE_ID || '7691820';
+const TM_CAMPAIGN_ID = '264167';
+const TM_ADVERTISER_ID = '4272';
 
-// ── Append Ticketmaster affiliate tracking to an outbound ticket URL ──
+// ── Wrap an outbound Ticketmaster URL in Impact's affiliate tracking link
+// (replaces the old ?camefrom= param, which didn't actually attribute
+// clicks/commissions through Impact) ──
 function withTMAffiliateTracking(url) {
   if (!url) return url;
   try {
-    const u = new URL(url);
-    u.searchParams.set('camefrom', TM_AFFILIATE_ID);
-    return u.toString();
+    return `https://ticketmaster.evyy.net/c/${TM_AFFILIATE_ID}/${TM_CAMPAIGN_ID}/${TM_ADVERTISER_ID}?u=${encodeURIComponent(url)}`;
   } catch (e) {
-    const sep = url.includes('?') ? '&' : '?';
-    return `${url}${sep}camefrom=${encodeURIComponent(TM_AFFILIATE_ID)}`;
+    return url;
   }
 }
 
