@@ -1069,6 +1069,33 @@ html, body {
   text-align: center;
 }
 
+/* ── Hover name tooltip — every pin type, shown only on hover; click always
+   opens the full popup/stacked list instead (see showNameTooltip in
+   pages/index.js). One shared node, positioned via inline left/top. ── */
+.wu-name-tooltip {
+  position: fixed;
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  pointer-events: none;
+  z-index: 99999;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.1s ease;
+}
+.wu-name-tooltip.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* ── Bar/nightlife icon pins — dropBarPin's non-ranked tier (pages/index.js) ── */
 .wu-bar-icon-pin {
   display: flex;

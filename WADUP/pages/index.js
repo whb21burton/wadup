@@ -159,7 +159,6 @@ export default function WadUp() {
 
   // Overlapping-pins tracking (used by findNearbyPins/showStackedPopup)
   const pinRegistry   = useRef(new Map());  // id -> { id, type, marker, overlay, el, lat, lng, chipVisible, openPopup }
-  const popupCloseTimer = useRef(null);     // desktop hover: pending delayed-close timeout for the InfoWindow
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('events');
@@ -568,23 +567,29 @@ export default function WadUp() {
     infoWindow.current.open(mapObj.current);
   }
 
-  // ── Desktop hover popup: delayed close so the mouse can travel from the
-  // pin into the popup itself without it flickering shut. ──
-  function cancelPopupClose() {
-    if (popupCloseTimer.current) {
-      clearTimeout(popupCloseTimer.current);
-      popupCloseTimer.current = null;
+  // ── Tiny hover tooltip — just the pin's name, nothing else. The InfoWindow
+  // (stacked list or full popup) only ever opens on click now; hover never
+  // triggers it, so there's no close-delay/hover-into-popup coordination to
+  // manage here anymore. A single lazily-created DOM node outside React's
+  // tree, same pattern as the map/InfoWindow themselves being imperative. ──
+  function showNameTooltip(name, x, y) {
+    let tooltip = document.getElementById('wu-name-tooltip');
+    if (!tooltip) {
+      tooltip = document.createElement('div');
+      tooltip.id = 'wu-name-tooltip';
+      tooltip.className = 'wu-name-tooltip';
+      document.body.appendChild(tooltip);
     }
+    tooltip.textContent = name;
+    tooltip.style.left = (x + 12) + 'px';
+    tooltip.style.top = (y - 28) + 'px';
+    tooltip.classList.add('visible');
   }
-  function schedulePopupClose() {
-    cancelPopupClose();
-    popupCloseTimer.current = setTimeout(() => {
-      infoWindow.current?.close();
-      popupCloseTimer.current = null;
-    }, 150);
+  function hideNameTooltip() {
+    document.getElementById('wu-name-tooltip')?.classList.remove('visible');
   }
 
-  // Shared entry point for both click and (desktop) hover on any pin.
+  // Shared entry point for click on any pin.
   function handlePinInteraction(id) {
     const entry = pinRegistry.current.get(id);
     if (!entry) return;
@@ -758,22 +763,17 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      hideNameTooltip();
       handlePinInteraction(v.id);
     });
-    // Park/golf emoji pins and discovery dots open on click only — no
-    // hover-triggered popup (hover-opening a packed cluster of 10px dots at
-    // zoom 17+ would be too fiddly to be usable).
-    if (!specialIcon && tier !== 'discovery') {
-      el.addEventListener('mouseenter', () => {
-        if (!window.matchMedia('(hover: hover)').matches) return;
-        cancelPopupClose();
-        handlePinInteraction(v.id);
-      });
-      el.addEventListener('mouseleave', () => {
-        if (!window.matchMedia('(hover: hover)').matches) return;
-        schedulePopupClose();
-      });
-    }
+    el.addEventListener('mouseenter', (e) => {
+      if (!window.matchMedia('(hover: hover)').matches) return;
+      showNameTooltip(v.name, e.clientX, e.clientY);
+    });
+    el.addEventListener('mouseleave', () => {
+      if (!window.matchMedia('(hover: hover)').matches) return;
+      hideNameTooltip();
+    });
 
     mapMarkers.current[v.id] = { marker };
     overlays.current[v.id]   = overlay;
@@ -916,16 +916,16 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      hideNameTooltip();
       handlePinInteraction(v.id);
     });
-    el.addEventListener('mouseenter', () => {
+    el.addEventListener('mouseenter', (e) => {
       if (!window.matchMedia('(hover: hover)').matches) return;
-      cancelPopupClose();
-      handlePinInteraction(v.id);
+      showNameTooltip(v.name, e.clientX, e.clientY);
     });
     el.addEventListener('mouseleave', () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
-      schedulePopupClose();
+      hideNameTooltip();
     });
 
     mapMarkers.current[v.id] = { marker };
@@ -1022,16 +1022,16 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      hideNameTooltip();
       handlePinInteraction(ev.id);
     });
-    el.addEventListener('mouseenter', () => {
+    el.addEventListener('mouseenter', (e) => {
       if (!window.matchMedia('(hover: hover)').matches) return;
-      cancelPopupClose();
-      handlePinInteraction(ev.id);
+      showNameTooltip(ev.name, e.clientX, e.clientY);
     });
     el.addEventListener('mouseleave', () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
-      schedulePopupClose();
+      hideNameTooltip();
     });
 
     tmMarkers.current[ev.id] = { marker, overlay };
@@ -1347,16 +1347,6 @@ export default function WadUp() {
         console.log('[DEBUG] Matching chip', chip, ':', matching.length);
         matching.forEach(v => console.log('[DEBUG]', v.name, v.lat, v.lng, v.categories, v.is_hidden));
       };
-
-      // Desktop hover: keep the popup open while the mouse is over the popup
-      // itself (not just the pin), and close it on a delay when it leaves both.
-      window.google.maps.event.addListener(infoWindow.current, 'domready', () => {
-        if (!window.matchMedia('(hover: hover)').matches) return;
-        const bubble = document.querySelector('.gm-style-iw-a');
-        if (!bubble) return;
-        bubble.addEventListener('mouseenter', cancelPopupClose);
-        bubble.addEventListener('mouseleave', schedulePopupClose);
-      });
 
       // User dot
       new window.google.maps.Marker({
