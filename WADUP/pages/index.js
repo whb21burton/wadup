@@ -138,9 +138,8 @@ export default function WadUp() {
   const searchDebounceRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // Spider fan-out (overlapping pins)
+  // Overlapping-pins tracking (used by findNearbyPins/showStackedPopup)
   const pinRegistry   = useRef(new Map());  // id -> { id, type, marker, overlay, el, lat, lng, chipVisible, openPopup }
-  const spiderStateRef = useRef(null);      // { ids: Set, entries, legsOverlay, onCollapse } | null
   const popupCloseTimer = useRef(null);     // desktop hover: pending delayed-close timeout for the InfoWindow
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
@@ -355,11 +354,6 @@ export default function WadUp() {
     console.log('[FILTER] venue count:', Object.keys(mapMarkers.current).length);
     console.log('[FILTER] tm count:', Object.keys(tmMarkers.current).length);
 
-    // A chip/date change supersedes whatever fan-out was showing — collapse
-    // it first so a pin doesn't end up stuck at its spiderfied offset while
-    // also being hidden/shown by the filter below.
-    collapseSpiderfy();
-
     Object.entries(mapMarkers.current).forEach(([id, entry]) => {
       const venue = venuesRef.current.find(v => v.id === id);
       if (!venue) {
@@ -368,9 +362,9 @@ export default function WadUp() {
       }
       const show = venueMatchesChip(chip, venue, subcategory);
       // pinRegistry's own chipVisible flag is kept in sync too — findNearbyPins
-      // (the spiderfy fan-out) checks a pin's live map state to decide what's
-      // "hidden by the active filter", so this has to stay accurate even
-      // though this function no longer routes through it to apply visibility.
+      // checks a pin's live map state to decide what's "hidden by the active
+      // filter", so this has to stay accurate even though this function no
+      // longer routes through it to apply visibility.
       const registryEntry = pinRegistry.current.get(id);
       if (registryEntry) registryEntry.chipVisible = show;
       entry.marker.setMap(show ? map : null);
@@ -436,11 +430,6 @@ export default function WadUp() {
       'inViewport:', inViewport.length, 'top10:', Math.min(ranked.length, 10),
       'discovery:', Math.max(ranked.length - 10, 0));
 
-    // A chip/bounds change supersedes whatever fan-out was showing, and every
-    // pin about to be redropped below would leave the fan-out holding stale
-    // marker/overlay references otherwise.
-    collapseSpiderfy();
-
     // Venues that scrolled out of the viewport since the last pass are hidden
     // outright (not redropped as discovery dots) — they'll get a fresh pin
     // with a fresh rank the moment they're back in view.
@@ -483,14 +472,10 @@ export default function WadUp() {
       if (!proj) return;
       const pt = proj.fromLatLngToDivPixel(pos);
       if (!pt) return;
-      // A spiderfied pin carries a temporary fan-out offset in its dataset —
-      // reapplied here so it survives any map-triggered redraw.
-      const dx = el.dataset.spiderDx || 0;
-      const dy = el.dataset.spiderDy || 0;
       el.style.position  = 'absolute';
       el.style.left      = pt.x + 'px';
       el.style.top       = pt.y + 'px';
-      el.style.transform = `${base} translate(${dx}px, ${dy}px)`;
+      el.style.transform = base;
     };
     overlay.onRemove = function() {
       if (el.parentNode) el.parentNode.removeChild(el);
@@ -499,7 +484,11 @@ export default function WadUp() {
     return overlay;
   }
 
-  // ── Spiderfy: fan overlapping pins out in a circle so each is tappable ──
+  // ── Find every pin within 40 screen pixels of a clicked one — used by
+  // handlePinInteraction to decide "open its popup directly" vs "show a
+  // stacked list popup" (see showStackedPopup below). Pure pixel distance
+  // via the map's div-pixel projection, not lat/lng distance, so it stays
+  // correct at any zoom level. ──
   function findNearbyPins(clickedEntry) {
     const map = mapObj.current;
     const proj = clickedEntry.overlay.getProjection();
@@ -517,78 +506,47 @@ export default function WadUp() {
     return nearby;
   }
 
-  function createSpiderLegsOverlay(anchorEntry, legs) {
-    const map = mapObj.current;
-    const container = document.createElement('div');
-    container.className = 'wu-spider-legs';
-    legs.forEach(({ dx, dy }) => {
-      const len   = Math.sqrt(dx * dx + dy * dy);
-      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-      const leg = document.createElement('div');
-      leg.className = 'wu-spider-leg';
-      leg.style.width = len + 'px';
-      leg.style.transform = `rotate(${angle}deg)`;
-      container.appendChild(leg);
-    });
+  // ── Stacked pins popup — shown (via the same shared `infoWindow` every
+  // single-pin popup uses, so outside-click-to-close and hover-close timing
+  // both come for free) when a click lands on a cluster of 2+ pins, instead
+  // of fanning them out. Each row's onclick re-looks-up its pin in
+  // pinRegistry by id at CLICK time (via window.__wadupSelectStackedVenue,
+  // defined at map-init below) rather than closing over marker/overlay
+  // objects directly, so a pin redrop while this is open can't leave a
+  // stale reference — it just finds the current entry or quietly no-ops.
+  function showStackedPopup(entries, clickedEntry) {
+    const itemsHtml = entries.map((entry) => {
+      let name, icon, price;
+      if (entry.type === 'tm') {
+        const ev = tmEventsRef.current.find(e => e.id === entry.id);
+        if (!ev) return '';
+        name = ev.name;
+        icon = ev.cat === 'sports' ? (ev.sportEmoji || '🏟️') : '🎟️';
+        price = ev.price || '';
+      } else {
+        const v = venuesRef.current.find(v => v.id === entry.id);
+        if (!v) return '';
+        name = v.name;
+        icon = venueEmoji(v);
+        price = '';
+      }
+      return `
+        <div class="stacked-item" onclick="window.__wadupSelectStackedVenue('${entry.id}')">
+          <span class="stacked-emoji">${icon}</span>
+          <span class="stacked-name">${escapeHtml(name)}</span>
+          ${price ? `<span class="stacked-price">${escapeHtml(price)}</span>` : ''}
+        </div>`;
+    }).join('');
 
-    const pos = new window.google.maps.LatLng(anchorEntry.lat, anchorEntry.lng);
-    const overlay = new window.google.maps.OverlayView();
-    overlay.onAdd = function() { this.getPanes().overlayLayer.appendChild(container); };
-    overlay.draw = function() {
-      const proj = this.getProjection();
-      if (!proj) return;
-      const pt = proj.fromLatLngToDivPixel(pos);
-      if (!pt) return;
-      container.style.position = 'absolute';
-      container.style.left = pt.x + 'px';
-      container.style.top  = pt.y + 'px';
-    };
-    overlay.onRemove = function() { if (container.parentNode) container.parentNode.removeChild(container); };
-    overlay.setMap(map);
-    return overlay;
-  }
+    const content = `
+      <div class="stacked-popup">
+        <div class="stacked-header">${entries.length} places here</div>
+        <div class="stacked-list">${itemsHtml}</div>
+      </div>`;
 
-  function collapseSpiderfy() {
-    const state = spiderStateRef.current;
-    if (!state) return;
-    state.entries.forEach(entry => {
-      entry.el.dataset.spiderDx = '0';
-      entry.el.dataset.spiderDy = '0';
-      entry.overlay.draw();
-      const el = entry.el;
-      setTimeout(() => el.classList.remove('wu-pin-spiderfied'), 300);
-    });
-    state.legsOverlay.setMap(null);
-    spiderStateRef.current = null;
-  }
-
-  function spiderfy(entries) {
-    const map = mapObj.current;
-    if (!map || entries.length < 2) return;
-    collapseSpiderfy();
-
-    const n = entries.length;
-    const radius = 80; // every fan-out leg is exactly the same length
-    const legs = [];
-
-    entries.forEach((entry, i) => {
-      const angle = (2 * Math.PI * i) / n - Math.PI / 2;
-      const dx = radius * Math.cos(angle);
-      const dy = radius * Math.sin(angle);
-      entry.el.dataset.spiderDx = String(dx);
-      entry.el.dataset.spiderDy = String(dy);
-      entry.el.classList.add('wu-pin-spiderfied');
-      entry.overlay.setMap(map);
-      entry.overlay.draw();
-      legs.push({ dx, dy });
-    });
-
-    const legsOverlay = createSpiderLegsOverlay(entries[0], legs);
-    spiderStateRef.current = {
-      ids: new Set(entries.map(e => e.id)),
-      entries,
-      legsOverlay,
-    };
+    infoWindow.current.setContent(content);
+    infoWindow.current.setPosition(new window.google.maps.LatLng(clickedEntry.lat, clickedEntry.lng));
+    infoWindow.current.open(mapObj.current);
   }
 
   // ── Desktop hover popup: delayed close so the mouse can travel from the
@@ -612,14 +570,9 @@ export default function WadUp() {
     const entry = pinRegistry.current.get(id);
     if (!entry) return;
 
-    if (spiderStateRef.current && spiderStateRef.current.ids.has(id)) {
-      entry.openPopup();
-      return;
-    }
-
     const nearby = findNearbyPins(entry);
     if (nearby.length > 1) {
-      spiderfy(nearby);
+      showStackedPopup(nearby, entry);
       return;
     }
     entry.openPopup();
@@ -1351,6 +1304,15 @@ export default function WadUp() {
         openEditPanel(venue);
       };
 
+      // Bridge for a stacked-pins popup's rows (see showStackedPopup) — looks
+      // the pin back up in pinRegistry AT CLICK TIME rather than closing over
+      // it when the popup was built, so a redrop in between can't leave this
+      // pointing at something stale.
+      window.__wadupSelectStackedVenue = (id) => {
+        infoWindow.current.close();
+        pinRegistry.current.get(id)?.openPopup();
+      };
+
       // TEMP DEBUG — remove once the "too few venues on the map" investigation
       // is closed out. Callable from the console as window.__debugVenues(),
       // also wired to a visible "🐞 Debug Venues" button (see JSX below).
@@ -1386,7 +1348,6 @@ export default function WadUp() {
 
       // Zoom listener
       map.addListener('zoom_changed', () => {
-        collapseSpiderfy();
         const z = map.getZoom();
         const zc = z < 7 ? 'zoom-far' : z < 11 ? 'zoom-mid' : 'zoom-near';
         setZoomClass(zc);
@@ -1403,10 +1364,6 @@ export default function WadUp() {
           el.classList.toggle('visible', showDiscovery);
         });
       });
-
-      // Clicking/dragging the map background collapses any open spiderfy fan-out
-      map.addListener('click', () => collapseSpiderfy());
-      map.addListener('dragstart', () => collapseSpiderfy());
 
       // Panning/zooming changes which venues are "in bounds" for area
       // ranking without touching the chip filter at all, so this needs its
