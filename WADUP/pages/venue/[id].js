@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
-import { CATEGORY_LABELS, venueCategories } from '../../lib/data';
+import { CATEGORY_LABELS, venueCategories, formatTime } from '../../lib/data';
 import { getBestRated } from '../../lib/rankings';
 import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
@@ -22,14 +22,6 @@ const EVENT_TYPE_LABELS = {
   specials:   'Specials',
   happy_hour: 'Happy Hour',
 };
-
-function formatTime12h(t) {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  const period = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
-}
 
 function ensureUrl(url) {
   if (!url) return '';
@@ -525,7 +517,7 @@ export default function VenuePage() {
                   return (
                     <div key={i} className="venue-hours-row">
                       <span>{name}</span>
-                      <span>{row ? `${formatTime12h(row.open_time)} – ${formatTime12h(row.close_time)}` : 'Closed'}</span>
+                      <span>{row ? `${formatTime(row.open_time)} – ${formatTime(row.close_time)}` : 'Closed'}</span>
                     </div>
                   );
                 })}

@@ -4,8 +4,7 @@ import Link from 'next/link';
 import {
   CATEGORY_CHIPS, CATEGORY_LABELS, EMOJI_OPTIONS,
   isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
-  venueMatchesChip, venueCategories, isChain,
-  tmSegmentToCat, tmSportEmoji, TM_REGIONS
+  venueMatchesChip, venueCategories, isChain, formatTime
 } from '../lib/data';
 import { getLiveTrendingVenueIds, getBestRated, getScheduleTrendingVenues } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
@@ -1023,7 +1022,7 @@ export default function WadUp() {
         <div class="popup-name">${icon} ${escapeHtml(ev.name)}</div>
         <div class="popup-type">${escapeHtml(CATEGORY_LABELS[ev.cat] || ev.cat)}${ev.city ? ' · ' + escapeHtml(ev.city) + ', ' + escapeHtml(ev.state) : ''}</div>
         <div class="popup-row">
-          <span class="popup-stat">📅 ${dateDisplay}${ev.timeStr ? ' · '+ev.timeStr.slice(0,5) : ''}</span>
+          <span class="popup-stat">📅 ${dateDisplay}${ev.timeStr ? ' · '+formatTime(ev.timeStr) : ''}</span>
           ${ev.price ? `<span class="popup-stat popup-price">${escapeHtml(ev.price)}</span>` : ''}
         </div>
         ${ev.url ? `<a class="popup-link" href="${withTMAffiliateTracking(ev.url)}" target="_blank">🎟️ Get Tickets →</a>` : ''}
@@ -1064,83 +1063,48 @@ export default function WadUp() {
     pinRegistry.current.set(ev.id, entry);
   }, [zoomClass]);
 
-  // ── Fetch Ticketmaster (server-side proxy) ──
+  // ── Load Ticketmaster events from the server-side cache ── populated by
+  // pages/api/cron/sync-tm-events.js (a 2-hourly Vercel Cron job — see
+  // vercel.json), not fetched live per pageview. cat/sportEmoji are already
+  // computed at cache-write time, so no classification-parsing happens here.
   const fetchTM = useCallback(async () => {
-    const now    = new Date();
-    const future = new Date(now.getTime() + 60*24*60*60*1000);
-    const startDT = now.toISOString().replace(/\.\d{3}Z$/,'Z');
-    const endDT   = future.toISOString().replace(/\.\d{3}Z$/,'Z');
+    try {
+      const { data: events, error } = await supabase
+        .from('tm_events_cache')
+        .select('*')
+        .gte('date_str', new Date().toISOString().slice(0, 10)) // only future events
+        .order('date_str', { ascending: true });
+      if (error) throw error;
 
-    const seen = {};
-    let completed = 0;
-    const total = TM_REGIONS.length;
+      Object.entries(tmMarkers.current).forEach(([id, entry]) => {
+        entry.marker.setMap(null);
+        if (entry.overlay) entry.overlay.setMap(null);
+        pinRegistry.current.delete(id);
+      });
+      tmMarkers.current = {};
+      tmEventsRef.current = [];
 
-    const parseAndDrop = (data) => {
-      const events = data._embedded?.events || [];
-      events.forEach((ev) => {
-        if (seen[ev.id]) return;
-        seen[ev.id] = true;
-
-        const ven     = ev._embedded?.venues?.[0] || {};
-        const loc     = ven.location || {};
-        const elng    = parseFloat(loc.longitude);
-        const elat    = parseFloat(loc.latitude);
-        if (isNaN(elng) || isNaN(elat)) return;
-
-        const dateStr    = ev.dates?.start?.localDate || '';
-        const timeStr    = ev.dates?.start?.localTime || '';
-        const classification = ev.classifications?.[0] || {};
-        const segment    = classification.segment?.name || '';
-        const genre      = classification.genre?.name || '';
-        const subGenre   = classification.subGenre?.name || '';
-        const cat        = tmSegmentToCat(ev.classifications, ev.name);
-        const img        = (ev.images?.find(i => i.ratio==='16_9' && i.width>500) || ev.images?.[0])?.url || '';
-        let price = '';
-        if (ev.priceRanges?.[0]) {
-          const pr = ev.priceRanges[0];
-          price = `$${Math.round(pr.min)}${pr.max && pr.max !== pr.min ? ` – $${Math.round(pr.max)}` : ''}`;
-        }
-
+      (events || []).forEach((ev) => {
         const norm = {
-          id: 'tm_'+ev.id, _isTM: true,
-          name: ev.name, cat, segment, genre, subGenre,
-          address: ven.address?.line1 || '',
-          city: ven.city?.name || '', state: ven.state?.stateCode || '',
-          lng: elng, lat: elat,
-          dateStr, timeStr, price, img, url: ev.url || '',
+          id: 'tm_' + ev.tm_id, _isTM: true,
+          name: ev.name, cat: ev.cat || 'events',
+          segment: ev.segment, genre: ev.genre, subGenre: ev.sub_genre,
+          sportEmoji: ev.sport_emoji || undefined,
+          address: ev.address || '',
+          city: ev.city || '', state: ev.state || '',
+          lng: ev.lng, lat: ev.lat,
+          dateStr: ev.date_str || '', timeStr: ev.time_str || '',
+          price: ev.price || '', img: ev.image_url || '', url: ev.url || '',
           live: true,
         };
-        if (cat === 'sports') norm.sportEmoji = tmSportEmoji(norm);
-
         tmEventsRef.current.push(norm);
         dropTMPin(norm);
       });
-    };
 
-    const fetchRegion = async (region, i) => {
-      await new Promise(r => setTimeout(r, i * 150));
-      const qs = new URLSearchParams({
-        size: 200, sort: 'date,asc', radius: 250, unit: 'miles',
-        latlong: `${region.lat},${region.lng}`,
-        startDateTime: startDT, endDateTime: endDT,
-      });
-      try {
-        const res  = await fetch(`/api/tm?${qs}`);
-        const data = await res.json();
-        parseAndDrop(data);
-      } catch (e) {
-        /* region fetch failed — skip */
-      } finally {
-        completed++;
-        if (completed === total || completed === 1) {
-          filterPins();
-        }
-      }
-    };
-
-    // Stagger all regions
-    tmEventsRef.current = [];
-    TM_REGIONS.forEach((r, i) => fetchRegion(r, i));
+      filterPins();
+    } catch (e) {
+      /* TM cache read failed — leave whatever was showing */
+    }
   }, [dropTMPin, filterPins]);
 
   // ── Load real Chattanooga venues from Supabase (Google Places-sourced) ──

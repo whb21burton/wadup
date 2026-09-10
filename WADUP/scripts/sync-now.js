@@ -29,6 +29,14 @@ async function main() {
 
   const data = await res.json();
   console.log('Result:', JSON.stringify(data, null, 2));
+
+  console.log('\nTriggering Ticketmaster events cache sync...');
+  const tmRes = await fetch('https://www.wadup.app/api/cron/sync-tm-events', {
+    method: 'GET',
+    headers: { 'x-admin-password': process.env.ADMIN_SYNC_PASSWORD },
+  });
+  const tmData = await tmRes.json();
+  console.log('TM Cache:', JSON.stringify(tmData, null, 2));
 }
 
 main().catch(console.error);

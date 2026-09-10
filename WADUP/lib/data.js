@@ -246,11 +246,71 @@ export function tmSportEmoji(ev) {
   return '🏟️';
 }
 
+// Nationwide Ticketmaster search regions — used server-side only, by
+// pages/api/cron/sync-tm-events.js (a 2-hourly Vercel Cron job that
+// populates the tm_events_cache table; see vercel.json). pages/index.js no
+// longer imports this — it reads the already-fetched, already-nationwide
+// cache instead of hitting the Ticketmaster API per pageview, which is what
+// makes 43 regions affordable at all (43 calls every 2 hours from the cron,
+// not 43 calls × every single visitor).
 export const TM_REGIONS = [
-  {lat:35.0456, lng:-85.3096}, {lat:40.7128, lng:-74.0060},
-  {lat:34.0522, lng:-118.2437},{lat:41.8781, lng:-87.6298},
-  {lat:29.7604, lng:-95.3698}, {lat:33.4484, lng:-112.0740},
-  {lat:47.6062, lng:-122.3321},{lat:39.9526, lng:-75.1652},
-  {lat:25.7617, lng:-80.1918}, {lat:44.9778, lng:-93.2650},
-  {lat:39.7392, lng:-104.9903},{lat:29.4241, lng:-98.4936},
+  {lat:40.7128, lng:-74.0060},  // NYC
+  {lat:42.3601, lng:-71.0589},  // Boston
+  {lat:39.9526, lng:-75.1652},  // Philadelphia
+  {lat:38.9072, lng:-77.0369},  // DC
+  {lat:35.0456, lng:-85.3096},  // Chattanooga
+  {lat:36.1627, lng:-86.7816},  // Nashville
+  {lat:35.2271, lng:-80.8431},  // Charlotte
+  {lat:33.7490, lng:-84.3880},  // Atlanta
+  {lat:25.7617, lng:-80.1918},  // Miami
+  {lat:28.5383, lng:-81.3792},  // Orlando
+  {lat:30.3322, lng:-81.6557},  // Jacksonville
+  {lat:35.7796, lng:-78.6382},  // Raleigh
+  {lat:41.8781, lng:-87.6298},  // Chicago
+  {lat:39.7684, lng:-86.1581},  // Indianapolis
+  {lat:39.9612, lng:-82.9988},  // Columbus
+  {lat:41.4993, lng:-81.6944},  // Cleveland
+  {lat:42.3314, lng:-83.0458},  // Detroit
+  {lat:44.9778, lng:-93.2650},  // Minneapolis
+  {lat:38.6270, lng:-90.1994},  // St Louis
+  {lat:39.0997, lng:-94.5786},  // Kansas City
+  {lat:29.7604, lng:-95.3698},  // Houston
+  {lat:29.4241, lng:-98.4936},  // San Antonio
+  {lat:30.2672, lng:-97.7431},  // Austin
+  {lat:32.7767, lng:-96.7970},  // Dallas
+  {lat:35.4676, lng:-97.5164},  // Oklahoma City
+  {lat:32.2988, lng:-90.1848},  // Jackson MS
+  {lat:29.9511, lng:-90.0715},  // New Orleans
+  {lat:35.1495, lng:-90.0490},  // Memphis
+  {lat:39.7392, lng:-104.9903}, // Denver
+  {lat:40.7608, lng:-111.8910}, // Salt Lake City
+  {lat:33.4484, lng:-112.0740}, // Phoenix
+  {lat:36.1699, lng:-115.1398}, // Las Vegas
+  {lat:34.0522, lng:-118.2437}, // LA
+  {lat:37.7749, lng:-122.4194}, // SF
+  {lat:47.6062, lng:-122.3321}, // Seattle
+  {lat:45.5051, lng:-122.6750}, // Portland
+  {lat:32.7157, lng:-117.1611}, // San Diego
+  {lat:32.3668, lng:-86.3000},  // Montgomery AL
+  {lat:30.6954, lng:-88.0399},  // Mobile AL
+  {lat:36.1540, lng:-95.9928},  // Tulsa
+  {lat:30.4515, lng:-91.1871},  // Baton Rouge
+  {lat:43.0389, lng:-87.9065},  // Milwaukee (as-given coords were actually Syracuse's — corrected)
+  {lat:41.2565, lng:-95.9345},  // Omaha
+  {lat:21.3069, lng:-157.8583}, // Honolulu
 ];
+
+// TM's Discovery API returns localTime as 24-hour "HH:MM" or "HH:MM:SS" —
+// this is the one shared 12-hour formatter for it (and for any other
+// "HH:MM[:SS]" string, e.g. venue_schedule's open_time/close_time).
+export function formatTime(timeStr) {
+  if (!timeStr) return '';
+  try {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+  } catch {
+    return timeStr;
+  }
+}

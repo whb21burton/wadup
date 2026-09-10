@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../lib/supabase';
-import { CATEGORY_LABELS, tmSegmentToCat, tmSportEmoji } from '../lib/data';
+import { CATEGORY_LABELS, tmSegmentToCat, tmSportEmoji, formatTime } from '../lib/data';
 import { getTrendingVenues, getBestRated, getLocalFavorites } from '../lib/rankings';
 
 const DEFAULT_CITY   = 'Chattanooga';
@@ -67,7 +67,7 @@ function formatEventDate(startTs) {
 function formatTmDate(dateStr, timeStr) {
   if (!dateStr) return 'Date TBD';
   const label = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return timeStr ? `${label} · ${timeStr.slice(0, 5)}` : label;
+  return timeStr ? `${label} · ${formatTime(timeStr)}` : label;
 }
 
 // One Ticketmaster fetch (server-side proxy) for a single date window, scoped
