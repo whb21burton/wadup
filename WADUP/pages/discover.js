@@ -17,12 +17,31 @@ const TM_ADVERTISER_ID = '4272';
 // (replaces the old ?camefrom= param, which didn't actually attribute
 // clicks/commissions through Impact) — kept identical to pages/index.js's
 // copy of this function so both places attribute the same way.
-function withTMAffiliateTracking(url) {
-  if (!url) return url;
+function withTMAffiliateTracking(ticketUrl) {
+  if (!ticketUrl) return null;
   try {
-    return `https://ticketmaster.evyy.net/c/${TM_AFFILIATE_ID}/${TM_CAMPAIGN_ID}/${TM_ADVERTISER_ID}?u=${encodeURIComponent(url)}`;
+    let url = new URL(ticketUrl);
+
+    // Ticketmaster's Discovery API — for an API key tied to an approved
+    // affiliate account, which ours is — already returns event.url values
+    // PRE-WRAPPED in Impact's evyy.net redirect format (generic "APP"
+    // affiliate id, but the same real campaign/advertiser ids as below).
+    // Wrapping that again nests one Impact redirect inside another, which
+    // produces a "malformed link" error on Impact's side: unwrap to the
+    // real ticketmaster.com destination first when that's what we're given.
+    if (url.hostname === 'ticketmaster.evyy.net') {
+      const inner = url.searchParams.get('u');
+      if (!inner) return null;
+      url = new URL(inner);
+    }
+
+    if (!url.hostname.includes('ticketmaster') && !url.hostname.includes('livenation')) {
+      return url.toString();
+    }
+
+    return `https://ticketmaster.evyy.net/c/${TM_AFFILIATE_ID}/${TM_CAMPAIGN_ID}/${TM_ADVERTISER_ID}?u=${encodeURIComponent(url.toString())}`;
   } catch (e) {
-    return url;
+    return null;
   }
 }
 
@@ -143,7 +162,7 @@ function normalizeVenueEventCard(ve) {
 function normalizeTMCard(ev) {
   return {
     key: 'tm_' + ev.id,
-    href: withTMAffiliateTracking(ev.url),
+    href: ev.url && ev.url.startsWith('http') ? withTMAffiliateTracking(ev.url) : null,
     external: true,
     image: ev.img || null,
     name: ev.name,

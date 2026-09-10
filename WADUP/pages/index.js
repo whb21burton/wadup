@@ -24,12 +24,31 @@ const TM_ADVERTISER_ID = '4272';
 // ── Wrap an outbound Ticketmaster URL in Impact's affiliate tracking link
 // (replaces the old ?camefrom= param, which didn't actually attribute
 // clicks/commissions through Impact) ──
-function withTMAffiliateTracking(url) {
-  if (!url) return url;
+function withTMAffiliateTracking(ticketUrl) {
+  if (!ticketUrl) return null;
   try {
-    return `https://ticketmaster.evyy.net/c/${TM_AFFILIATE_ID}/${TM_CAMPAIGN_ID}/${TM_ADVERTISER_ID}?u=${encodeURIComponent(url)}`;
+    let url = new URL(ticketUrl);
+
+    // Ticketmaster's Discovery API — for an API key tied to an approved
+    // affiliate account, which ours is — already returns event.url values
+    // PRE-WRAPPED in Impact's evyy.net redirect format (generic "APP"
+    // affiliate id, but the same real campaign/advertiser ids as below).
+    // Wrapping that again nests one Impact redirect inside another, which
+    // is exactly what produced the "malformed link" error: unwrap to the
+    // real ticketmaster.com destination first when that's what we're given.
+    if (url.hostname === 'ticketmaster.evyy.net') {
+      const inner = url.searchParams.get('u');
+      if (!inner) return null;
+      url = new URL(inner);
+    }
+
+    if (!url.hostname.includes('ticketmaster') && !url.hostname.includes('livenation')) {
+      return url.toString();
+    }
+
+    return `https://ticketmaster.evyy.net/c/${TM_AFFILIATE_ID}/${TM_CAMPAIGN_ID}/${TM_ADVERTISER_ID}?u=${encodeURIComponent(url.toString())}`;
   } catch (e) {
-    return url;
+    return null;
   }
 }
 
@@ -970,6 +989,11 @@ export default function WadUp() {
       ? new Date(ev.dateStr + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
       : 'Date TBD';
 
+    // Only attempt the affiliate wrap (and only show the button at all) for
+    // something that's actually a URL — a missing/malformed ev.url would
+    // otherwise still render a broken "Get Tickets" link.
+    const ticketLink = ev.url && ev.url.startsWith('http') ? withTMAffiliateTracking(ev.url) : null;
+
     const iwHtml = `
       <div class="gm-iw">
         <div class="popup-name">${icon} ${escapeHtml(ev.name)}</div>
@@ -978,7 +1002,7 @@ export default function WadUp() {
           <span class="popup-stat">📅 ${dateDisplay}${ev.timeStr ? ' · '+formatTime(ev.timeStr) : ''}</span>
           ${ev.price ? `<span class="popup-stat popup-price">${escapeHtml(ev.price)}</span>` : ''}
         </div>
-        ${ev.url ? `<a class="popup-link" href="${withTMAffiliateTracking(ev.url)}" target="_blank">🎟️ Get Tickets →</a>` : ''}
+        ${ticketLink ? `<a class="popup-link" href="${escapeHtml(ticketLink)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets →</a>` : ''}
         <div class="popup-source">via Ticketmaster</div>
       </div>`;
 
