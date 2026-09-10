@@ -157,8 +157,9 @@ export default function WadUp() {
   const searchDebounceRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // Overlapping-pins tracking (used by findNearbyPins/showStackedPopup)
-  const pinRegistry   = useRef(new Map());  // id -> { id, type, marker, overlay, el, lat, lng, chipVisible, openPopup }
+  // Every live pin, keyed by id — click handlers look themselves up here to
+  // call their own openPopup.
+  const pinRegistry   = useRef(new Map());  // id -> { id, type, marker, overlay, el, lat, lng, openPopup }
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('events');
@@ -379,12 +380,6 @@ export default function WadUp() {
         return;
       }
       const show = venueMatchesChip(chip, venue, subcategory);
-      // pinRegistry's own chipVisible flag is kept in sync too — findNearbyPins
-      // checks a pin's live map state to decide what's "hidden by the active
-      // filter", so this has to stay accurate even though this function no
-      // longer routes through it to apply visibility.
-      const registryEntry = pinRegistry.current.get(id);
-      if (registryEntry) registryEntry.chipVisible = show;
       entry.marker.setMap(show ? map : null);
       // Venue pins track their overlay in the separate `overlays` ref, not on
       // this mapMarkers entry (unlike TM pins below, whose entry bundles
@@ -401,8 +396,6 @@ export default function WadUp() {
       const catMatch  = ev.cat === chip;
       const dateMatch = !date || ev.dateStr === date;
       const show = catMatch && dateMatch;
-      const registryEntry = pinRegistry.current.get(id);
-      if (registryEntry) registryEntry.chipVisible = show;
       entry.marker.setMap(show ? map : null);
       if (entry.overlay) entry.overlay.setMap(show ? map : null);
     });
@@ -502,81 +495,11 @@ export default function WadUp() {
     return overlay;
   }
 
-  // ── Find every pin within 40 screen pixels of a clicked one — used by
-  // handlePinInteraction to decide "open its popup directly" vs "show a
-  // stacked list popup" (see showStackedPopup below). Pure pixel distance
-  // via the map's div-pixel projection, not lat/lng distance, so it stays
-  // correct at any zoom level. ──
-  function findNearbyPins(clickedEntry) {
-    const map = mapObj.current;
-    const proj = clickedEntry.overlay.getProjection();
-    if (!map || !proj) return [clickedEntry];
-    const clickedPt = proj.fromLatLngToDivPixel(new window.google.maps.LatLng(clickedEntry.lat, clickedEntry.lng));
-    const zoom = map.getZoom();
-    const nearby = [];
-    pinRegistry.current.forEach((entry) => {
-      if (entry.marker.getMap() !== map) return; // hidden by the active chip/date filter
-      if (entry.tier === 'discovery' && zoom < 17) return; // hidden by the zoom-17 discovery threshold
-      const pt = proj.fromLatLngToDivPixel(new window.google.maps.LatLng(entry.lat, entry.lng));
-      const dx = pt.x - clickedPt.x, dy = pt.y - clickedPt.y;
-      if (Math.sqrt(dx * dx + dy * dy) <= 40) nearby.push(entry);
-    });
-    return nearby;
-  }
-
-  // ── Stacked pins popup — shown (via the same shared `infoWindow` every
-  // single-pin popup uses, so outside-click-to-close and hover-close timing
-  // both come for free) when a click lands on a cluster of 2+ pins, instead
-  // of fanning them out. Each row's onclick re-looks-up its pin in
-  // pinRegistry by id at CLICK time (via window.__wadupSelectStackedVenue,
-  // defined at map-init below) rather than closing over marker/overlay
-  // objects directly, so a pin redrop while this is open can't leave a
-  // stale reference — it just finds the current entry or quietly no-ops.
-  function showStackedPopup(entries, clickedEntry) {
-    const itemsHtml = entries.map((entry) => {
-      let name, icon, price;
-      if (entry.type === 'tm') {
-        const ev = tmEventsRef.current.find(e => e.id === entry.id);
-        if (!ev) return '';
-        name = ev.name;
-        icon = ev.cat === 'sports' ? (ev.sportEmoji || '🏟️') : '🎟️';
-        price = ev.price || '';
-      } else {
-        const v = venuesRef.current.find(v => v.id === entry.id);
-        if (!v) return '';
-        name = v.name;
-        icon = venueEmoji(v);
-        price = '';
-      }
-      return `
-        <div class="stacked-item" onclick="window.__wadupSelectStackedVenue('${entry.id}')">
-          <span class="stacked-emoji">${icon}</span>
-          <span class="stacked-name">${escapeHtml(name)}</span>
-          ${price ? `<span class="stacked-price">${escapeHtml(price)}</span>` : ''}
-        </div>`;
-    }).join('');
-
-    const content = `
-      <div class="stacked-popup">
-        <div class="stacked-header">${entries.length} places here</div>
-        <div class="stacked-list">${itemsHtml}</div>
-      </div>`;
-
-    infoWindow.current.setContent(content);
-    infoWindow.current.setPosition(new window.google.maps.LatLng(clickedEntry.lat, clickedEntry.lng));
-    infoWindow.current.open(mapObj.current);
-  }
-
-  // Shared entry point for click on any pin.
+  // Shared entry point for click on any pin — always opens that pin's own
+  // popup directly, regardless of whatever else is nearby on screen.
   function handlePinInteraction(id) {
     const entry = pinRegistry.current.get(id);
     if (!entry) return;
-
-    const nearby = findNearbyPins(entry);
-    if (nearby.length > 1) {
-      showStackedPopup(nearby, entry);
-      return;
-    }
     entry.openPopup();
   }
 
@@ -763,7 +686,7 @@ export default function WadUp() {
     mapMarkers.current[v.id] = { marker };
     overlays.current[v.id]   = overlay;
 
-    const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, el, lat: v.lat, lng: v.lng, chipVisible: true, openPopup };
+    const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, el, lat: v.lat, lng: v.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
   }, [zoomClass]);
 
@@ -921,7 +844,7 @@ export default function WadUp() {
     mapMarkers.current[v.id] = { marker };
     overlays.current[v.id]   = overlay;
 
-    const entry = { id: v.id, type: 'venue', tier: showName ? 'top10' : 'discovery', rank: areaRank, marker, overlay, el, lat: v.lat, lng: v.lng, chipVisible: true, openPopup };
+    const entry = { id: v.id, type: 'venue', tier: showName ? 'top10' : 'discovery', rank: areaRank, marker, overlay, el, lat: v.lat, lng: v.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
   }, [zoomClass]);
 
@@ -1031,7 +954,7 @@ export default function WadUp() {
 
     tmMarkers.current[ev.id] = { marker, overlay };
 
-    const entry = { id: ev.id, type: 'tm', marker, overlay, el, lat: ev.lat, lng: ev.lng, chipVisible: true, openPopup };
+    const entry = { id: ev.id, type: 'tm', marker, overlay, el, lat: ev.lat, lng: ev.lng, openPopup };
     pinRegistry.current.set(ev.id, entry);
   }, [zoomClass]);
 
@@ -1321,15 +1244,6 @@ export default function WadUp() {
         if (!venue) return;
         infoWindow.current.close();
         openEditPanel(venue);
-      };
-
-      // Bridge for a stacked-pins popup's rows (see showStackedPopup) — looks
-      // the pin back up in pinRegistry AT CLICK TIME rather than closing over
-      // it when the popup was built, so a redrop in between can't leave this
-      // pointing at something stale.
-      window.__wadupSelectStackedVenue = (id) => {
-        infoWindow.current.close();
-        pinRegistry.current.get(id)?.openPopup();
       };
 
       // TEMP DEBUG — remove once the "too few venues on the map" investigation
