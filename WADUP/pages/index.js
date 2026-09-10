@@ -567,28 +567,6 @@ export default function WadUp() {
     infoWindow.current.open(mapObj.current);
   }
 
-  // ── Tiny hover tooltip — just the pin's name, nothing else. The InfoWindow
-  // (stacked list or full popup) only ever opens on click now; hover never
-  // triggers it, so there's no close-delay/hover-into-popup coordination to
-  // manage here anymore. A single lazily-created DOM node outside React's
-  // tree, same pattern as the map/InfoWindow themselves being imperative. ──
-  function showNameTooltip(name, x, y) {
-    let tooltip = document.getElementById('wu-name-tooltip');
-    if (!tooltip) {
-      tooltip = document.createElement('div');
-      tooltip.id = 'wu-name-tooltip';
-      tooltip.className = 'wu-name-tooltip';
-      document.body.appendChild(tooltip);
-    }
-    tooltip.textContent = name;
-    tooltip.style.left = (x + 12) + 'px';
-    tooltip.style.top = (y - 28) + 'px';
-    tooltip.classList.add('visible');
-  }
-  function hideNameTooltip() {
-    document.getElementById('wu-name-tooltip')?.classList.remove('visible');
-  }
-
   // Shared entry point for click on any pin.
   function handlePinInteraction(id) {
     const entry = pinRegistry.current.get(id);
@@ -655,21 +633,26 @@ export default function WadUp() {
     const tier = specialIcon ? null : getVenueTier(areaRank);
     const rankStyle = tier === 'top10' ? getRankStyle(areaRank) : null;
 
-    const el = document.createElement('div');
-    if (v.is_private) el.style.opacity = '0.5';
+    // contentEl is the visual bubble — it gets the hover-scale transform via
+    // CSS. el (below) is a plain positioning shell makeOverlay moves around
+    // with an inline transform of its own; putting both transforms on the
+    // SAME element would mean the CSS :hover one just clobbers the JS
+    // positioning one instead of composing with it.
+    const contentEl = document.createElement('div');
+    if (v.is_private) contentEl.style.opacity = '0.5';
 
     if (specialIcon) {
-      el.className = `wu-pin ${zoomClass} wu-pin-emoji`;
+      contentEl.className = `wu-pin ${zoomClass} wu-pin-emoji`;
       const iconSpan = document.createElement('span');
       iconSpan.className = 'wu-emoji-icon';
       iconSpan.textContent = specialIcon;
-      el.appendChild(iconSpan);
+      contentEl.appendChild(iconSpan);
     } else if (tier === 'discovery') {
       // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
       console.log('[DISCOVERY] creating pin for:', v.name, 'rank:', areaRank, 'zoom:', map.getZoom());
 
-      el.className = 'wu-pin-discovery';
-      if (map.getZoom() >= 17) el.classList.add('visible');
+      contentEl.className = 'wu-pin-discovery';
+      if (map.getZoom() >= 17) contentEl.classList.add('visible');
 
       const dot = document.createElement('div');
       dot.className = 'wu-discovery-dot';
@@ -678,10 +661,10 @@ export default function WadUp() {
       label.className = 'wu-discovery-label';
       label.textContent = v.name;
 
-      el.appendChild(dot);
-      el.appendChild(label);
+      contentEl.appendChild(dot);
+      contentEl.appendChild(label);
     } else {
-      el.className = `wu-pin ${zoomClass}`;
+      contentEl.className = `wu-pin ${zoomClass}`;
       const pill = document.createElement('div');
       pill.className = 'wu-pill';
       pill.style.background = rankStyle.bg;
@@ -717,9 +700,13 @@ export default function WadUp() {
       tail.className = 'wu-tail';
       tail.style.borderTopColor = rankStyle.bg;
 
-      el.appendChild(pill);
-      el.appendChild(tail);
+      contentEl.appendChild(pill);
+      contentEl.appendChild(tail);
     }
+
+    const el = document.createElement('div');
+    el.className = 'wu-pin-wrapper';
+    el.appendChild(contentEl);
 
     const ratingHtml = hasRating
       ? `<div class="popup-rating">⭐ ${rating.toFixed(1)} (${ratingCount} ${hasWadupRating(v) ? 'WadUp ' : 'Google '}review${ratingCount === 1 ? '' : 's'})</div>`
@@ -763,16 +750,14 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      hideNameTooltip();
       handlePinInteraction(v.id);
     });
-    el.addEventListener('mouseenter', (e) => {
+    el.addEventListener('mouseenter', () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
-      showNameTooltip(v.name, e.clientX, e.clientY);
+      el.style.zIndex = '9999';
     });
     el.addEventListener('mouseleave', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      hideNameTooltip();
+      el.style.zIndex = '';
     });
 
     mapMarkers.current[v.id] = { marker };
@@ -827,11 +812,14 @@ export default function WadUp() {
     const flameLevel = v.current_flame || 0;
     const flameEmoji = flameLevel === 3 ? '🔴' : flameLevel === 2 ? '🟠' : flameLevel === 1 ? '🟡' : null;
 
-    const el = document.createElement('div');
-    if (v.is_private) el.style.opacity = '0.5';
+    // contentEl gets the hover-scale CSS transform; el (below) is a plain
+    // positioning shell makeOverlay moves with its own inline transform —
+    // see dropVenuePin's identical split for why these can't be one element.
+    const contentEl = document.createElement('div');
+    if (v.is_private) contentEl.style.opacity = '0.5';
 
     if (showName) {
-      el.className = `wu-pin ${zoomClass}`;
+      contentEl.className = `wu-pin ${zoomClass}`;
       const pill = document.createElement('div');
       pill.className = 'wu-pill';
       pill.style.background = rankStyle.bg;
@@ -868,14 +856,18 @@ export default function WadUp() {
       tail.className = 'wu-tail';
       tail.style.borderTopColor = rankStyle.bg;
 
-      el.appendChild(pill);
-      el.appendChild(tail);
+      contentEl.appendChild(pill);
+      contentEl.appendChild(tail);
     } else {
-      el.className = 'wu-bar-icon-pin';
-      el.innerHTML = flameEmoji
+      contentEl.className = 'wu-bar-icon-pin';
+      contentEl.innerHTML = flameEmoji
         ? `<div class="wu-flame-ring flame-${flameLevel}">${flameEmoji}</div><div class="wu-beer-icon">🍺</div>`
         : '<div class="wu-beer-icon">🍺</div>';
     }
+
+    const el = document.createElement('div');
+    el.className = 'wu-pin-wrapper';
+    el.appendChild(contentEl);
 
     const rating = effectiveRating(v);
     const ratingCount = effectiveRatingCount(v);
@@ -916,16 +908,14 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      hideNameTooltip();
       handlePinInteraction(v.id);
     });
-    el.addEventListener('mouseenter', (e) => {
+    el.addEventListener('mouseenter', () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
-      showNameTooltip(v.name, e.clientX, e.clientY);
+      el.style.zIndex = '9999';
     });
     el.addEventListener('mouseleave', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      hideNameTooltip();
+      el.style.zIndex = '';
     });
 
     mapMarkers.current[v.id] = { marker };
@@ -958,8 +948,11 @@ export default function WadUp() {
     const isSports = ev.cat === 'sports';
     const icon = isSports ? (ev.sportEmoji || '🏟️') : '🎟️';
 
-    const el = document.createElement('div');
-    el.className = `wu-pin ${zoomClass}`;
+    // contentEl gets the hover-scale CSS transform; el (below) is a plain
+    // positioning shell makeOverlay moves with its own inline transform —
+    // see dropVenuePin's identical split for why these can't be one element.
+    const contentEl = document.createElement('div');
+    contentEl.className = `wu-pin ${zoomClass}`;
 
     const pill = document.createElement('div');
     pill.className = 'wu-pill wu-pill-tm';
@@ -982,8 +975,12 @@ export default function WadUp() {
     const tail = document.createElement('div');
     tail.className = 'wu-tail wu-tail-tm';
 
-    el.appendChild(pill);
-    el.appendChild(tail);
+    contentEl.appendChild(pill);
+    contentEl.appendChild(tail);
+
+    const el = document.createElement('div');
+    el.className = 'wu-pin-wrapper';
+    el.appendChild(contentEl);
 
     const dateDisplay = ev.dateStr
       ? new Date(ev.dateStr + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
@@ -1022,16 +1019,14 @@ export default function WadUp() {
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      hideNameTooltip();
       handlePinInteraction(ev.id);
     });
-    el.addEventListener('mouseenter', (e) => {
+    el.addEventListener('mouseenter', () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
-      showNameTooltip(ev.name, e.clientX, e.clientY);
+      el.style.zIndex = '9999';
     });
     el.addEventListener('mouseleave', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      hideNameTooltip();
+      el.style.zIndex = '';
     });
 
     tmMarkers.current[ev.id] = { marker, overlay };

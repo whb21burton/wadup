@@ -946,15 +946,24 @@ html, body {
 .trending-panel-scroll .sidebar-divider { margin: 8px 12px; }
 
 /* ── MAP PINS (clean white pill) ── */
+/* Positioning shell — makeOverlay moves THIS via an inline transform every
+   draw() call (see pages/index.js). The actual visual bubble is .wu-pin,
+   a child of this — putting the hover-scale transform on the same element
+   makeOverlay positions would just have the CSS clobber the inline JS
+   transform instead of composing with it. */
+.wu-pin-wrapper {
+  position: absolute;
+}
 .wu-pin {
   position: relative;
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   cursor: pointer;
-  transition: transform 0.15s;
+  transition: transform 0.15s ease;
+  transform-origin: center bottom;
 }
-.wu-pin:hover { transform: scale(1.08); }
+.wu-pin:hover { transform: scale(1.15); }
 
 /* Parks/golf courses: a bare landmark emoji instead of the name pill. */
 .wu-emoji-icon {
@@ -1056,6 +1065,11 @@ html, body {
   background: #888;
   border: 1.5px solid #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.wu-pin-discovery:hover .wu-discovery-dot {
+  transform: scale(1.4);
+  background: #666;
 }
 .wu-discovery-label {
   font-family: 'Inter', sans-serif;
@@ -1067,33 +1081,6 @@ html, body {
   text-overflow: ellipsis;
   margin-top: 2px;
   text-align: center;
-}
-
-/* ── Hover name tooltip — every pin type, shown only on hover; click always
-   opens the full popup/stacked list instead (see showNameTooltip in
-   pages/index.js). One shared node, positioned via inline left/top. ── */
-.wu-name-tooltip {
-  position: fixed;
-  background: rgba(0,0,0,0.75);
-  color: #fff;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  font-family: 'Inter', sans-serif;
-  pointer-events: none;
-  z-index: 99999;
-  white-space: nowrap;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.1s ease;
-}
-.wu-name-tooltip.visible {
-  opacity: 1;
-  visibility: visible;
 }
 
 /* ── Bar/nightlife icon pins — dropBarPin's non-ranked tier (pages/index.js) ── */
