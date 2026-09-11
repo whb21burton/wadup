@@ -100,6 +100,7 @@ Only include FUTURE events (strictly after today's date). If a date can't be det
             title: ev.event_name || ev.performer || 'Event',
             description: ev.description || '',
             event_type: ev.event_type,
+            performer: ev.performer || null,
             start_time: `${ev.event_date}T${validTime || '20:00'}:00`,
             is_free: false,
             source: 'scraped',
