@@ -100,18 +100,30 @@ export default async function handler(req, res) {
   const placeIds = allRows.map(r => r.google_place_id);
   const [
     { data: deletedRows, error: deletedError },
+    // A venue deleted with no google_place_id on file (added manually,
+    // never run through a Places sync) can't be matched by id at all —
+    // Google's real place_id for that spot is never null, so it would never
+    // equal this row's null one. Those blocklist rows are matched by
+    // name+city instead (nameCityKey, below) — see delete-venue.js's
+    // comment on why every delete gets a blocklist row now, not just ones
+    // that already had a google_place_id.
+    { data: deletedByNameRows, error: deletedByNameError },
     { data: liveRowsRaw, error: liveError },
     { data: pendingRowsRaw, error: pendingError },
   ] = await Promise.all([
     supabaseAdmin.from('deleted_venues').select('google_place_id').in('google_place_id', placeIds),
+    supabaseAdmin.from('deleted_venues').select('name, city').is('google_place_id', null),
     supabaseAdmin.from('venues').select('google_place_id, custom_cover_photo, name, google_reviews, google_photo_refs').in('google_place_id', placeIds),
     supabaseAdmin.from('venues_pending').select('google_place_id, status').in('google_place_id', placeIds),
   ]);
   if (deletedError) return res.status(500).json({ error: 'Failed to read deleted_venues blocklist', detail: deletedError.message });
+  if (deletedByNameError) return res.status(500).json({ error: 'Failed to read deleted_venues name+city blocklist', detail: deletedByNameError.message });
   if (liveError) return res.status(500).json({ error: 'Failed to read existing venues', detail: liveError.message });
   if (pendingError) return res.status(500).json({ error: 'Failed to read venues_pending', detail: pendingError.message });
 
+  const nameCityKey = (name, city) => `${(name || '').trim().toLowerCase()}|${(city || '').trim().toLowerCase()}`;
   const deletedIds = new Set((deletedRows || []).map(r => r.google_place_id));
+  const deletedNameCityKeys = new Set((deletedByNameRows || []).map(r => nameCityKey(r.name, r.city)));
   const liveByPlaceId = new Map((liveRowsRaw || []).map(r => [r.google_place_id, r]));
   const rejectedIds = new Set((pendingRowsRaw || []).filter(r => r.status === 'rejected').map(r => r.google_place_id));
   const alreadyPendingIds = new Set((pendingRowsRaw || []).filter(r => r.status !== 'rejected').map(r => r.google_place_id));
@@ -121,7 +133,7 @@ export default async function handler(req, res) {
   const pendingCandidates = [];
   for (const row of allRows) {
     const id = row.google_place_id;
-    if (deletedIds.has(id) || rejectedIds.has(id)) { skipped++; continue; }
+    if (deletedIds.has(id) || rejectedIds.has(id) || deletedNameCityKeys.has(nameCityKey(row.name, row.city))) { skipped++; continue; }
     if (liveByPlaceId.has(id)) { liveUpdateCandidates.push(row); continue; }
     pendingCandidates.push(row);
   }

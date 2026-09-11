@@ -28,10 +28,10 @@ export default async function handler(req, res) {
     const { venueId } = req.body || {};
     if (!venueId) return res.status(400).json({ error: 'Missing venueId' });
 
-    console.log('[delete-venue] request: venueId =', venueId, 'by user =', auth.user.id);
+    console.log('[delete-venue] request: venueId =', venueId, '(typeof', typeof venueId, ') by user =', auth.user.id);
 
     const { data: venue, error: fetchError } = await supabaseAdmin
-      .from('venues').select('google_place_id, name').eq('id', venueId).single();
+      .from('venues').select('google_place_id, name, city').eq('id', venueId).single();
     if (fetchError || !venue) {
       console.error('[delete-venue] venue not found:', venueId, fetchError?.message);
       return res.status(404).json({ error: 'Venue not found' });
@@ -39,19 +39,24 @@ export default async function handler(req, res) {
     console.log('[delete-venue] found venue:', venue.name, 'google_place_id:', venue.google_place_id);
 
     // Record the delete in the permanent deleted_venues blocklist BEFORE
-    // removing the row — /api/places/sync checks this table by google_place_id
-    // so a deleted venue never gets silently re-inserted by the next sync.
-    if (venue.google_place_id) {
-      const { error: blocklistError } = await supabaseAdmin.from('deleted_venues').upsert(
-        { google_place_id: venue.google_place_id, name: venue.name, deleted_by: auth.user.id },
-        { onConflict: 'google_place_id' }
-      );
-      if (blocklistError) {
-        console.error('[delete-venue] blocklist upsert failed:', blocklistError.message);
-        return res.status(500).json({ error: 'Failed to record deletion', detail: blocklistError.message });
-      }
-      console.log('[delete-venue] recorded in deleted_venues blocklist');
+    // removing the row — /api/places/sync checks this table (by
+    // google_place_id when known, else by name+city — see there) so a
+    // deleted venue never gets silently re-added by the next sync. Always
+    // recorded now, even when this row has no google_place_id (e.g. it was
+    // added manually rather than through a Places sync): leaving those
+    // venues off the blocklist was the actual cause of the "reappears after
+    // deletion" bug — Google's own place_id for that same physical spot is
+    // real and non-null, so a blocklist row keyed only on this row's (null)
+    // google_place_id would never have matched it.
+    const { error: blocklistError } = await supabaseAdmin.from('deleted_venues').upsert(
+      { google_place_id: venue.google_place_id || null, name: venue.name, city: venue.city, deleted_by: auth.user.id },
+      { onConflict: 'google_place_id' }
+    );
+    if (blocklistError) {
+      console.error('[delete-venue] blocklist upsert failed:', blocklistError.message);
+      return res.status(500).json({ error: 'Failed to record deletion', detail: blocklistError.message });
     }
+    console.log('[delete-venue] recorded in deleted_venues blocklist, google_place_id:', venue.google_place_id || '(none — matched by name+city)');
 
     const { data: venueReviews, error: reviewsLookupError } = await supabaseAdmin
       .from('reviews').select('id').eq('venue_id', venueId);

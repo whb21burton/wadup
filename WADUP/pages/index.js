@@ -1177,7 +1177,11 @@ export default function WadUp() {
     }
     pinRegistry.current.delete(venueId);
     venuesRef.current = venuesRef.current.filter(v => v.id !== venueId);
-  }, []);
+    // Re-rank what's left in view immediately (e.g. promotes the next
+    // discovery dot into the vacated Top 10 slot) instead of leaving a gap
+    // until the next pan/zoom triggers updateAreaRanks on its own.
+    updateAreaRanks();
+  }, [updateAreaRanks]);
 
   const flashMapSuccess = useCallback((msg) => {
     setMapActionSuccess(msg);
@@ -1187,7 +1191,19 @@ export default function WadUp() {
   // Used by AdminEditPanel's own Delete button, which already confirms
   // internally — no confirm dialog here.
   const deleteVenueViaApi = useCallback(async (venue) => {
-    await authedFetchIndex('/api/admin/delete-venue', { venueId: venue.id });
+    try {
+      await authedFetchIndex('/api/admin/delete-venue', { venueId: venue.id });
+    } catch (e) {
+      // The row can go stale between the panel opening and Delete being
+      // clicked — another admin deleting it first, or a nightlife sync
+      // rebuild (see sync.js) replacing it with a freshly-inserted row under
+      // a new id — and the API 404s with "Venue not found" for a venue that
+      // was perfectly real when the panel opened. Either way the admin's
+      // actual goal (this pin gone) is already true, so don't leave them
+      // stuck on an error for a venue that's already gone; anything else
+      // (auth/network/real server error) still surfaces normally.
+      if (!/venue not found/i.test(e.message)) throw e;
+    }
     removePinFromMap(venue.id);
     flashMapSuccess(`Deleted "${venue.name}"`);
   }, [authedFetchIndex, removePinFromMap, flashMapSuccess]);
