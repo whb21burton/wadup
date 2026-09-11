@@ -495,6 +495,57 @@ export default function WadUp() {
     return overlay;
   }
 
+  // ── Nudge a new pin's position apart from any already-dropped pin sitting
+  // at (or within ~20m of) the same spot, so pins never render exactly
+  // stacked on top of each other. Checks BOTH venue/bar pins (mapMarkers)
+  // and TM event pins (tmMarkers) — called fresh on every drop, so within a
+  // dense cluster the first pin dropped keeps the real coordinate and later
+  // ones fan out around it in ring order. ──
+  function getOffsetPosition(lat, lng) {
+    const OFFSET_STEP = 0.0003; // ~30 meters
+    const positions = [];
+
+    Object.values(mapMarkers.current).forEach(entry => {
+      const pos = entry.marker.getPosition();
+      if (pos) positions.push({ lat: pos.lat(), lng: pos.lng() });
+    });
+    Object.values(tmMarkers.current).forEach(entry => {
+      const pos = entry.marker.getPosition();
+      if (pos) positions.push({ lat: pos.lat(), lng: pos.lng() });
+    });
+
+    let finalLat = lat, finalLng = lng;
+    let attempts = 0;
+    const maxAttempts = 8;
+
+    // Offset directions: right, up-right, up, up-left, left, down-left, down, down-right
+    const offsets = [
+      [0, OFFSET_STEP],
+      [OFFSET_STEP * 0.7, OFFSET_STEP * 0.7],
+      [OFFSET_STEP, 0],
+      [OFFSET_STEP * 0.7, -OFFSET_STEP * 0.7],
+      [0, -OFFSET_STEP],
+      [-OFFSET_STEP * 0.7, -OFFSET_STEP * 0.7],
+      [-OFFSET_STEP, 0],
+      [-OFFSET_STEP * 0.7, OFFSET_STEP * 0.7],
+    ];
+
+    while (attempts < maxAttempts) {
+      const tooClose = positions.some(p =>
+        Math.abs(p.lat - finalLat) < 0.0002 &&
+        Math.abs(p.lng - finalLng) < 0.0002
+      );
+      if (!tooClose) break;
+
+      const [latOffset, lngOffset] = offsets[attempts % offsets.length];
+      finalLat = lat + latOffset;
+      finalLng = lng + lngOffset;
+      attempts++;
+    }
+
+    return { lat: finalLat, lng: finalLng };
+  }
+
   // Shared entry point for click on any pin — always opens that pin's own
   // popup directly, regardless of whatever else is nearby on screen.
   function handlePinInteraction(id) {
@@ -665,7 +716,8 @@ export default function WadUp() {
         ${editBtnHtml}
       </div>`;
 
-    const pos    = new window.google.maps.LatLng(v.lat, v.lng);
+    const offsetPos = getOffsetPosition(v.lat, v.lng);
+    const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
     const marker = new window.google.maps.Marker({
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
@@ -694,7 +746,7 @@ export default function WadUp() {
     mapMarkers.current[v.id] = { marker };
     overlays.current[v.id]   = overlay;
 
-    const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, el, lat: v.lat, lng: v.lng, openPopup };
+    const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
   }, [zoomClass]);
 
@@ -830,7 +882,8 @@ export default function WadUp() {
         ${editBtnHtml}
       </div>`;
 
-    const pos    = new window.google.maps.LatLng(v.lat, v.lng);
+    const offsetPos = getOffsetPosition(v.lat, v.lng);
+    const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
     const marker = new window.google.maps.Marker({
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
@@ -858,7 +911,7 @@ export default function WadUp() {
     mapMarkers.current[v.id] = { marker };
     overlays.current[v.id]   = overlay;
 
-    const entry = { id: v.id, type: 'venue', tier: showName ? 'top10' : 'discovery', rank: areaRank, marker, overlay, el, lat: v.lat, lng: v.lng, openPopup };
+    const entry = { id: v.id, type: 'venue', tier: showName ? 'top10' : 'discovery', rank: areaRank, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
   }, [zoomClass]);
 
@@ -940,7 +993,8 @@ export default function WadUp() {
         <div class="popup-source">via Ticketmaster</div>
       </div>`;
 
-    const pos    = new window.google.maps.LatLng(ev.lat, ev.lng);
+    const offsetPos = getOffsetPosition(ev.lat, ev.lng);
+    const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
     const marker = new window.google.maps.Marker({
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
@@ -968,7 +1022,7 @@ export default function WadUp() {
 
     tmMarkers.current[ev.id] = { marker, overlay };
 
-    const entry = { id: ev.id, type: 'tm', marker, overlay, el, lat: ev.lat, lng: ev.lng, openPopup };
+    const entry = { id: ev.id, type: 'tm', marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(ev.id, entry);
   }, [zoomClass]);
 
