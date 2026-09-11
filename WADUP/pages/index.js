@@ -1304,6 +1304,48 @@ export default function WadUp() {
       mapObj.current     = map;
       infoWindow.current = new window.google.maps.InfoWindow({ maxWidth: 240 });
 
+      // Restore the map position/chip/date a visit to a venue page left
+      // behind (see the beforeunload handler below) — one-shot, so a later
+      // fresh visit doesn't keep snapping back to wherever this was.
+      try {
+        const savedState = sessionStorage.getItem('wadup_map_state');
+        if (savedState) {
+          const state = JSON.parse(savedState);
+          map.setCenter({ lat: state.lat, lng: state.lng });
+          map.setZoom(state.zoom);
+          if (state.chip) {
+            activeCategoryRef.current = state.chip;
+            setActiveChip(state.chip);
+          }
+          if (state.date) {
+            activeDateRef.current = state.date;
+            setActiveDate(state.date);
+          }
+          sessionStorage.removeItem('wadup_map_state');
+        }
+      } catch (e) { /* corrupt/unavailable sessionStorage — just use the default view */ }
+
+      // "View Reviews" links inside a popup's raw iwHtml are plain <a> tags
+      // (Google's InfoWindow content isn't part of the React tree), so
+      // clicking one is a hard browser navigation, not a Next.js client
+      // transition — beforeunload is what actually fires for that. Saves on
+      // every unload (tab close, refresh, any navigation away), which is
+      // harmless when there's nothing to restore into next time.
+      const saveMapState = () => {
+        const m = mapObj.current;
+        if (!m) return;
+        const center = m.getCenter();
+        if (!center) return;
+        sessionStorage.setItem('wadup_map_state', JSON.stringify({
+          lat: center.lat(),
+          lng: center.lng(),
+          zoom: m.getZoom(),
+          chip: activeCategoryRef.current,
+          date: activeDateRef.current,
+        }));
+      };
+      window.addEventListener('beforeunload', saveMapState);
+
       // Bridge for the "✏️ Edit Venue" button embedded in a venue popup's raw
       // HTML string (see dropVenuePin's iwHtml) — an inline onclick="" handler
       // has no way to reach React state directly, so it calls this instead.
