@@ -1309,6 +1309,7 @@ export default function WadUp() {
       // fresh visit doesn't keep snapping back to wherever this was.
       try {
         const savedState = sessionStorage.getItem('wadup_map_state');
+        console.log('[MAP STATE] Checking for saved state on init:', savedState);
         if (savedState) {
           const state = JSON.parse(savedState);
           map.setCenter({ lat: state.lat, lng: state.lng });
@@ -1322,8 +1323,9 @@ export default function WadUp() {
             setActiveDate(state.date);
           }
           sessionStorage.removeItem('wadup_map_state');
+          console.log('[MAP STATE] Restored:', state);
         }
-      } catch (e) { /* corrupt/unavailable sessionStorage — just use the default view */ }
+      } catch (e) { console.error('[MAP STATE] Restore failed:', e); }
 
       // "View Reviews" links inside a popup's raw iwHtml are plain <a> tags
       // (Google's InfoWindow content isn't part of the React tree), so
@@ -1336,13 +1338,15 @@ export default function WadUp() {
         if (!m) return;
         const center = m.getCenter();
         if (!center) return;
-        sessionStorage.setItem('wadup_map_state', JSON.stringify({
+        const state = {
           lat: center.lat(),
           lng: center.lng(),
           zoom: m.getZoom(),
           chip: activeCategoryRef.current,
           date: activeDateRef.current,
-        }));
+        };
+        console.log('[MAP STATE] Saving on unload:', state);
+        sessionStorage.setItem('wadup_map_state', JSON.stringify(state));
       };
       window.addEventListener('beforeunload', saveMapState);
 

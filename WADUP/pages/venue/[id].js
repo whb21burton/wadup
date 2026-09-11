@@ -356,6 +356,21 @@ export default function VenuePage() {
     setFlameVoting(false);
   };
 
+  // history.back() (rather than a plain Link to "/") is what lets the
+  // browser use its back-forward cache when available, instantly restoring
+  // the map exactly as the user left it — pages/index.js's sessionStorage
+  // save/restore (see its beforeunload handler) is what covers the rest of
+  // the cases (no bfcache available, or this tab has no real "back" target
+  // at all — e.g. a shared link straight to this page, where history.back()
+  // would otherwise leave the button doing nothing).
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+    } else {
+      router.push('/');
+    }
+  };
+
   const share = async () => {
     const url = typeof window !== 'undefined' ? window.location.href : '';
     if (navigator.share) {
@@ -409,7 +424,15 @@ export default function VenuePage() {
             style={venue.cover_photo_url ? { backgroundImage: `url(${venue.cover_photo_url})` } : undefined}
           >
             {!venue.cover_photo_url && <div className="venue-cover-gradient" />}
-            <Link href="/" className="venue-back-btn" aria-label="Back to map">←</Link>
+            <button
+              type="button"
+              className="venue-back-btn"
+              aria-label="Back to map"
+              style={{ cursor: 'pointer' }}
+              onClick={goBack}
+            >
+              ←
+            </button>
             <button
               className="right-sidebar-toggle venue-account-btn"
               onClick={() => setRightSidebarOpen(v => !v)}
