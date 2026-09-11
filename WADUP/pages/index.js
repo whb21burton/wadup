@@ -627,8 +627,16 @@ export default function WadUp() {
       contentEl.appendChild(tail);
     }
 
+    // Ranked pill bubbles need to consistently paint in front of the small
+    // beer-icon bar pins they otherwise visually compete with (see
+    // dropBarPin) — #1 gets the highest baseline, #10 the lowest, and
+    // anything not a ranked pill (discovery dots, park/golf emoji) keeps no
+    // explicit baseline at all, same as before this fix.
+    const baseZIndex = tier === 'top10' ? 1000 + (10 - Math.min(areaRank || 10, 10)) : null;
+
     const el = document.createElement('div');
     el.className = 'wu-pin-wrapper';
+    if (baseZIndex != null) el.style.zIndex = String(baseZIndex);
     el.appendChild(contentEl);
 
     const ratingHtml = hasRating
@@ -661,7 +669,7 @@ export default function WadUp() {
     const marker = new window.google.maps.Marker({
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
-      zIndex: tier === 'discovery' ? 1 : (topBadge ? 15 : 10),
+      zIndex: baseZIndex ?? (tier === 'discovery' ? 1 : (topBadge ? 15 : 10)),
     });
     const overlayAnchor = specialIcon ? 'center' : tier === 'discovery' ? 'top' : 'bottom';
     const overlay = makeOverlay(pos, el, map, overlayAnchor);
@@ -680,7 +688,7 @@ export default function WadUp() {
       el.style.zIndex = '9999';
     });
     el.addEventListener('mouseleave', () => {
-      el.style.zIndex = '';
+      el.style.zIndex = baseZIndex != null ? String(baseZIndex) : '';
     });
 
     mapMarkers.current[v.id] = { marker };
@@ -788,8 +796,14 @@ export default function WadUp() {
         : '<div class="wu-beer-icon">🍺</div>';
     }
 
+    // Ranked pill bubbles need to consistently paint in front of the small
+    // beer-icon pins — #1 gets the highest baseline, #10 the lowest, and
+    // every icon-only bar sits at a fixed low baseline below all of them.
+    const baseZIndex = showName ? 1000 + (10 - Math.min(rank || 10, 10)) : 10;
+
     const el = document.createElement('div');
     el.className = 'wu-pin-wrapper';
+    el.style.zIndex = String(baseZIndex);
     el.appendChild(contentEl);
 
     const rating = effectiveRating(v);
@@ -820,7 +834,7 @@ export default function WadUp() {
     const marker = new window.google.maps.Marker({
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
-      zIndex: showName ? 15 : 5,
+      zIndex: baseZIndex,
     });
     const overlay = makeOverlay(pos, el, map, showName ? 'bottom' : 'center');
 
@@ -838,7 +852,7 @@ export default function WadUp() {
       el.style.zIndex = '9999';
     });
     el.addEventListener('mouseleave', () => {
-      el.style.zIndex = '';
+      el.style.zIndex = String(baseZIndex);
     });
 
     mapMarkers.current[v.id] = { marker };
