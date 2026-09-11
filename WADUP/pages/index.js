@@ -2005,6 +2005,7 @@ export default function WadUp() {
               relocateTarget={relocateTarget}
               relocating={relocating}
               onStartRelocate={startRelocate}
+              onCancelRelocate={cancelRelocate}
               onClose={closeEditPanel}
               onSave={saveEditPanelVenue}
               onDelete={deleteEditPanelVenue}

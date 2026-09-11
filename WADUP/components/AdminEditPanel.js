@@ -30,6 +30,7 @@ export default function AdminEditPanel({
   relocateTarget,    // { lat, lng } | null — set by the parent once "Click map to move" captures a new spot
   relocating,        // true while the parent is waiting for that next map click
   onStartRelocate,
+  onCancelRelocate,
   onClose,
   onSave,            // async (fields) => void — throws on failure
   onDelete,          // async () => void — throws on failure
@@ -114,7 +115,12 @@ export default function AdminEditPanel({
 
   return (
     <>
-      <div className="edit-panel-overlay" onClick={onClose} />
+      {/* Skipped entirely while relocating — this is a transparent,
+          full-viewport, very-high-z-index click-catcher (click outside the
+          panel to close it), which otherwise sits directly on top of the
+          map and swallows the exact click "Click map to move" is waiting
+          for before it ever reaches Google Maps' own click listener. */}
+      {!relocating && <div className="edit-panel-overlay" onClick={onClose} />}
       <div className="edit-panel" onClick={(e) => e.stopPropagation()}>
         <div className="edit-panel-header">
           <span>✏️ Edit Venue</span>
@@ -207,13 +213,20 @@ export default function AdminEditPanel({
               <input value={lng} onChange={(e) => setLng(e.target.value)} />
             </div>
           </div>
-          <button
-            type="button"
-            className={`edit-panel-relocate-btn${relocating ? ' active' : ''}`}
-            onClick={onStartRelocate}
-          >
-            {relocating ? '📌 Click the map…' : '📌 Click map to move'}
-          </button>
+          <div className="edit-panel-relocate-row">
+            <button
+              type="button"
+              className={`edit-panel-relocate-btn${relocating ? ' active' : ''}`}
+              onClick={onStartRelocate}
+            >
+              {relocating ? '📍 Click anywhere on map…' : '📌 Click map to move'}
+            </button>
+            {relocating && (
+              <button type="button" className="edit-panel-relocate-cancel-btn" onClick={onCancelRelocate}>
+                Cancel
+              </button>
+            )}
+          </div>
 
           <label>⭐ Google Rating</label>
           <div className="edit-panel-readonly">
