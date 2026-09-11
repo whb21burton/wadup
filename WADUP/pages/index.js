@@ -113,8 +113,8 @@ function getRankStyle(rank) {
   return { bg: '#fff', color: '#171717', shadow: '0 2px 8px rgba(0,0,0,0.18)', prefix: `#${rank}` };
 }
 
-const EVENT_TYPE_ICON  = { live_music: '🎵', trivia: '🧠', happy_hour: '⏰', specials: '🏷️', activities: '🎳', sports_game: '🏟️', event: '🎫' };
-const EVENT_TYPE_LABEL = { live_music: 'Live Music', trivia: 'Trivia', happy_hour: 'Happy Hour', specials: 'Specials', activities: 'Activities', sports_game: 'Game', event: 'Event' };
+const EVENT_TYPE_ICON  = { live_music: '🎵', trivia: '🧠', happy_hour: '⏰', specials: '🏷️', activities: '🎳', sports_game: '🏟️', event: '🎫', dj: '🎧', comedy: '🎤', karaoke: '🎙️', other: '🎉' };
+const EVENT_TYPE_LABEL = { live_music: 'Live Music', trivia: 'Trivia', happy_hour: 'Happy Hour', specials: 'Specials', activities: 'Activities', sports_game: 'Game', event: 'Event', dj: 'DJ', comedy: 'Comedy', karaoke: 'Karaoke', other: 'Event' };
 
 function timeToMinsLocal(t) {
   const [h, m] = t.split(':').map(Number);

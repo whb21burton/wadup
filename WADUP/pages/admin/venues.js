@@ -57,6 +57,8 @@ function EditVenueModal({ venue, onClose, onSaved, onSave, title = 'Edit Venue' 
   const [hideNewBadge, setHideNewBadge] = useState(!!venue.hide_new_badge);
   const [customSubcats, setCustomSubcats] = useState(venue.custom_subcategories || []);
   const [newSubcat, setNewSubcat] = useState('');
+  const [scrapingEnabled, setScrapingEnabled] = useState(!!venue.scraping_enabled);
+  const [scrapingUrl, setScrapingUrl] = useState(venue.scraping_url || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -67,6 +69,11 @@ function EditVenueModal({ venue, onClose, onSaved, onSave, title = 'Edit Venue' 
     setNewSubcat('');
   };
   const removeCustomSubcat = (v) => setCustomSubcats(prev => prev.filter(s => s !== v));
+
+  // Scraping fields only apply to already-live venues — venues_pending rows
+  // (the "Edit & Approve" flow, title="Edit & Approve") have no
+  // scraping_enabled/scraping_url columns to save into yet.
+  const isLiveEdit = title === 'Edit Venue';
 
   const save = async () => {
     setSaving(true);
@@ -80,6 +87,7 @@ function EditVenueModal({ venue, onClose, onSaved, onSave, title = 'Edit Venue' 
         is_private: isPrivate,
         hide_new_badge: hideNewBadge,
         custom_subcategories: customSubcats,
+        ...(isLiveEdit ? { scraping_enabled: scrapingEnabled, scraping_url: scrapingEnabled ? (scrapingUrl || null) : null } : {}),
       });
       onSaved();
     } catch (e) {
@@ -184,6 +192,33 @@ function EditVenueModal({ venue, onClose, onSaved, onSave, title = 'Edit Venue' 
               Hide New Badge
             </label>
           </div>
+
+          {isLiveEdit && (
+            <div className="scraping-section">
+              <h4>Event Scraping</h4>
+              <label className="admin-toggle">
+                <input
+                  type="checkbox"
+                  checked={scrapingEnabled}
+                  onChange={(e) => setScrapingEnabled(e.target.checked)}
+                />
+                Enable automatic event scraping
+              </label>
+              {scrapingEnabled && (
+                <input
+                  type="url"
+                  placeholder="https://venue-website.com/events"
+                  value={scrapingUrl}
+                  onChange={(e) => setScrapingUrl(e.target.value)}
+                />
+              )}
+              {venue.last_scraped_at && (
+                <div className="scraping-last-run">
+                  Last scraped: {new Date(venue.last_scraped_at).toLocaleDateString()}
+                </div>
+              )}
+            </div>
+          )}
 
           {error && <div className="admin-modal-error">⚠️ {error}</div>}
 

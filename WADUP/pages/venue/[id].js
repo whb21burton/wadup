@@ -15,12 +15,20 @@ const EVENT_TYPE_ICONS = {
   trivia:     '🧠',
   specials:   '🏷️',
   happy_hour: '⏰',
+  dj:         '🎧',
+  comedy:     '🎤',
+  karaoke:    '🎙️',
+  other:      '🎉',
 };
 const EVENT_TYPE_LABELS = {
   live_music: 'Live Music',
   trivia:     'Trivia',
   specials:   'Specials',
   happy_hour: 'Happy Hour',
+  dj:         'DJ',
+  comedy:     'Comedy',
+  karaoke:    'Karaoke',
+  other:      'Event',
 };
 
 function ensureUrl(url) {

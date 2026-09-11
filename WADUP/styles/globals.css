@@ -3116,6 +3116,31 @@ html, body {
 .admin-venue-table-status { width: 90px; flex-shrink: 0; font-size: 0.82rem; font-weight: 700; color: #7cffb0; }
 .admin-venue-table-status.hidden { color: #ff8a5c; }
 .admin-venue-table-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ── Scraped Events review table (pages/admin/reports.js) ── */
+.admin-scraped-table { display: flex; flex-direction: column; gap: 4px; }
+.admin-scraped-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.4fr 0.8fr 0.6fr 1fr 0.7fr 1.3fr;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+.admin-scraped-row:not(.admin-scraped-header):hover { background: rgba(255,255,255,0.05); }
+.admin-scraped-header {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9fc3cc;
+}
+.admin-scraped-actions { display: flex; gap: 6px; }
+.confidence-high { color: #7cffb0; font-weight: 800; }
+.confidence-mid  { color: #ffd76a; font-weight: 800; }
+.confidence-low  { color: #ff8a5c; font-weight: 800; }
 .admin-venue-table-actions button {
   padding: 6px 12px;
   border-radius: 6px;
@@ -3265,6 +3290,15 @@ html, body {
 }
 .admin-toggle-row { display: flex; gap: 20px; margin-top: 16px; flex-wrap: wrap; }
 .admin-toggle { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+
+.scraping-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #eee;
+}
+.scraping-section h4 { margin: 0 0 8px; font-size: 0.85rem; }
+.scraping-section input[type="url"] { margin-top: 8px; }
+.scraping-last-run { margin-top: 8px; font-size: 0.78rem; color: #999; }
 
 .custom-subcat-row { display: flex; gap: 8px; margin-top: 6px; }
 .custom-subcat-row input { flex: 1; margin-top: 0; }
