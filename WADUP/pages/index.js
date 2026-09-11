@@ -1302,6 +1302,13 @@ export default function WadUp() {
         });
       });
 
+      // Clicking the bare map (not a pin — every pin's own click handler
+      // calls e.stopPropagation(), so this never fires for those) closes
+      // whatever popup is currently open.
+      map.addListener('click', () => {
+        infoWindow.current?.close();
+      });
+
       // Panning/zooming changes which venues are "in bounds" for area
       // ranking without touching the chip filter at all, so this needs its
       // own listener rather than piggybacking on filterPins. Rankings are
