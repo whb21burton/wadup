@@ -1225,11 +1225,24 @@ export default function WadUp() {
   // computed at cache-write time, so no classification-parsing happens here.
   const fetchTM = useCallback(async () => {
     try {
+      // tm_events_cache is a NATIONWIDE cache (see sync-tm-events.js's
+      // TM_REGIONS — ~43 metro areas, not just this city) shared across
+      // whatever cities WadUp eventually covers; this map only ever shows
+      // Chattanooga, so an unscoped query pulls in every other region's
+      // events too. Without this, Supabase's default 1000-row cap can fill
+      // up entirely with a single busy day in a bigger, unrelated market
+      // before any real Chattanooga event is ever returned — exactly what
+      // was silently starving the Events chip. Box roughly matches the
+      // 150-mile radius sync-tm-events.js's own Chattanooga region uses.
+      const CHATT_LAT = 35.0456, CHATT_LNG = -85.3096;
       const { data: events, error } = await supabase
         .from('tm_events_cache')
         .select('*')
         .gte('date_str', new Date().toISOString().slice(0, 10)) // only future events
-        .order('date_str', { ascending: true });
+        .gte('lat', CHATT_LAT - 2.2).lte('lat', CHATT_LAT + 2.2)
+        .gte('lng', CHATT_LNG - 2.7).lte('lng', CHATT_LNG + 2.7)
+        .order('date_str', { ascending: true })
+        .limit(2000);
       if (error) throw error;
 
       Object.entries(tmMarkers.current).forEach(([id, entry]) => {
