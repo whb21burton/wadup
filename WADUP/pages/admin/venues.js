@@ -426,6 +426,86 @@ function PendingVenuesView({ pending, onApprove, onEditApprove, onReject }) {
   );
 }
 
+// Drag-to-reorder priority for which venue's event wins the top Events-chip
+// pin slot on the map when more than one venue has something scheduled on
+// the same day (see pages/index.js's updateAreaRanks — Tier 2 of the Events
+// ranking sorts by this event_rank). Only venues tagged with the 'events'
+// category show up here. Every drop rewrites the WHOLE list's event_rank to
+// its new 1-based position (a partial/sparse reorder wouldn't mean anything
+// against the 999 default the rest of the table still has).
+function EventRankingsView({ venues, session, onSaved }) {
+  const [order, setOrder] = useState(() =>
+    [...venues].sort((a, b) => (a.event_rank ?? 999) - (b.event_rank ?? 999))
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const dragIndex = useRef(null);
+
+  useEffect(() => {
+    setOrder([...venues].sort((a, b) => (a.event_rank ?? 999) - (b.event_rank ?? 999)));
+  }, [venues]);
+
+  const persistOrder = async (list) => {
+    setSaving(true);
+    setError('');
+    try {
+      await Promise.all(list.map((v, i) =>
+        authedFetch('/api/admin/update-venue', session, { venueId: v.id, updates: { event_rank: i + 1 } })
+      ));
+      onSaved?.();
+    } catch (e) {
+      setError(e.message);
+    }
+    setSaving(false);
+  };
+
+  const onDragStart = (i) => { dragIndex.current = i; };
+  const onDragOver = (e) => e.preventDefault();
+  const onDrop = (i) => {
+    const from = dragIndex.current;
+    dragIndex.current = null;
+    if (from === null || from === i) return;
+    const next = [...order];
+    const [moved] = next.splice(from, 1);
+    next.splice(i, 0, moved);
+    setOrder(next);
+    persistOrder(next);
+  };
+
+  if (!venues.length) {
+    return (
+      <div className="admin-sync-desc">
+        No venues tagged &quot;Events&quot; in this city yet — add the Events category to a venue under Live Venues → Edit first.
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-event-rank-list">
+      <div className="admin-sync-desc">
+        Drag to set which venue&apos;s event wins the top Events-chip slot when more than one has something on today. Rank 1 = highest priority.
+      </div>
+      {error && <div className="admin-modal-error">⚠️ {error}</div>}
+      {order.map((v, i) => (
+        <div
+          key={v.id}
+          className="admin-event-rank-row"
+          draggable
+          onDragStart={() => onDragStart(i)}
+          onDragOver={onDragOver}
+          onDrop={() => onDrop(i)}
+        >
+          <span className="admin-event-rank-handle">⠿</span>
+          <span className="admin-event-rank-num">#{i + 1}</span>
+          <span className="admin-venue-table-icon">{venueIcon(v)}</span>
+          <span className="admin-venue-table-name">{v.name}</span>
+        </div>
+      ))}
+      {saving && <div className="admin-sync-desc">Saving order…</div>}
+    </div>
+  );
+}
+
 const SORT_OPTIONS = [
   { id: 'az',       label: 'A-Z' },
   { id: 'za',       label: 'Z-A' },
@@ -439,7 +519,7 @@ export default function AdminVenues() {
   const [adminRole, setAdminRole] = useState(null);
   const [session, setSession] = useState(null);
 
-  const [viewTab, setViewTab] = useState('live'); // 'live' | 'pending'
+  const [viewTab, setViewTab] = useState('live'); // 'live' | 'pending' | 'events'
 
   const [allVenues, setAllVenues] = useState([]);
   const [loadingVenues, setLoadingVenues] = useState(true);
@@ -631,6 +711,9 @@ export default function AdminVenues() {
             <button className={`admin-view-tab${viewTab === 'pending' ? ' active' : ''}`} onClick={() => setViewTab('pending')}>
               Pending Approval ({pendingVenues.length})
             </button>
+            <button className={`admin-view-tab${viewTab === 'events' ? ' active' : ''}`} onClick={() => setViewTab('events')}>
+              🎵 Event Rankings
+            </button>
           </div>
 
           {actionError && <div className="admin-modal-error">⚠️ {actionError}</div>}
@@ -644,6 +727,16 @@ export default function AdminVenues() {
                 onApprove={approvePending}
                 onEditApprove={setPendingEditTarget}
                 onReject={rejectPending}
+              />
+            )
+          ) : viewTab === 'events' ? (
+            loadingVenues ? (
+              <div className="admin-sync-desc">Loading venues…</div>
+            ) : (
+              <EventRankingsView
+                venues={allVenues.filter(v => venueCategories(v).includes('events'))}
+                session={session}
+                onSaved={loadVenues}
               />
             )
           ) : (

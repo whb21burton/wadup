@@ -1026,6 +1026,38 @@ html, body {
   50%      { box-shadow: 0 1px 12px rgba(255,69,0,0.9); }
 }
 
+/* Events chip: event-type icon badge (non-live) — this reuses .wu-badge's
+   own circle/position styling via the "wu-badge wu-event-badge" combo class
+   (see dropVenuePin/dropBarPin); no separate rule needed here.
+
+   Events chip: animated musical note for a currently-live event — replaces
+   the static event-type icon in the same top-left badge slot. */
+.wu-live-music-note {
+  position: absolute;
+  top: -8px; left: -8px;
+  display: inline-block;
+  font-size: 14px;
+  animation: musicDance 0.8s ease-in-out infinite alternate;
+  transform-origin: bottom center;
+  filter: drop-shadow(0 0 4px rgba(255, 252, 0, 0.8));
+}
+@keyframes musicDance {
+  0%   { transform: rotate(-12deg) scale(1) translateY(0px); }
+  25%  { transform: rotate(0deg) scale(1.15) translateY(-3px); }
+  50%  { transform: rotate(12deg) scale(1) translateY(0px); }
+  75%  { transform: rotate(0deg) scale(1.15) translateY(-3px); }
+  100% { transform: rotate(-12deg) scale(1) translateY(0px); }
+}
+
+/* Live event pin gets a subtle yellow glow on its pill. */
+.wu-pin-live .wu-pill {
+  box-shadow: 0 0 12px rgba(255, 252, 0, 0.6), 0 2px 8px rgba(0,0,0,0.2);
+  border-color: #FFFC00 !important;
+}
+.wu-pin-live.wu-bar-icon-pin .wu-beer-icon {
+  filter: drop-shadow(0 0 6px rgba(255, 252, 0, 0.8));
+}
+
 .wu-pill-text {
   display: flex;
   flex-direction: column;
@@ -1148,6 +1180,18 @@ html, body {
 .gm-iw .popup-badge { font-size: 0.6rem; font-weight: 700; background: #f5f5f5; border-radius: 10px; padding: 3px 8px; color: #444; }
 .gm-iw .popup-flame { font-size: 0.72rem; font-weight: 700; margin-bottom: 6px; }
 .gm-iw .popup-address { font-size: 0.65rem; color: #999; margin-top: 2px; }
+.gm-iw .popup-performer {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #111;
+  margin: 6px 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gm-iw .popup-event-name { font-size: 0.75rem; font-weight: 600; color: #555; margin-bottom: 2px; }
+.gm-iw .popup-event-time { font-size: 0.82rem; font-weight: 700; color: #555; margin: 4px 0; }
+.gm-iw .live-now-text { color: #cc0000; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.05em; }
 .gm-iw .popup-view-reviews {
   display: block;
   margin-top: 10px;
@@ -3137,6 +3181,22 @@ html, body {
 .admin-venue-table-status { width: 90px; flex-shrink: 0; font-size: 0.82rem; font-weight: 700; color: #7cffb0; }
 .admin-venue-table-status.hidden { color: #ff8a5c; }
 .admin-venue-table-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ── Event Rankings tab — drag-to-reorder event_rank list ── */
+.admin-event-rank-list { display: flex; flex-direction: column; gap: 6px; }
+.admin-event-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(0,229,255,0.12);
+  cursor: grab;
+}
+.admin-event-rank-row:active { cursor: grabbing; }
+.admin-event-rank-handle { color: #9fc3cc; font-size: 1rem; flex-shrink: 0; }
+.admin-event-rank-num { width: 32px; flex-shrink: 0; color: var(--cyan); font-weight: 800; font-size: 0.85rem; }
 
 /* ── Scraped Events review table (pages/admin/reports.js) ── */
 .admin-scraped-table { display: flex; flex-direction: column; gap: 4px; }

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   CATEGORY_CHIPS, CATEGORY_LABELS, EMOJI_OPTIONS,
   isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
-  venueMatchesChip, venueCategories, isChain, formatTime
+  venueMatchesChip, venueCategories, isChain, formatTime, getEventIcon
 } from '../lib/data';
 import { getLiveTrendingVenueIds, getBestRated, getScheduleTrendingVenues } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
@@ -145,6 +145,12 @@ export default function WadUp() {
   const trendingVenueIds = useRef(new Set());
   const bestRatedVenueIds = useRef(new Set());
   const eventVenueIdsTodayRef = useRef(new Set());
+  // Raw venue_events rows (today forward — see fetchVenueEvents), one entry
+  // per scheduled event regardless of which day it falls on. The Events chip
+  // filters/ranks against this client-side by whichever day is selected in
+  // the day-strip (activeDateRef), the same "load once, filter per day"
+  // pattern fetchTM already uses for tm_events_cache below.
+  const venueEventsRef = useRef([]);
   const mapInitStarted = useRef(false);
   const filterPinsRef = useRef(null);
   // updateAreaRanks (defined earlier in this component than dropVenuePin)
@@ -154,6 +160,7 @@ export default function WadUp() {
   // this session (see the dropVenuePin/openEditPanel fix).
   const dropVenuePinRef = useRef(null);
   const dropBarPinRef = useRef(null);
+  const updateAreaRanksRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const searchInputRef = useRef(null);
 
@@ -393,9 +400,8 @@ export default function WadUp() {
     Object.entries(tmMarkers.current).forEach(([id, entry]) => {
       const ev = tmEventsRef.current.find(e => e.id === id);
       if (!ev) return;
-      const catMatch  = ev.cat === chip;
-      const dateMatch = !date || ev.dateStr === date;
-      const show = catMatch && dateMatch;
+      const catMatch = ev.cat === chip;
+      const show = catMatch && isTMEventVisibleForDay(ev, date || todayIsoStr());
       entry.marker.setMap(show ? map : null);
       if (entry.overlay) entry.overlay.setMap(show ? map : null);
     });
@@ -404,6 +410,18 @@ export default function WadUp() {
   }, []);
 
   useEffect(() => { filterPinsRef.current = filterPins; }, [filterPins]);
+
+  // Events chip has no other trigger to notice "a live event just ended" or
+  // "a TM show's ~3hr window just closed" — nothing re-runs updateAreaRanks
+  // on its own just because the clock moved. A 5-minute poll is cheap (it's
+  // the same re-filter a pan/zoom already triggers) and keeps live pins from
+  // sitting there minutes/hours after the thing they're advertising is over.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (activeCategoryRef.current === 'events') updateAreaRanksRef.current?.();
+    }, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // Ranks ONLY the venues currently visible in the map viewport by
   // areaRatingOf (weighted_rating, falling back to google_rating) — the top
@@ -423,18 +441,45 @@ export default function WadUp() {
     const chip = activeCategoryRef.current;
     const subcategory = activeSubcategoryRef.current;
 
-    const eligible = venuesRef.current.filter(v =>
-      v.live && !v.is_hidden && isVenueEligible(v) && venueMatchesChip(chip, v, subcategory)
-    );
+    const dayIso = activeDateRef.current || todayIsoStr();
+
+    // Events chip: category match alone isn't enough — a venue tagged
+    // 'events' only actually shows once it has a real venue_events row for
+    // whichever day is selected (see getVenueEventForDay). Every other chip
+    // keeps the plain category match it always had.
+    const eligible = venuesRef.current.filter(v => {
+      if (!v.live || v.is_hidden || !isVenueEligible(v)) return false;
+      if (chip === 'events') {
+        return venueMatchesChip('events', v, subcategory) && !!getVenueEventForDay(v.id, dayIso);
+      }
+      return venueMatchesChip(chip, v, subcategory);
+    });
     const inViewport = eligible.filter(v =>
       v.lat != null && v.lng != null && bounds && bounds.contains(new window.google.maps.LatLng(v.lat, v.lng))
     );
     const outsideViewport = eligible.filter(v => !inViewport.includes(v));
 
-    const ranked = inViewport
-      .slice()
-      .sort((a, b) => areaRatingOf(b) - areaRatingOf(a))
-      .map((v, i) => ({ ...v, _areaRank: i + 1 }));
+    // Events chip ranks live-right-now venues first, then the rest by the
+    // admin's manual event_rank order (see pages/admin/venues.js's Event
+    // Rankings tab) — a currently-empty rating isn't a meaningful signal for
+    // "which event is worth seeing right now." Every other chip keeps the
+    // existing rating-based sort.
+    let ranked;
+    if (chip === 'events') {
+      const withEvent = inViewport.map(v => {
+        const todayEvent = getVenueEventForDay(v.id, dayIso);
+        return { ...v, _todayEvent: todayEvent, _isLive: isEventLive(todayEvent) };
+      });
+      const live = withEvent.filter(v => v._isLive);
+      const upcoming = withEvent.filter(v => !v._isLive)
+        .sort((a, b) => (a.event_rank ?? 999) - (b.event_rank ?? 999));
+      ranked = [...live, ...upcoming].map((v, i) => ({ ...v, _areaRank: i + 1 }));
+    } else {
+      ranked = inViewport
+        .slice()
+        .sort((a, b) => areaRatingOf(b) - areaRatingOf(a))
+        .map((v, i) => ({ ...v, _areaRank: i + 1 }));
+    }
 
     // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
     console.log('[TIER] zoom:', map.getZoom(), 'chip:', chip, 'eligible:', eligible.length,
@@ -454,19 +499,40 @@ export default function WadUp() {
 
     // Ticketmaster events have no WadUp rating to sort against, so rather
     // than fabricate a score to interleave them with rated venues, they're
-    // appended after (soonest date first) and only ever considered for the
-    // Events/Sports chips — same cat===chip gate filterPins uses for TM pins.
+    // appended after (live-first, then soonest start — see isTMEventLiveNow)
+    // and only ever considered for the Events/Sports chips — same cat===chip
+    // gate filterPins uses for TM pins, plus the same day+3hr-showable window
+    // (isTMEventVisibleForDay) filterPins applies to actual pin visibility.
     const tmInBounds = (chip === 'events' || chip === 'sports')
       ? tmEventsRef.current
-          .filter(ev => ev.cat === chip && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
-          .sort((a, b) => (a.dateStr || '').localeCompare(b.dateStr || ''))
+          .filter(ev => ev.cat === chip && isTMEventVisibleForDay(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
+          .sort((a, b) => {
+            const aLive = isTMEventLiveNow(a), bLive = isTMEventLiveNow(b);
+            if (aLive !== bLive) return aLive ? -1 : 1;
+            return (a.timeStr || '').localeCompare(b.timeStr || '');
+          })
           .map(ev => ({ ...ev, _type: 'tm' }))
       : [];
 
-    const combined = [...ranked.map(v => ({ ...v, _type: 'venue' })), ...tmInBounds]
-      .map((item, i) => ({ ...item, _areaRank: i + 1 }));
+    let combined;
+    if (chip === 'events') {
+      // Tier order: everything live right now (venues + TM mixed), then
+      // upcoming venues (event_rank order), then upcoming TM (by start time)
+      // — matches the ranked/tmInBounds tiers built above.
+      const liveVenues = ranked.filter(v => v._isLive).map(v => ({ ...v, _type: 'venue' }));
+      const upcomingVenues = ranked.filter(v => !v._isLive).map(v => ({ ...v, _type: 'venue' }));
+      const liveTM = tmInBounds.filter(isTMEventLiveNow);
+      const upcomingTM = tmInBounds.filter(ev => !isTMEventLiveNow(ev));
+      combined = [...liveVenues, ...liveTM, ...upcomingVenues, ...upcomingTM]
+        .map((item, i) => ({ ...item, _areaRank: i + 1 }));
+    } else {
+      combined = [...ranked.map(v => ({ ...v, _type: 'venue' })), ...tmInBounds]
+        .map((item, i) => ({ ...item, _areaRank: i + 1 }));
+    }
     setTopRanked(combined.slice(0, 10));
   }, []);
+
+  useEffect(() => { updateAreaRanksRef.current = updateAreaRanks; }, [updateAreaRanks]);
 
   // ── WuOverlay class factory ── anchor 'bottom' = pin (tail points at the
   // coordinate); anchor 'center' = bubble centered directly on the coordinate;
@@ -546,6 +612,69 @@ export default function WadUp() {
     return { lat: finalLat, lng: finalLng };
   }
 
+  // ── Events-chip day-scoped helpers ── all keyed against whichever day is
+  // selected in the day-strip (activeDateRef), not hardcoded to "today" — a
+  // venue/TM event still needs to actually be happening on that day to show,
+  // but the day itself can be any date the strip offers.
+  const todayIsoStr = () => new Date().toISOString().slice(0, 10);
+
+  // A venue_events row is "live" once its start_time has passed and (if it
+  // has one at all — most scraped rows never get an end_time, see
+  // review-scraped-event.js) its end_time hasn't.
+  function isEventLive(ev) {
+    if (!ev?.start_time) return false;
+    const now = new Date();
+    const start = new Date(ev.start_time);
+    const end = ev.end_time ? new Date(ev.end_time) : null;
+    return now >= start && (!end || now <= end);
+  }
+
+  // The one venue_events row (if any) that makes this venue eligible for the
+  // Events chip on `dayIso`. Only for TODAY does an event actually get
+  // dropped once it's over (end_time in the past) — a past/future day being
+  // browsed via the day-strip isn't evaluated against "right now" at all.
+  // Prefers whichever entry is live right now; otherwise the day's earliest.
+  function getVenueEventForDay(venueId, dayIso) {
+    const rows = venueEventsRef.current.filter(
+      e => e.venue_id === venueId && (e.start_time || '').slice(0, 10) === dayIso
+    );
+    if (!rows.length) return null;
+    if (dayIso !== todayIsoStr()) {
+      return rows.slice().sort((a, b) => a.start_time.localeCompare(b.start_time))[0];
+    }
+    const stillOn = rows.filter(e => !isEventOverToday(e));
+    if (!stillOn.length) return null;
+    return stillOn.find(isEventLive) || stillOn.slice().sort((a, b) => a.start_time.localeCompare(b.start_time))[0];
+  }
+  function isEventOverToday(ev) {
+    if (!ev.end_time) return false;
+    return new Date(ev.end_time) < new Date();
+  }
+
+  // Ticketmaster events have no venue_events row to check — dateStr/timeStr
+  // (normalized from tm_events_cache's date_str/time_str in fetchTM below) is
+  // all there is, so "still showable" assumes a ~3hr show once it starts.
+  const TM_ASSUMED_SHOW_LENGTH_MS = 3 * 60 * 60 * 1000;
+  function tmEventStart(ev) {
+    return new Date(`${ev.dateStr}T${ev.timeStr || '20:00'}:00`);
+  }
+  function isTMEventLiveNow(ev) {
+    if (!ev.dateStr || ev.dateStr !== todayIsoStr()) return false;
+    const start = tmEventStart(ev);
+    const end = new Date(start.getTime() + TM_ASSUMED_SHOW_LENGTH_MS);
+    const now = new Date();
+    return now >= start && now <= end;
+  }
+  // Visible on the selected day: matches that day, and — only when that day
+  // is today — hasn't been over (start + ~3hrs) for more than the grace
+  // window built into TM_ASSUMED_SHOW_LENGTH_MS.
+  function isTMEventVisibleForDay(ev, dayIso) {
+    if (ev.dateStr !== dayIso) return false;
+    if (dayIso !== todayIsoStr()) return true;
+    const end = new Date(tmEventStart(ev).getTime() + TM_ASSUMED_SHOW_LENGTH_MS);
+    return new Date() <= end;
+  }
+
   // Shared entry point for click on any pin — always opens that pin's own
   // popup directly, regardless of whatever else is nearby on screen.
   function handlePinInteraction(id) {
@@ -589,6 +718,16 @@ export default function WadUp() {
       eventVenueIdsTodayRef.current.has(v.id)
     );
     const topBadge = badges[0];
+
+    // Events chip: the pin's top-left badge slot and popup swap to the
+    // event-specific treatment (animated live note, or the event-type icon)
+    // instead of the generic badge system above — see getEventIcon/
+    // isEventLive and the .wu-live-music-note/.wu-event-badge CSS.
+    const eventsChipActive = activeCategoryRef.current === 'events';
+    const dayIsoForPin = activeDateRef.current || todayIsoStr();
+    const todayEvent = eventsChipActive ? getVenueEventForDay(v.id, dayIsoForPin) : null;
+    const isLiveEvent = isEventLive(todayEvent);
+
     const rating = effectiveRating(v);
     const ratingCount = effectiveRatingCount(v);
     const hasRating = rating != null && (ratingCount || 0) > 0;
@@ -639,12 +778,23 @@ export default function WadUp() {
       contentEl.appendChild(label);
     } else {
       contentEl.className = `wu-pin ${zoomClass}`;
+      if (isLiveEvent) contentEl.classList.add('wu-pin-live');
       const pill = document.createElement('div');
       pill.className = 'wu-pill';
       pill.style.background = rankStyle.bg;
       pill.style.boxShadow = rankStyle.shadow;
 
-      if (topBadge) {
+      if (eventsChipActive && todayEvent) {
+        const badgeEl = document.createElement('span');
+        if (isLiveEvent) {
+          badgeEl.className = 'wu-live-music-note';
+          badgeEl.textContent = '🎵';
+        } else {
+          badgeEl.className = 'wu-badge wu-event-badge';
+          badgeEl.textContent = getEventIcon(todayEvent.event_type);
+        }
+        pill.appendChild(badgeEl);
+      } else if (topBadge) {
         const badgeEl = document.createElement('span');
         badgeEl.className = topBadge.id === 'live' ? 'wu-badge wu-badge-live' : 'wu-badge';
         badgeEl.textContent = topBadge.icon;
@@ -705,9 +855,20 @@ export default function WadUp() {
       ? `<button onclick="window.__wadupEditVenue('${v.id}')" class="popup-edit-venue-btn">✏️ Edit Venue</button>`
       : '';
 
+    // Performer/event-time block, shown above the usual type/rating/address
+    // lines whenever this pin only exists because of a venue_events row for
+    // the selected day (see getVenueEventForDay above) — venue_events has no
+    // NOT NULL on performer (most scraped rows never get one), hence the guard.
+    const eventPopupHtml = (eventsChipActive && todayEvent) ? `
+        ${todayEvent.performer ? `<div class="popup-performer">${isLiveEvent ? '<span class="wu-live-music-note">🎵</span>' : getEventIcon(todayEvent.event_type)} ${escapeHtml(todayEvent.performer)}</div>` : ''}
+        ${todayEvent.title ? `<div class="popup-event-name">${escapeHtml(todayEvent.title)}</div>` : ''}
+        <div class="popup-event-time">${isLiveEvent ? '<span class="live-now-text">🔴 LIVE NOW</span>' : `🕐 ${escapeHtml(formatTime((todayEvent.start_time || '').slice(11, 16)))}`}</div>
+      ` : '';
+
     const iwHtml = `
       <div class="gm-iw">
         <div class="popup-name">${escapeHtml(v.name)}</div>
+        ${eventPopupHtml}
         <div class="popup-type">${escapeHtml(cats.map(c => CATEGORY_LABELS[c] || c).join(' · '))}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
         ${ratingHtml}
         ${badgesHtml}
@@ -795,6 +956,14 @@ export default function WadUp() {
     const flameLevel = v.current_flame || 0;
     const flameEmoji = flameLevel === 3 ? '🔴' : flameLevel === 2 ? '🟠' : flameLevel === 1 ? '🟡' : null;
 
+    // Events chip: same event-badge/live-note override as dropVenuePin — a
+    // bar with a live-music/trivia/etc. night tonight gets the animated note
+    // or event-type icon instead of its usual flame badge.
+    const eventsChipActive = activeCategoryRef.current === 'events';
+    const dayIsoForPin = activeDateRef.current || todayIsoStr();
+    const todayEvent = eventsChipActive ? getVenueEventForDay(v.id, dayIsoForPin) : null;
+    const isLiveEvent = isEventLive(todayEvent);
+
     // contentEl gets the hover-scale CSS transform; el (below) is a plain
     // positioning shell makeOverlay moves with its own inline transform —
     // see dropVenuePin's identical split for why these can't be one element.
@@ -803,12 +972,23 @@ export default function WadUp() {
 
     if (showName) {
       contentEl.className = `wu-pin ${zoomClass}`;
+      if (isLiveEvent) contentEl.classList.add('wu-pin-live');
       const pill = document.createElement('div');
       pill.className = 'wu-pill';
       pill.style.background = rankStyle.bg;
       pill.style.boxShadow = rankStyle.shadow;
 
-      if (flameEmoji) {
+      if (eventsChipActive && todayEvent) {
+        const badgeEl = document.createElement('span');
+        if (isLiveEvent) {
+          badgeEl.className = 'wu-live-music-note';
+          badgeEl.textContent = '🎵';
+        } else {
+          badgeEl.className = 'wu-badge wu-event-badge';
+          badgeEl.textContent = getEventIcon(todayEvent.event_type);
+        }
+        pill.appendChild(badgeEl);
+      } else if (flameEmoji) {
         const badgeEl = document.createElement('span');
         badgeEl.className = 'wu-badge';
         badgeEl.textContent = flameEmoji;
@@ -842,10 +1022,15 @@ export default function WadUp() {
       contentEl.appendChild(pill);
       contentEl.appendChild(tail);
     } else {
-      contentEl.className = 'wu-bar-icon-pin';
-      contentEl.innerHTML = flameEmoji
+      contentEl.className = `wu-bar-icon-pin${isLiveEvent ? ' wu-pin-live' : ''}`;
+      const eventBadgeHtml = eventsChipActive && todayEvent
+        ? (isLiveEvent
+            ? '<span class="wu-live-music-note">🎵</span>'
+            : `<span class="wu-badge wu-event-badge">${getEventIcon(todayEvent.event_type)}</span>`)
+        : '';
+      contentEl.innerHTML = eventBadgeHtml + (flameEmoji
         ? `<div class="wu-flame-ring flame-${flameLevel}">${flameEmoji}</div><div class="wu-beer-icon">🍺</div>`
-        : '<div class="wu-beer-icon">🍺</div>';
+        : '<div class="wu-beer-icon">🍺</div>');
     }
 
     // Ranked pill bubbles need to consistently paint in front of the small
@@ -871,9 +1056,17 @@ export default function WadUp() {
       ? `<button onclick="window.__wadupEditVenue('${v.id}')" class="popup-edit-venue-btn">✏️ Edit Venue</button>`
       : '';
 
+    // Same performer/event-time block as dropVenuePin — see its comment.
+    const eventPopupHtml = (eventsChipActive && todayEvent) ? `
+        ${todayEvent.performer ? `<div class="popup-performer">${isLiveEvent ? '<span class="wu-live-music-note">🎵</span>' : getEventIcon(todayEvent.event_type)} ${escapeHtml(todayEvent.performer)}</div>` : ''}
+        ${todayEvent.title ? `<div class="popup-event-name">${escapeHtml(todayEvent.title)}</div>` : ''}
+        <div class="popup-event-time">${isLiveEvent ? '<span class="live-now-text">🔴 LIVE NOW</span>' : `🕐 ${escapeHtml(formatTime((todayEvent.start_time || '').slice(11, 16)))}`}</div>
+      ` : '';
+
     const iwHtml = `
       <div class="gm-iw">
         <div class="popup-name">${escapeHtml(v.name)}</div>
+        ${eventPopupHtml}
         <div class="popup-type">${escapeHtml(CATEGORY_LABELS.nightlife || 'Nightlife')}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
         ${ratingHtml}
         ${flameHtml}
@@ -1088,17 +1281,28 @@ export default function WadUp() {
     // lib/data.js).
     venuesRef.current = data.filter(v => !isChain(v.name)).map(v => ({ ...v, live: true }));
 
-    // Bulk-fetch today's venue_events once (rather than one query per pin) so
-    // dropVenuePin can flag "🎫 Event Today" per venue via a plain Set lookup.
+    // Bulk-fetch venue_events for today through the end of the day-strip's
+    // 10-day range once (rather than one query per pin) — venueEventsRef
+    // backs the Events chip's per-day pin gating (getVenueEventForDay) and
+    // the live-note/event-badge rendering in dropVenuePin/dropBarPin;
+    // eventVenueIdsTodayRef stays a plain today-only Set for the existing
+    // generic "🎫 Event Today" badge shown on every other chip.
     const now = new Date();
     const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
-    const dayEnd   = new Date(now); dayEnd.setUTCHours(23, 59, 59, 999);
-    const { data: eventsToday } = await supabase
+    const rangeEnd = new Date(now); rangeEnd.setUTCHours(23, 59, 59, 999); rangeEnd.setDate(rangeEnd.getDate() + 9);
+    const { data: eventRows } = await supabase
       .from('venue_events')
-      .select('venue_id')
-      .lte('start_time', dayEnd.toISOString())
-      .gte('end_time', dayStart.toISOString());
-    eventVenueIdsTodayRef.current = new Set((eventsToday || []).map(e => e.venue_id));
+      .select('venue_id, title, event_type, performer, start_time, end_time')
+      .gte('start_time', dayStart.toISOString())
+      .lte('start_time', rangeEnd.toISOString());
+    venueEventsRef.current = eventRows || [];
+
+    const todayIso = now.toISOString().slice(0, 10);
+    eventVenueIdsTodayRef.current = new Set(
+      venueEventsRef.current
+        .filter(e => (e.start_time || '').slice(0, 10) === todayIso && (!e.end_time || new Date(e.end_time) >= now))
+        .map(e => e.venue_id)
+    );
 
     // Best Rated placeholder, area-wide — independent of whichever chip is
     // active. Freshly-synced venues have no WadUp reviews yet, so this needs

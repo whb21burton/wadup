@@ -31,6 +31,7 @@ export default async function handler(req, res) {
       title: pending.event_name,
       description: pending.description || '',
       event_type: pending.event_type || 'other',
+      performer: pending.performer || null,
       start_time: `${pending.event_date}T${pending.event_time || '20:00:00'}`,
       is_free: false,
       source: 'scraped',

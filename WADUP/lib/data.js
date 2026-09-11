@@ -193,6 +193,26 @@ export function getVenueBadges(v, isTrending, isBestRated, hasEventToday) {
   return badges;
 }
 
+// venue_events.event_type → the small top-left icon an Events-chip pin shows
+// for that event, when it isn't currently live (a live event's pin shows the
+// animated wu-live-music-note instead — see pages/index.js's dropVenuePin/
+// dropBarPin).
+const EVENT_TYPE_ICONS = {
+  live_music: '🎵',
+  farmers_market: '🧑‍🌾',
+  trivia: '🧠',
+  dj: '🎧',
+  comedy: '🎤',
+  karaoke: '🎤',
+  sports: '🏆',
+  festival: '🎪',
+  art: '🎨',
+  other: '📍',
+};
+export function getEventIcon(eventType) {
+  return EVENT_TYPE_ICONS[eventType] || '📍';
+}
+
 const SPORT_KEYWORDS = [
   'volleyball','basketball','football','baseball','soccer','hockey',
   'tennis','golf','wrestling','boxing','mma','ufc','nfl','nba','mlb',
