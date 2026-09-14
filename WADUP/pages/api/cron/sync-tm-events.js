@@ -106,25 +106,52 @@ export default async function handler(req, res) {
     await Promise.all(batch.map(fetchRegion));
   }
 
-  // Full replace — this table is purely a cache with nothing else
-  // referencing it by foreign key, so delete-then-reinsert is safe and
-  // simplest.
-  const { error: deleteError } = await supabaseAdmin.from('tm_events_cache').delete().neq('tm_id', 'placeholder');
-  if (deleteError) {
-    return res.status(500).json({ error: 'Failed to clear old cache', detail: deleteError.message });
-  }
-
+  // Upsert-then-prune, NOT delete-then-insert — this table used to be
+  // wiped up front on the (wrong) assumption that delete-then-reinsert is
+  // safe since nothing else references it by foreign key. In production it
+  // was 500ing on roughly 2 of every 3 runs (Vercel's runtime logs show 8
+  // failures / 4 successes over 24h), and because the delete had already
+  // committed by the time the insert loop hit whatever was failing, every
+  // one of those failures left tm_events_cache completely empty until the
+  // next run happened to succeed — exactly the empty-table state that made
+  // every TM event vanish from the Events chip. onConflict:'tm_id' makes
+  // this loop safe to re-run/retry with no cache-clearing step at all, so a
+  // failed run just leaves the previous cycle's data in place instead of
+  // nothing.
   for (let i = 0; i < allEvents.length; i += 500) {
     const batch = allEvents.slice(i, i + 500);
-    const { error: insertError } = await supabaseAdmin.from('tm_events_cache').insert(batch);
+    const { error: insertError } = await supabaseAdmin
+      .from('tm_events_cache')
+      .upsert(batch, { onConflict: 'tm_id' });
     if (insertError) {
-      return res.status(500).json({ error: 'Failed to insert events', detail: insertError.message, insertedBeforeFailure: i });
+      return res.status(500).json({ error: 'Failed to upsert events', detail: insertError.message, insertedBeforeFailure: i, cacheUntouched: true });
+    }
+  }
+
+  // Prune what this run's fetch no longer found (an event that sold out,
+  // got cancelled, or rolled off the search window) — but only once the
+  // fresh batch above is safely stored, and only rows old enough that a
+  // normal 2-hourly run should already have refreshed them. A stale row
+  // lingering a few extra hours is harmless; an empty table is not.
+  let pruned = 0;
+  if (allEvents.length) {
+    const staleCutoff = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString();
+    const { data: prunedRows, error: pruneError } = await supabaseAdmin
+      .from('tm_events_cache')
+      .delete()
+      .lt('cached_at', staleCutoff)
+      .select('tm_id');
+    if (pruneError) {
+      errors.push(`stale-row cleanup: ${pruneError.message}`);
+    } else {
+      pruned = prunedRows?.length || 0;
     }
   }
 
   return res.status(200).json({
     success: true,
     total: allEvents.length,
+    pruned,
     regions: TM_REGIONS.length,
     errors,
     cachedAt: now.toISOString(),
