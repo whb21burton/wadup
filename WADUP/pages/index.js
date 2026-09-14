@@ -1229,21 +1229,35 @@ export default function WadUp() {
       // TM_REGIONS — ~43 metro areas, not just this city) shared across
       // whatever cities WadUp eventually covers; this map only ever shows
       // Chattanooga, so an unscoped query pulls in every other region's
-      // events too. Without this, Supabase's default 1000-row cap can fill
-      // up entirely with a single busy day in a bigger, unrelated market
-      // before any real Chattanooga event is ever returned — exactly what
-      // was silently starving the Events chip. Box roughly matches the
-      // 150-mile radius sync-tm-events.js's own Chattanooga region uses.
+      // events too. A 150-mile box previously fixed the 1000-row-cap bug
+      // (2026-09-11 alone had 1218 unfiltered rows, almost all irrelevant),
+      // but panning/zooming out further than that legitimately wants to see
+      // more than just the immediate metro area — so this is widened to
+      // 500 miles instead of dropped entirely: dropTMPin creates a real,
+      // fairly expensive OverlayView DOM element per event immediately
+      // (visibility toggling for the viewport happens afterward, in
+      // filterPins), so loading the full ~5,900-row nationwide cache as
+      // live pins on every page load isn't free — at 500mi (~2,400 rows,
+      // still over the 1000-row cap) this pages through with .range()
+      // instead of just raising .limit() past the cap.
       const CHATT_LAT = 35.0456, CHATT_LNG = -85.3096;
-      const { data: events, error } = await supabase
-        .from('tm_events_cache')
-        .select('*')
-        .gte('date_str', new Date().toISOString().slice(0, 10)) // only future events
-        .gte('lat', CHATT_LAT - 2.2).lte('lat', CHATT_LAT + 2.2)
-        .gte('lng', CHATT_LNG - 2.7).lte('lng', CHATT_LNG + 2.7)
-        .order('date_str', { ascending: true })
-        .limit(2000);
-      if (error) throw error;
+      const LAT_SPAN = 7.25, LNG_SPAN = 8.85; // ~500 miles
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const PAGE_SIZE = 1000;
+      let events = [];
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data: page, error } = await supabase
+          .from('tm_events_cache')
+          .select('*')
+          .gte('date_str', todayStr) // only future events
+          .gte('lat', CHATT_LAT - LAT_SPAN).lte('lat', CHATT_LAT + LAT_SPAN)
+          .gte('lng', CHATT_LNG - LNG_SPAN).lte('lng', CHATT_LNG + LNG_SPAN)
+          .order('date_str', { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        events = events.concat(page || []);
+        if (!page || page.length < PAGE_SIZE) break;
+      }
 
       Object.entries(tmMarkers.current).forEach(([id, entry]) => {
         entry.marker.setMap(null);
