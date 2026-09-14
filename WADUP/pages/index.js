@@ -386,7 +386,18 @@ export default function WadUp() {
         console.log('[FILTER] venue not found for id:', id);
         return;
       }
-      const show = venueMatchesChip(chip, venue, subcategory);
+      // Events chip needs the same "category tag alone isn't enough, it
+      // needs a real venue_events row for the selected day" rule
+      // updateAreaRanks already applies (see getVenueEventForDay) — without
+      // this, a venue tagged 'events' but with nothing on today (e.g.
+      // Barrelhouse Ballroom on a night with no show) stayed visible here
+      // if its pin already existed from viewing a different chip, since
+      // this loop only ever HIDES pins, and updateAreaRanks only ever
+      // RE-DROPS ones that pass its own (correct) eligibility check —
+      // nothing reconciled the two for a pin this loop was leaving shown.
+      const show = chip === 'events'
+        ? venueMatchesChip('events', venue, subcategory) && !!getVenueEventForDay(venue.id, date || todayIsoStr())
+        : venueMatchesChip(chip, venue, subcategory);
       entry.marker.setMap(show ? map : null);
       // Venue pins track their overlay in the separate `overlays` ref, not on
       // this mapMarkers entry (unlike TM pins below, whose entry bundles
@@ -1607,9 +1618,8 @@ export default function WadUp() {
         openEditPanel(venue);
       };
 
-      // TEMP DEBUG — remove once the "too few venues on the map" investigation
-      // is closed out. Callable from the console as window.__debugVenues(),
-      // also wired to a visible "🐞 Debug Venues" button (see JSX below).
+      // Console-only debug helper (window.__debugVenues()) — no on-map
+      // button anymore, this isn't meant to be user-visible.
       window.__debugVenues = () => {
         const chip = activeCategoryRef.current;
         const matching = venuesRef.current.filter(v => venueMatchesChip(chip, v));
@@ -2243,20 +2253,6 @@ export default function WadUp() {
             aria-label="Account"
           >
             {profile ? (profile.username || '?').slice(0, 1).toUpperCase() : '👤'}
-          </button>
-
-          {/* TEMP DEBUG — remove once the "too few venues on the map" investigation
-              is closed out. Logs venuesRef.current + the active chip's matches. */}
-          <button
-            onClick={() => window.__debugVenues?.()}
-            style={{
-              position: 'absolute', top: 8, left: 8, zIndex: 1000,
-              padding: '6px 10px', fontSize: '0.75rem', fontWeight: 700,
-              background: '#111', color: '#fff', border: 'none',
-              borderRadius: 6, cursor: 'pointer', opacity: 0.85,
-            }}
-          >
-            🐞 Debug Venues
           </button>
 
           {/* Mobile HUD */}
