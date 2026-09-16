@@ -246,16 +246,26 @@ export async function recalculateVenueRating(supabaseAdmin, venueId) {
   }).eq('id', venueId);
 }
 
-// Ranks an already-fetched, already-scoped (e.g. to the current map viewport)
-// list of venues by weighted_rating, purely client-side — no Supabase query
-// of its own, unlike every other function in this file. Used for both the
-// on-pin area-rank label and the sidebar's Top 10 list (pages/index.js),
-// which both need this same viewport-relative ranking, not a city-wide one.
+// Falls back from a real weighted_rating (once 5+ WadUp reviews exist) to an
+// admin-set admin_rating, then to google_rating — same three-rung chain as
+// pages/index.js's areaRatingOf, which is what the map's own on-pin
+// area-rank label and Top 10 sidebar list actually use; this function isn't
+// currently called from anywhere (no Supabase query of its own, unlike
+// every other function in this file — it was presumably meant to be the
+// shared ranking logic before areaRatingOf ended up living directly in
+// pages/index.js instead), but is kept in sync with the real logic rather
+// than left to silently drift from it.
+function getEffectiveRating(venue) {
+  if ((venue.weighted_rating_count || 0) >= 5) return venue.weighted_rating;
+  if (venue.admin_rating != null) return venue.admin_rating;
+  return venue.google_rating || 0;
+}
+
 export function rankVenuesInBounds(venues, chip) {
   const filtered = venues.filter(v => !v.is_hidden && venueMatchesChip(chip, v));
 
   return filtered
-    .sort((a, b) => (b.weighted_rating || 0) - (a.weighted_rating || 0))
+    .sort((a, b) => getEffectiveRating(b) - getEffectiveRating(a))
     .map((v, i) => ({ ...v, _areaRank: i + 1 }));
 }
 

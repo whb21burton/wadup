@@ -14,12 +14,62 @@
 // lib/placesSync.js's mapPlaceToRow), since venueMatchesChip compares it
 // with a plain ===.
 export const CATEGORY_CHIPS = [
-  { id: 'events',     label: '🎵 Events',              subcategories: [] },
-  { id: 'bars',       label: '🍸 Bars & Nightlife',     subcategories: [] },
-  { id: 'restaurant', label: '🍔 Restaurants',          subcategories: [] },
-  { id: 'sports',     label: '🏟️ Sports',              subcategories: [] },
-  { id: 'outdoors',   label: '🌳 Outdoors',             subcategories: [] },
-  { id: 'activities', label: '🎳 Activities',           subcategories: [] },
+  { id: 'events', label: '🎵 Events', subcategories: [
+    { id: 'Concert Hall', label: 'Concert Hall' },
+    { id: 'Theater', label: 'Theater' },
+    { id: 'Comedy Club', label: 'Comedy Club' },
+    { id: 'Music Venue', label: 'Music Venue' },
+  ]},
+  { id: 'bars', label: '🍸 Bars & Nightlife', subcategories: [
+    { id: 'Sports Bar', label: 'Sports Bar' },
+    { id: 'Speakeasy', label: 'Speakeasy' },
+    { id: 'Dance Club', label: 'Dance Club' },
+    { id: 'Brewery', label: 'Brewery' },
+    { id: 'Wine Bar', label: 'Wine Bar' },
+    { id: 'Cocktail Bar', label: 'Cocktail Bar' },
+    { id: 'Dive Bar', label: 'Dive Bar' },
+    { id: 'Karaoke Bar', label: 'Karaoke Bar' },
+    { id: 'Live Music Bar', label: 'Live Music Bar' },
+    { id: 'Rooftop Bar', label: 'Rooftop Bar' },
+  ]},
+  { id: 'restaurant', label: '🍔 Restaurants', subcategories: [
+    { id: 'American', label: 'American' },
+    { id: 'Italian', label: 'Italian' },
+    { id: 'Mexican', label: 'Mexican' },
+    { id: 'Asian', label: 'Asian' },
+    { id: 'BBQ', label: 'BBQ' },
+    { id: 'Seafood', label: 'Seafood' },
+    { id: 'Steakhouse', label: 'Steakhouse' },
+    { id: 'Burgers', label: 'Burgers' },
+    { id: 'Pizza', label: 'Pizza' },
+    { id: 'Fine Dining', label: 'Fine Dining' },
+    { id: 'Brunch', label: 'Brunch' },
+    { id: 'Soul Food', label: 'Soul Food' },
+    { id: 'Southern', label: 'Southern' },
+  ]},
+  { id: 'sports', label: '🏟️ Sports', subcategories: [
+    { id: 'Football', label: '🏈 Football' },
+    { id: 'Baseball', label: '⚾ Baseball' },
+    { id: 'Basketball', label: '🏀 Basketball' },
+    { id: 'Soccer', label: '⚽ Soccer' },
+    { id: 'Hockey', label: '🏒 Hockey' },
+  ]},
+  { id: 'outdoors', label: '🌳 Outdoors', subcategories: [
+    { id: 'Park', label: 'Park' },
+    { id: 'Hiking Trail', label: 'Hiking Trail' },
+    { id: 'Kayaking', label: 'Kayaking' },
+    { id: 'Rock Climbing', label: 'Rock Climbing' },
+    { id: 'Disc Golf', label: 'Disc Golf' },
+    { id: 'Bike Trail', label: 'Bike Trail' },
+  ]},
+  { id: 'activities', label: '🎳 Activities', subcategories: [
+    { id: 'Bowling', label: 'Bowling' },
+    { id: 'Top Golf', label: 'Top Golf' },
+    { id: 'Escape Room', label: 'Escape Room' },
+    { id: 'Axe Throwing', label: 'Axe Throwing' },
+    { id: 'Arcade', label: 'Arcade' },
+    { id: 'Go Karts', label: 'Go Karts' },
+  ]},
 ];
 
 // Keyed by the real category values stored on a venue (venues.categories /

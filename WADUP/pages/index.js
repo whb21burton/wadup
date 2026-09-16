@@ -90,13 +90,17 @@ function venueEmoji(v) {
 }
 
 // ── Two-tier pin system ── the rating used to ORDER pins/sidebar items falls
-// back to a venue's Google rating only so a freshly-synced, highly-rated
-// venue doesn't sort behind a middling one just for lacking WadUp reviews
-// yet. Never used for DISPLAY — a 4.8 Google rating and a 4.8 WadUp rating
-// aren't the same scale (5 vs 10), so only the real weighted_rating (out of
-// 10) is ever shown on a pin/card, and only once it's nonzero.
+// back — first to an admin-set admin_rating, then to Google's rating — only
+// so a freshly-synced, highly-rated venue (or one an admin has manually
+// vetted before it has real reviews) doesn't sort behind a middling one just
+// for lacking WadUp reviews yet. Never used for DISPLAY — none of these
+// three are on the same 0-10 scale as each other (weighted_rating and
+// admin_rating are; google_rating is out of 5), so only the real
+// weighted_rating is ever shown on a pin/card, and only once it's nonzero.
 function areaRatingOf(v) {
-  return v.weighted_rating > 0 ? v.weighted_rating : (v.google_rating || 0);
+  if ((v.weighted_rating_count || 0) >= 5) return v.weighted_rating;
+  if (v.admin_rating != null) return v.admin_rating;
+  return v.google_rating || 0;
 }
 
 // A venue's _areaRank is scoped to the current map viewport (see

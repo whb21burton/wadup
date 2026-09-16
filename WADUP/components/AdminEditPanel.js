@@ -25,6 +25,47 @@ function toggleInArray(arr, id) {
   return arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];
 }
 
+// Keyed by the real category values written into venues.categories (see
+// PANEL_CATEGORIES above) — 'nightlife', not the map chip's 'bars' id.
+// Falls back to a free-text input (below) for any category not listed here.
+const SUBCATEGORY_OPTIONS = {
+  nightlife: [
+    'Sports Bar', 'Speakeasy', 'Dance Club', 'Karaoke Bar', 'Jazz Club',
+    'Dive Bar', 'Rooftop Bar', 'Brewery', 'Wine Bar', 'Cocktail Bar',
+    'College Bar', 'Irish Pub', 'Gay Bar', 'Country Bar', 'Hip Hop Club',
+    'Hookah Lounge', 'Pool Bar', 'Arcade Bar', 'Comedy Bar', 'Live Music Bar',
+  ],
+  restaurant: [
+    'American', 'Italian', 'Mexican', 'Asian', 'Japanese', 'Chinese',
+    'Thai', 'Indian', 'Mediterranean', 'Greek', 'French', 'BBQ',
+    'Seafood', 'Steakhouse', 'Burgers', 'Pizza', 'Sushi', 'Ramen',
+    'Vegan', 'Farm to Table', 'Brunch', 'Breakfast', 'Food Truck',
+    'Fine Dining', 'Casual Dining', 'Fast Casual', 'Diner', 'Buffet',
+    'Wings', 'Tacos', 'Soul Food', 'Southern', 'Sandwich Shop',
+  ],
+  events: [
+    'Concert Hall', 'Theater', 'Comedy Club', 'Event Venue', 'Music Venue',
+    'Amphitheater', 'Stadium', 'Arena', 'Festival Grounds', 'Art Gallery',
+    'Museum', 'Cinema', 'Dinner Theater', 'Jazz Club', 'Opera House',
+  ],
+  sports: [
+    'Football', 'Baseball', 'Basketball', 'Soccer', 'Hockey',
+    'Tennis', 'Golf', 'Racing', 'MMA/Boxing', 'Rugby',
+    'Volleyball', 'Swimming', 'Track & Field', 'Multi-Sport',
+  ],
+  outdoors: [
+    'Park', 'Hiking Trail', 'Nature Preserve', 'Waterfront', 'Beach',
+    'Campground', 'Rock Climbing', 'Kayaking', 'Rafting', 'Disc Golf',
+    'Bike Trail', 'Dog Park', 'Botanical Garden', 'Arboretum', 'Greenway',
+  ],
+  activities: [
+    'Bowling', 'Top Golf', 'Mini Golf', 'Escape Room', 'Axe Throwing',
+    'Go Karts', 'Laser Tag', 'Trampoline Park', 'Arcade', 'Billiards',
+    'Batting Cage', 'Rock Climbing Gym', 'Painting Class', 'Cooking Class',
+    'Virtual Reality', 'Board Game Cafe', 'Bingo Hall', 'Casino',
+  ],
+};
+
 export default function AdminEditPanel({
   venue,             // live venues row being edited
   relocateTarget,    // { lat, lng } | null — set by the parent once "Click map to move" captures a new spot
@@ -38,6 +79,7 @@ export default function AdminEditPanel({
   const [name, setName] = useState(venue.name || '');
   const [categories, setCategories] = useState(venueCategories(venue));
   const [subcategory, setSubcategory] = useState(venue.subcategory || '');
+  const [adminRating, setAdminRating] = useState(venue.admin_rating || '');
   const [emoji, setEmoji] = useState(venue.custom_emoji || '');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [hideNewBadge, setHideNewBadge] = useState(!!venue.hide_new_badge);
@@ -57,6 +99,7 @@ export default function AdminEditPanel({
     setName(venue.name || '');
     setCategories(venueCategories(venue));
     setSubcategory(venue.subcategory || '');
+    setAdminRating(venue.admin_rating || '');
     setEmoji(venue.custom_emoji || '');
     setHideNewBadge(!!venue.hide_new_badge);
     setIsPrivate(!!venue.is_private);
@@ -81,6 +124,7 @@ export default function AdminEditPanel({
     try {
       await onSave({
         name, categories, subcategory: subcategory || null,
+        admin_rating: parseFloat(adminRating) || null,
         custom_emoji: emoji || null,
         hide_new_badge: hideNewBadge,
         is_private: isPrivate,
@@ -112,6 +156,12 @@ export default function AdminEditPanel({
       setDeleting(false);
     }
   };
+
+  // Which SUBCATEGORY_OPTIONS list applies — keyed off whichever category
+  // is checked first above, same "first entry is primary" convention
+  // update-venue.js uses when it syncs venues.category from the array.
+  const primaryCat = categories[0] || venue.category || '';
+  const subcatOptions = SUBCATEGORY_OPTIONS[primaryCat] || [];
 
   return (
     <>
@@ -176,11 +226,20 @@ export default function AdminEditPanel({
           </div>
 
           <label>Subcategory</label>
-          <input
-            value={subcategory}
-            placeholder="e.g. Craft Beer Bar, Speakeasy, Golf Course"
-            onChange={(e) => setSubcategory(e.target.value)}
-          />
+          {subcatOptions.length > 0 ? (
+            <select value={subcategory} onChange={(e) => setSubcategory(e.target.value)}>
+              <option value="">Select subcategory…</option>
+              {subcatOptions.map(opt => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              value={subcategory}
+              placeholder="e.g. Craft Beer Bar, Speakeasy, Golf Course"
+              onChange={(e) => setSubcategory(e.target.value)}
+            />
+          )}
 
           <label>Badges / Status</label>
           <div className="edit-panel-toggle-col">
@@ -228,9 +287,18 @@ export default function AdminEditPanel({
             )}
           </div>
 
-          <label>⭐ Google Rating</label>
-          <div className="edit-panel-readonly">
-            {venue.google_rating != null ? venue.google_rating.toFixed(1) : '—'} (read only)
+          <label>⭐ Admin Rating (1-10)</label>
+          <input
+            type="number"
+            min="1"
+            max="10"
+            step="0.1"
+            value={adminRating}
+            onChange={(e) => setAdminRating(e.target.value)}
+            placeholder="e.g. 8.5"
+          />
+          <div className="admin-emoji-hint">
+            Used for ranking until enough user ratings exist (5+). Google rating: {venue.google_rating != null ? venue.google_rating.toFixed(1) : '—'}.
           </div>
 
           {error && <div className="admin-modal-error">⚠️ {error}</div>}

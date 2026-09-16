@@ -9,7 +9,12 @@ const EDITABLE_FIELDS = [
   'name', 'custom_emoji', 'categories', 'category', 'subcategory', 'custom_subcategories',
   'is_private', 'is_hidden', 'is_verified', 'hide_new_badge',
   'description', 'cover_photo_url', 'custom_cover_photo',
-  'address', 'lat', 'lng', 'phone', 'website', 'admin_rank_number',
+  'address', 'lat', 'lng', 'phone', 'website', 'admin_rank_number', 'admin_rating',
+  // event_rank was missing here since the Event Rankings drag-and-drop tab
+  // (pages/admin/venues.js) was added — every save through this endpoint
+  // was silently dropped (falls through to "No editable fields in updates"
+  // when it's the only field sent), so no reorder has actually persisted.
+  'event_rank',
   'scraping_enabled', 'scraping_url',
 ];
 
