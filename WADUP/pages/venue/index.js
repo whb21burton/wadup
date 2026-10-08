@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
-import { CATEGORY_LABELS } from '../../lib/data';
+import { CATEGORY_LABELS, venueRatingLabel, venueSubcategories } from '../../lib/data';
 
 export default function BrowseVenues() {
   const [venues,  setVenues]  = useState([]);
@@ -27,7 +27,7 @@ export default function BrowseVenues() {
       ? venues.filter(v =>
           v.name?.toLowerCase().includes(q) ||
           v.city?.toLowerCase().includes(q) ||
-          v.subcategory?.toLowerCase().includes(q))
+          venueSubcategories(v).some(s => s.toLowerCase().includes(q)))
       : venues;
 
     const groups = {};
@@ -77,12 +77,15 @@ export default function BrowseVenues() {
                 {grouped[cat].map(v => (
                   <Link key={v.id} href={`/venue/${v.id}`} className="browse-card">
                     <div className="browse-card-name">{v.name}</div>
-                    <div className="browse-card-sub">{v.subcategory || ''}</div>
+                    <div className="browse-card-sub">{venueSubcategories(v).join(' · ')}</div>
                     <div className="browse-card-meta">
                       <span>📍 {v.city}{v.state ? `, ${v.state}` : ''}</span>
-                      {(v.total_ratings || 0) >= 5 && (
-                        <span className="browse-card-rating">⭐ {(v.average_rating || 0).toFixed(1)}</span>
-                      )}
+                      {/* Same weighted → admin → Google chain the map ranks by;
+                          average_rating/total_ratings are empty for every row. */}
+                      {(() => {
+                        const r = venueRatingLabel(v);
+                        return r ? <span className="browse-card-rating">⭐ {r.text}</span> : null;
+                      })()}
                     </div>
                   </Link>
                 ))}

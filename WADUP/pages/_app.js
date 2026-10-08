@@ -6,6 +6,13 @@ export default function App({ Component, pageProps }) {
     <>
       <Head>
         <link rel="manifest" href="/manifest.json" />
+        {/* There is no /favicon.ico in public/ — point the icon at a real
+            file instead of 404ing on every page load. */}
+        <link rel="icon" href="/icon-192.png" type="image/png" />
+        {/* mobile-web-app-capable is the standard replacement; Chrome logs a
+            deprecation warning for the apple- prefixed one on its own, but
+            iOS Safari still only honours the apple- form, so keep both. */}
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="WadUp" />

@@ -148,10 +148,35 @@ export default async function handler(req, res) {
     }
   }
 
+  // Prune events whose date has already passed. Nothing reads them (the
+  // client filters date_str >= today), but they were never deleted either —
+  // only "stale by cached_at" rows were — so the table grew without bound
+  // and every page load paged through dead rows inside the 500-mile box.
+  //
+  // Safe to run unconditionally, unlike the stale-row prune above: this can
+  // only ever remove events that already happened, so a failed fetch can't
+  // empty anything useful. date_str holds the event's OWN city's local date
+  // and this runs in UTC, so cut one day back rather than at "UTC today" —
+  // a Honolulu show dated 2026-10-08 is still tonight when UTC says the 9th.
+  const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const cutoffDateStr = cutoff.toISOString().slice(0, 10);
+  let prunedPast = 0;
+  const { data: pastRows, error: pastError } = await supabaseAdmin
+    .from('tm_events_cache')
+    .delete()
+    .lt('date_str', cutoffDateStr)
+    .select('tm_id');
+  if (pastError) {
+    errors.push(`past-event cleanup: ${pastError.message}`);
+  } else {
+    prunedPast = pastRows?.length || 0;
+  }
+
   return res.status(200).json({
     success: true,
     total: allEvents.length,
     pruned,
+    prunedPast,
     regions: TM_REGIONS.length,
     errors,
     cachedAt: now.toISOString(),

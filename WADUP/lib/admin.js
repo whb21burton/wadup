@@ -8,7 +8,6 @@ const SUPER_ADMIN_EMAIL = 'whb21burton@gmail.com';
 // user read their own row) or the service-role admin client (server routes).
 export async function getAdminRole(supabase, userId) {
   if (!userId) {
-    console.log('[admin] getAdminRole: no userId given');
     return null;
   }
   const { data, error } = await supabase
@@ -17,7 +16,6 @@ export async function getAdminRole(supabase, userId) {
     .eq('user_id', userId)
     .maybeSingle();
 
-  console.log('[admin] getAdminRole for', userId, '-> data:', data, 'error:', error?.message || null);
 
   if (error || !data) return null;
 

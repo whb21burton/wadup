@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import {
-  CATEGORY_CHIPS, CATEGORY_LABELS, EMOJI_OPTIONS,
+  CATEGORY_CHIPS, CATEGORY_LABELS,
   isVenueEligible, getVenueBadges, effectiveRating, effectiveRatingCount, hasWadupRating,
-  venueMatchesChip, venueCategories, isChain, formatTime, getEventIcon
+  venueMatchesChip, venueCategories, isChain, formatTime, getEventIcon,
+  localIsoDate, normalizeTimeStr, venueRatingTier
 } from '../lib/data';
 import { getLiveTrendingVenueIds, getBestRated, getScheduleTrendingVenues } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
@@ -75,7 +76,10 @@ function buildDays() {
     return {
       label: days[d.getDay()],
       num: d.getDate(),
-      iso: d.toISOString().slice(0,10),
+      // localIsoDate, not toISOString() — label/num above are already local,
+      // so a UTC iso made each button's id disagree with the day it is
+      // visibly labelled with, from 8pm local onward.
+      iso: localIsoDate(d),
       isToday: i === 0,
     };
   });
@@ -98,9 +102,7 @@ function venueEmoji(v) {
 // admin_rating are; google_rating is out of 5), so only the real
 // weighted_rating is ever shown on a pin/card, and only once it's nonzero.
 function areaRatingOf(v) {
-  if ((v.weighted_rating_count || 0) >= 5) return v.weighted_rating;
-  if (v.admin_rating != null) return v.admin_rating;
-  return v.google_rating || 0;
+  return venueRatingTier(v)?.value || 0;
 }
 
 // A venue's _areaRank is scoped to the current map viewport (see
@@ -174,13 +176,13 @@ export default function WadUp() {
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('events');
-  const [activeDate,     setActiveDate]     = useState(new Date().toISOString().slice(0,10));
+  const [activeDate,     setActiveDate]     = useState(localIsoDate());
   // filterPins reads these refs, not the state above, so it always sees the
   // current value regardless of when its own closure was created — the
   // state setters below update the ref SYNCHRONOUSLY, in the same click
   // handler, rather than waiting a render cycle for a useEffect to catch up.
   const activeCategoryRef = useRef('events');
-  const activeDateRef = useRef(new Date().toISOString().slice(0,10));
+  const activeDateRef = useRef(localIsoDate());
   // Desktop sidebar's category dropdown — see onCategoryClick/onSubcategoryClick
   // and renderDesktopCategoryList. Same synchronous-ref pattern as
   // activeCategoryRef: filterPins always reads the ref, never the state.
@@ -380,16 +382,9 @@ export default function WadUp() {
     const date = activeDateRef.current;
     const subcategory = activeSubcategoryRef.current;
 
-    console.log('[FILTER] chip:', chip, 'subcategory:', subcategory, 'date:', date);
-    console.log('[FILTER] venue count:', Object.keys(mapMarkers.current).length);
-    console.log('[FILTER] tm count:', Object.keys(tmMarkers.current).length);
-
     Object.entries(mapMarkers.current).forEach(([id, entry]) => {
       const venue = venuesRef.current.find(v => v.id === id);
-      if (!venue) {
-        console.log('[FILTER] venue not found for id:', id);
-        return;
-      }
+      if (!venue) return;
       // Events chip needs the same "category tag alone isn't enough, it
       // needs a real venue_events row for the selected day" rule
       // updateAreaRanks already applies (see getVenueEventForDay) — without
@@ -495,11 +490,6 @@ export default function WadUp() {
         .sort((a, b) => areaRatingOf(b) - areaRatingOf(a))
         .map((v, i) => ({ ...v, _areaRank: i + 1 }));
     }
-
-    // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
-    console.log('[TIER] zoom:', map.getZoom(), 'chip:', chip, 'eligible:', eligible.length,
-      'inViewport:', inViewport.length, 'top10:', Math.min(ranked.length, 10),
-      'discovery:', Math.max(ranked.length - 10, 0));
 
     // Venues that scrolled out of the viewport since the last pass are hidden
     // outright (not redropped as discovery dots) — they'll get a fresh pin
@@ -631,7 +621,7 @@ export default function WadUp() {
   // selected in the day-strip (activeDateRef), not hardcoded to "today" — a
   // venue/TM event still needs to actually be happening on that day to show,
   // but the day itself can be any date the strip offers.
-  const todayIsoStr = () => new Date().toISOString().slice(0, 10);
+  const todayIsoStr = () => localIsoDate();
 
   // A venue_events row is "live" once its start_time has passed and (if it
   // has one at all — most scraped rows never get an end_time, see
@@ -670,8 +660,14 @@ export default function WadUp() {
   // (normalized from tm_events_cache's date_str/time_str in fetchTM below) is
   // all there is, so "still showable" assumes a ~3hr show once it starts.
   const TM_ASSUMED_SHOW_LENGTH_MS = 3 * 60 * 60 * 1000;
+  // ev.timeStr comes straight from tm_events_cache.time_str, which holds
+  // Ticketmaster's localTime — "HH:MM:SS", not "HH:MM". Interpolating it raw
+  // produced `2026-10-08T19:30:00:00` (two seconds fields), an invalid date
+  // string, so this returned Invalid Date for every real TM row and both
+  // isTMEventLiveNow and isTMEventVisibleForDay then compared against NaN,
+  // which is always false. normalizeTimeStr trims it to "HH:MM" first.
   function tmEventStart(ev) {
-    return new Date(`${ev.dateStr}T${ev.timeStr || '20:00'}:00`);
+    return new Date(`${ev.dateStr}T${normalizeTimeStr(ev.timeStr) || '20:00'}:00`);
   }
   function isTMEventLiveNow(ev) {
     if (!ev.dateStr || ev.dateStr !== todayIsoStr()) return false;
@@ -776,8 +772,6 @@ export default function WadUp() {
       iconSpan.textContent = specialIcon;
       contentEl.appendChild(iconSpan);
     } else if (tier === 'discovery') {
-      // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
-      console.log('[DISCOVERY] creating pin for:', v.name, 'rank:', areaRank, 'zoom:', map.getZoom());
 
       contentEl.className = 'wu-pin-discovery';
       if (map.getZoom() >= 17) contentEl.classList.add('visible');
@@ -1257,7 +1251,11 @@ export default function WadUp() {
       // instead of just raising .limit() past the cap.
       const CHATT_LAT = 35.0456, CHATT_LNG = -85.3096;
       const LAT_SPAN = 7.25, LNG_SPAN = 8.85; // ~500 miles
-      const todayStr = new Date().toISOString().slice(0, 10);
+      // Local date, not UTC — tm_events_cache.date_str is Ticketmaster's
+      // localDate, and a UTC "today" is already tomorrow from 8pm Eastern
+      // onward, which excluded every one of today's rows from this query
+      // during exactly the hours the Events chip matters most.
+      const todayStr = localIsoDate();
       const PAGE_SIZE = 1000;
       let events = [];
       for (let from = 0; ; from += PAGE_SIZE) {
@@ -1301,7 +1299,10 @@ export default function WadUp() {
 
       filterPins();
     } catch (e) {
-      /* TM cache read failed — leave whatever was showing */
+      // Leave whatever was showing, but don't swallow this silently — an
+      // empty Events chip with a clean console is indistinguishable from
+      // "there genuinely are no events today", which cost real debugging time.
+      console.error('Ticketmaster cache read failed:', e.message || e);
     }
   }, [dropTMPin, filterPins]);
 
@@ -1329,17 +1330,26 @@ export default function WadUp() {
     // the live-note/event-badge rendering in dropVenuePin/dropBarPin;
     // eventVenueIdsTodayRef stays a plain today-only Set for the existing
     // generic "🎫 Event Today" badge shown on every other chip.
+    // venue_events.start_time is a naive LOCAL wall-clock timestamp (every
+    // scraped show reads '… 20:00:00', i.e. a real 8pm door time — note that
+    // pages/discover.js's parseUtcTimestamp assumes the opposite), so bound
+    // this by local day edges and send naive strings rather than instants.
+    // setUTCHours meant that from 8pm Eastern onward dayStart was already
+    // tomorrow, dropping tonight's shows out of the window entirely.
     const now = new Date();
-    const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
-    const rangeEnd = new Date(now); rangeEnd.setUTCHours(23, 59, 59, 999); rangeEnd.setDate(rangeEnd.getDate() + 9);
-    const { data: eventRows } = await supabase
+    const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(now); rangeEnd.setHours(23, 59, 59, 999); rangeEnd.setDate(rangeEnd.getDate() + 9);
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const asNaive = (d) => `${localIsoDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    const { data: eventRows, error: eventsError } = await supabase
       .from('venue_events')
       .select('venue_id, title, event_type, performer, start_time, end_time')
-      .gte('start_time', dayStart.toISOString())
-      .lte('start_time', rangeEnd.toISOString());
+      .gte('start_time', asNaive(dayStart))
+      .lte('start_time', asNaive(rangeEnd));
+    if (eventsError) console.error('venue_events load failed:', eventsError.message);
     venueEventsRef.current = eventRows || [];
 
-    const todayIso = now.toISOString().slice(0, 10);
+    const todayIso = localIsoDate(now);
     eventVenueIdsTodayRef.current = new Set(
       venueEventsRef.current
         .filter(e => (e.start_time || '').slice(0, 10) === todayIso && (!e.end_time || new Date(e.end_time) >= now))
@@ -1386,11 +1396,6 @@ export default function WadUp() {
           liveTrendingIds.forEach(id => { if (!trendingVenueIds.current.has(id)) { trendingVenueIds.current.add(id); changed = true; } });
           ratedList.forEach(v => { if (!bestRatedVenueIds.current.has(v.id)) { bestRatedVenueIds.current.add(v.id); changed = true; } });
         });
-
-        // TEMP DEBUG — remove once the fire-emoji bug is confirmed fixed in prod.
-        console.log('[TRENDING] venues marked trending:', venuesRef.current
-          .filter(v => trendingVenueIds.current.has(v.id))
-          .map(v => v.name));
 
         if (!changed) return;
         filterPinsRef.current?.();
@@ -1571,7 +1576,6 @@ export default function WadUp() {
       // fresh visit doesn't keep snapping back to wherever this was.
       try {
         const savedState = sessionStorage.getItem('wadup_map_state');
-        console.log('[MAP STATE] Checking for saved state on init:', savedState);
         if (savedState) {
           const state = JSON.parse(savedState);
           map.setCenter({ lat: state.lat, lng: state.lng });
@@ -1585,9 +1589,8 @@ export default function WadUp() {
             setActiveDate(state.date);
           }
           sessionStorage.removeItem('wadup_map_state');
-          console.log('[MAP STATE] Restored:', state);
         }
-      } catch (e) { console.error('[MAP STATE] Restore failed:', e); }
+      } catch (e) { /* a corrupt/unreadable saved state just means no restore */ }
 
       // "View Reviews" links inside a popup's raw iwHtml are plain <a> tags
       // (Google's InfoWindow content isn't part of the React tree), so
@@ -1607,7 +1610,6 @@ export default function WadUp() {
           chip: activeCategoryRef.current,
           date: activeDateRef.current,
         };
-        console.log('[MAP STATE] Saving on unload:', state);
         sessionStorage.setItem('wadup_map_state', JSON.stringify(state));
       };
       window.addEventListener('beforeunload', saveMapState);
@@ -1620,16 +1622,6 @@ export default function WadUp() {
         if (!venue) return;
         infoWindow.current.close();
         openEditPanel(venue);
-      };
-
-      // Console-only debug helper (window.__debugVenues()) — no on-map
-      // button anymore, this isn't meant to be user-visible.
-      window.__debugVenues = () => {
-        const chip = activeCategoryRef.current;
-        const matching = venuesRef.current.filter(v => venueMatchesChip(chip, v));
-        console.log('[DEBUG] Total venues in memory:', venuesRef.current.length);
-        console.log('[DEBUG] Matching chip', chip, ':', matching.length);
-        matching.forEach(v => console.log('[DEBUG]', v.name, v.lat, v.lng, v.categories, v.is_hidden));
       };
 
       // User dot
@@ -1656,8 +1648,6 @@ export default function WadUp() {
         // Tier 2 discovery dots only ever show at zoom 17+.
         const showDiscovery = z >= 17;
         const discoveryEls = document.querySelectorAll('.wu-pin-discovery');
-        // TEMP DEBUG — remove once discovery-pin visibility is confirmed fixed.
-        console.log('[ZOOM] current zoom:', z, 'showDiscovery:', showDiscovery, 'discovery pins in DOM:', discoveryEls.length);
         discoveryEls.forEach(el => {
           el.classList.toggle('visible', showDiscovery);
         });
@@ -1701,7 +1691,10 @@ export default function WadUp() {
     } else {
       window.__wadupMapInit = initMap;
       const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&callback=__wadupMapInit&v=weekly`;
+      // loading=async is required alongside the callback= bootstrap, or the
+      // Maps JS API logs "Google Maps JavaScript API has been loaded
+      // directly without loading=async" on every single page view.
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&callback=__wadupMapInit&v=weekly&loading=async`;
       script.async = true;
       script.defer = true;
       document.head.appendChild(script);
@@ -1741,17 +1734,10 @@ export default function WadUp() {
   // on mobile, so any subcategory picked earlier on desktop is cleared here
   // — otherwise it'd keep silently narrowing the mobile chip's results.
   const onChipClick = (chip) => {
-    console.log('[CHIP] clicked:', chip);
     activeCategoryRef.current = chip;
     activeSubcategoryRef.current = null;
     setActiveChip(chip);
     setActiveSubcategory(null);
-
-    // Debug: log first 5 venues and their categories
-    venuesRef.current.slice(0, 5).forEach(v => {
-      console.log('[CHIP] venue:', v.name, 'categories:', v.categories, 'category:', v.category);
-    });
-
     filterPins();
   };
 
@@ -2030,7 +2016,8 @@ export default function WadUp() {
         <title>WadUp — What&apos;s up near you</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
         <meta name="description" content="Discover live events, nightlife, and sports near you in real time." />
-        <link rel="icon" href="/favicon.ico" />
+        {/* The icon <link> lives in _app.js so every route gets it. There is
+            no /favicon.ico in public/, which is what the 404 was. */}
       </Head>
 
       {/* ── Splash screen ── */}

@@ -23,13 +23,11 @@ export default function AuthSidebar({ open, onClose, session, profile }) {
   // everyone else never even sees the link exists.
   useEffect(() => {
     if (!session?.user) {
-      console.log('[admin] AuthSidebar: no session, clearing adminRole');
       setAdminRole(null);
       return;
     }
     let cancelled = false;
     getAdminRole(supabase, session.user.id).then(role => {
-      console.log('[admin] AuthSidebar: adminRole resolved to', role);
       if (!cancelled) setAdminRole(role);
     });
     return () => { cancelled = true; };

@@ -15,13 +15,16 @@
 // everyone's activity without exposing who did what.
 
 import { supabase } from './supabase';
-import { venueMatchesChip } from './data';
+import { venueMatchesChip, venueRatingScore, venueRatingTier } from './data';
 
 const HOUR = 60 * 60 * 1000;
 const DAY  = 24 * HOUR;
 const WEEK = 7 * DAY;
 
-const VENUE_CARD_FIELDS = 'id, name, category, subcategory, city, state, address, lat, lng, average_rating, total_ratings, cover_photo_url, view_count, save_count';
+// Must include every column venueRatingTier reads (weighted_rating,
+// weighted_rating_count, admin_rating, google_rating, google_review_count) —
+// a card selected without them silently renders as unrated.
+const VENUE_CARD_FIELDS = 'id, name, category, subcategory, subcategories, city, state, address, lat, lng, average_rating, total_ratings, weighted_rating, weighted_rating_count, admin_rating, google_rating, google_review_count, cover_photo_url, view_count, save_count';
 
 function recencyMultiplier(ageMs) {
   if (ageMs <= 2 * HOUR) return 3;
@@ -79,7 +82,18 @@ export async function getTrendingVenues(city, limit = 20) {
     .slice(0, limit);
 }
 
-// ── ⭐ Best Rated — needs a real sample size to mean anything ──
+// ── ⭐ Best Rated ──
+// Ranks by the shared weighted → admin → Google chain (venueRatingTier in
+// lib/data.js), the same one the map ranks pins by. It used to require
+// total_ratings >= 5 and order by average_rating — both of those columns are
+// empty for every venue in the database, so this returned nothing at all and
+// discover's "Best Rated" section was permanently blank.
+//
+// Sorted in JS rather than SQL because the three rungs are on two different
+// scales (0-10 vs Google's 0-5), so they have to be normalized before they
+// can be compared — see venueRatingScore. Reading the whole (single-city)
+// venue list to do that is the same thing getTrendingVenues/getMostPopular
+// above already do.
 export async function getBestRated(city, limit = 20, category = null) {
   if (!city) return [];
 
@@ -87,15 +101,18 @@ export async function getBestRated(city, limit = 20, category = null) {
     .from('venues')
     .select(VENUE_CARD_FIELDS)
     .eq('city', city)
-    .eq('is_hidden', false)
-    .gte('total_ratings', 5)
-    .order('average_rating', { ascending: false })
-    .order('total_ratings', { ascending: false })
-    .limit(limit);
+    .eq('is_hidden', false);
   if (category) query = query.overlaps('categories', [category]);
 
   const { data, error } = await query;
-  return error ? [] : (data || []);
+  if (error || !data?.length) return [];
+
+  return data
+    // A venue with no rating on any rung isn't "best rated" — without this,
+    // an unrated venue would tie at 0 and fill the list arbitrarily.
+    .filter(v => (venueRatingTier(v)?.value || 0) > 0)
+    .sort((a, b) => venueRatingScore(b) - venueRatingScore(a))
+    .slice(0, limit);
 }
 
 // ── 🏆 Most Popular — all-time engagement, no recency weighting ──
@@ -244,29 +261,6 @@ export async function recalculateVenueRating(supabaseAdmin, venueId) {
     weighted_rating_count: reviews.length,
     subcategory_weighted_ratings: subcatRatings,
   }).eq('id', venueId);
-}
-
-// Falls back from a real weighted_rating (once 5+ WadUp reviews exist) to an
-// admin-set admin_rating, then to google_rating — same three-rung chain as
-// pages/index.js's areaRatingOf, which is what the map's own on-pin
-// area-rank label and Top 10 sidebar list actually use; this function isn't
-// currently called from anywhere (no Supabase query of its own, unlike
-// every other function in this file — it was presumably meant to be the
-// shared ranking logic before areaRatingOf ended up living directly in
-// pages/index.js instead), but is kept in sync with the real logic rather
-// than left to silently drift from it.
-function getEffectiveRating(venue) {
-  if ((venue.weighted_rating_count || 0) >= 5) return venue.weighted_rating;
-  if (venue.admin_rating != null) return venue.admin_rating;
-  return venue.google_rating || 0;
-}
-
-export function rankVenuesInBounds(venues, chip) {
-  const filtered = venues.filter(v => !v.is_hidden && venueMatchesChip(chip, v));
-
-  return filtered
-    .sort((a, b) => getEffectiveRating(b) - getEffectiveRating(a))
-    .map((v, i) => ({ ...v, _areaRank: i + 1 }));
 }
 
 // A venue is "trending now" if it has a venue_event_schedule entry starting

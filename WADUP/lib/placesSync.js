@@ -286,6 +286,12 @@ export function mapPlaceToRow(place, wadupCat) {
     // Google's specific type (e.g. "italian_restaurant") as a free-text
     // subcategory — more specific than the broad wadupCat bucket, and
     // already fetched via the field mask, so no extra API cost.
+    // NOTE: deliberately only the scalar, NOT venues.subcategories[]. This
+    // same row shape is spread straight into a venues_pending upsert (see
+    // pages/api/places/sync.js), and venues_pending has no subcategories
+    // column — sending one 500s the entire sync. A row inserted with just the
+    // scalar is fine: venueSubcategories() in lib/data.js falls back to it
+    // whenever the array is empty.
     subcategory: place.primaryType ? place.primaryType.replace(/_/g, ' ') : null,
     google_rating: place.rating ?? null,
     google_review_count: place.userRatingCount ?? null,

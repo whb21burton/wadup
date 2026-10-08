@@ -8,11 +8,16 @@
 //
 // `subcategories` backs the desktop sidebar's dropdown (pages/index.js's
 // renderDesktopCategoryList) — a category only gets a ▼ arrow once its list
-// is non-empty. Each entry's `id` must be typed EXACTLY as it's stored on
-// venues.subcategory (Google's primaryType with underscores turned into
-// spaces, e.g. 'night club', 'italian restaurant' — see
-// lib/placesSync.js's mapPlaceToRow), since venueMatchesChip compares it
-// with a plain ===.
+// is non-empty. Each entry's `id` is matched case-insensitively against any
+// of a venue's subcategories (see venueMatchesChip below), so these can stay
+// in display Title Case even though a Google Places sync stores primaryType
+// lowercase ('night club', 'italian restaurant' — see lib/placesSync.js's
+// mapPlaceToRow). The WORDS still have to line up, though: several ids here
+// ('Speakeasy', 'Dive Bar', 'Dance Club', 'Karaoke Bar', 'Rooftop Bar') have
+// no corresponding stored value anywhere in venues.subcategory, so they
+// currently match nothing — they need either a venue tagged with them via
+// AdminEditPanel, or a mapping from the Google primaryType that means the
+// same thing ('pub' → Dive Bar, 'night club' → Dance Club).
 export const CATEGORY_CHIPS = [
   { id: 'events', label: '🎵 Events', subcategories: [
     { id: 'Concert Hall', label: 'Concert Hall' },
@@ -88,8 +93,9 @@ export const CATEGORY_LABELS = {
 };
 
 // Shared by every admin-facing venue emoji picker (pages/admin/venues.js,
-// pages/index.js's on-map admin modals, components/AdminEditPanel.js) —
-// centralized here after the third copy would otherwise have been pasted.
+// components/AdminEditPanel.js) — centralized here rather than pasted a
+// third time. pages/index.js no longer imports it: its on-map admin modals
+// were replaced by AdminEditPanel, which owns the picker now.
 export const EMOJI_OPTIONS = [
   // Food & Drink
   '🍔', '🍕', '🌮', '🍣', '🍜', '🥢', '🍱', '🥩', '🍗', '🥗',
@@ -116,10 +122,32 @@ export function venueCategories(v) {
   return v.category ? [v.category] : [];
 }
 
-// `subcategory`, when given, narrows a category match down to venues whose
-// stored .subcategory is an exact match (see CATEGORY_CHIPS' comment) — used
-// by the sidebar dropdown's per-subcategory filtering. Omitted/falsy means
-// "match the whole category", same as before.
+// venues.subcategories is the array column; venues.subcategory is kept as a
+// single-value fallback (and stays populated with the FIRST entry of that
+// array — see pages/api/admin/update-venue.js) for any row that predates the
+// backfill or any write path still sending only the scalar.
+export function venueSubcategories(v) {
+  if (v.subcategories?.length) return v.subcategories.filter(Boolean);
+  return v.subcategory ? [v.subcategory] : [];
+}
+
+// `subcategory`, when given, narrows a category match down to venues carrying
+// that subcategory — used by the sidebar dropdown's per-subcategory filtering.
+// Omitted/falsy means "match the whole category", same as before.
+//
+// Matching is case-insensitive, and matches if ANY of the venue's
+// subcategories match, for two reasons:
+//   1. A venue can legitimately be several things at once (a restaurant
+//      that's both BBQ and Southern), which is what the subcategories[]
+//      column exists for; "any match" is the only sane reading of a
+//      single-pick filter against a multi-value column.
+//   2. The two write paths disagree on case. CATEGORY_CHIPS below (and
+//      AdminEditPanel's chips) use Title Case — 'Sports Bar', 'Brewery' —
+//      while a Google Places sync writes primaryType verbatim, which is
+//      lowercase: 'sports bar', 'brewery', 'night club' (see
+//      lib/placesSync.js's mapPlaceToRow). The old `===` compare therefore
+//      never matched a single synced venue, which is why picking any
+//      subcategory in the sidebar emptied the map.
 export function venueMatchesChip(chip, venue, subcategory) {
   if (!chip) return true;
   const cats = venueCategories(venue);
@@ -129,7 +157,10 @@ export function venueMatchesChip(chip, venue, subcategory) {
     ? (cats.includes('nightlife') || cats.includes('bars'))
     : cats.includes(chip);
   if (!chipMatches) return false;
-  if (subcategory) return venue.subcategory === subcategory;
+  if (subcategory) {
+    const want = String(subcategory).trim().toLowerCase();
+    return venueSubcategories(venue).some(s => String(s).trim().toLowerCase() === want);
+  }
   return true;
 }
 
@@ -164,6 +195,36 @@ export const VENUE_CATEGORIES = [
   { id: 'activities', label: 'Activities' },
 ];
 
+// ── Calendar-day helpers ──────────────────────────────────────────────────
+// `new Date().toISOString().slice(0,10)` is a UTC date, NOT the viewer's.
+// West of UTC (every US timezone) it rolls over EARLY — in Chattanooga
+// (UTC-4/-5) the UTC date is already tomorrow from 8pm local onward. Every
+// "which calendar day is this?" comparison in this app is against a local
+// date: tm_events_cache.date_str holds Ticketmaster's localDate for the
+// event's own city, and venue_events.start_time holds a naive local
+// wall-clock timestamp. So use this everywhere a DAY is meant, and keep
+// toISOString() only for real instants.
+export function localIsoDate(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Ticketmaster's Discovery API returns localTime as "HH:MM:SS" (and
+// occasionally "HH:MM"), and sync-tm-events.js stores it verbatim in
+// tm_events_cache.time_str. Anything interpolating it into a
+// `YYYY-MM-DDTHH:MM:SS` datetime string has to trim it to "HH:MM" first —
+// otherwise it builds `2026-10-08T19:30:00:00`, which is not a valid date
+// string, so `new Date(...)` returns Invalid Date and every comparison
+// against it is silently false. That is exactly what hid today's TM events.
+export function normalizeTimeStr(timeStr) {
+  if (!timeStr) return '';
+  const parts = String(timeStr).trim().split(':');
+  if (parts.length < 2) return '';
+  const [h, m] = parts;
+  if (!h || !m) return '';
+  return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+}
+
 export function distanceMiles(lat1, lng1, lat2, lng2) {
   const R = 3958.8;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -194,6 +255,52 @@ export function effectiveRating(v) {
 }
 export function effectiveRatingCount(v) {
   return hasWadupRating(v) ? v.total_ratings : v.google_review_count;
+}
+
+// ── The one rating chain ───────────────────────────────────────────────────
+// Falls back from a real weighted_rating (once 5+ WadUp reviews exist), to an
+// admin-set admin_rating, to Google's rating. This is the same three-rung
+// chain pages/index.js ranks map pins by (areaRatingOf, which now delegates
+// here) — previously it was written out three separate times, in
+// pages/index.js, in lib/rankings.js, and nowhere at all on the pages that
+// needed it most: discover and browse both read average_rating/total_ratings,
+// columns that are empty for every venue in the database, so neither page has
+// ever displayed a rating.
+//
+// `scale` matters: weighted_rating and admin_rating are 0-10, google_rating is
+// 0-5. They are NOT interchangeable numbers, so anything displaying one has to
+// say which scale it's on (see venueRatingLabel), and anything RANKING across
+// a mix of them has to normalize first (see venueRatingScore).
+export function venueRatingTier(v) {
+  if (!v) return null;
+  if ((v.weighted_rating_count || 0) >= 5) {
+    return { value: Number(v.weighted_rating) || 0, scale: 10, count: v.weighted_rating_count || 0, source: 'wadup' };
+  }
+  if (v.admin_rating != null) {
+    return { value: Number(v.admin_rating) || 0, scale: 10, count: 0, source: 'admin' };
+  }
+  if (v.google_rating != null) {
+    return { value: Number(v.google_rating) || 0, scale: 5, count: v.google_review_count || 0, source: 'google' };
+  }
+  return null;
+}
+
+// 0-1, comparable across the three rungs — for ordering a list that mixes them.
+export function venueRatingScore(v) {
+  const tier = venueRatingTier(v);
+  if (!tier || !tier.scale) return 0;
+  return tier.value / tier.scale;
+}
+
+// "8.5/10" or "4.5" — the /10 suffix is what keeps an admin-rated venue from
+// looking like it scored 8.5 out of 5 next to a Google-rated one.
+export function venueRatingLabel(v) {
+  const tier = venueRatingTier(v);
+  if (!tier || !(tier.value > 0)) return null;
+  return {
+    ...tier,
+    text: tier.scale === 10 ? `${tier.value.toFixed(1)}/10` : tier.value.toFixed(1),
+  };
 }
 
 // Parses a Google Places `regularOpeningHours` object (the shape stored in

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../lib/supabase';
-import { CATEGORY_LABELS, tmSegmentToCat, tmSportEmoji, formatTime } from '../lib/data';
+import { CATEGORY_LABELS, tmSegmentToCat, tmSportEmoji, formatTime, venueRatingLabel, venueSubcategories } from '../lib/data';
 import { getTrendingVenues, getBestRated, getLocalFavorites } from '../lib/rankings';
 
 const DEFAULT_CITY   = 'Chattanooga';
@@ -133,9 +133,12 @@ function normalizeVenueCard(v, rank) {
     external: false,
     image: v.cover_photo_url || null,
     name: v.name,
-    subtitle: [CATEGORY_LABELS[v.category] || v.category, v.subcategory].filter(Boolean).join(' · '),
-    rating: (v.total_ratings || 0) >= 5 ? v.average_rating : null,
-    ratingCount: v.total_ratings || 0,
+    subtitle: [CATEGORY_LABELS[v.category] || v.category, ...venueSubcategories(v)].filter(Boolean).join(' · '),
+    // Same weighted → admin → Google chain the map ranks by (see
+    // venueRatingTier in lib/data.js). This used to read
+    // average_rating/total_ratings, which are empty for every venue in the
+    // database, so no venue card has ever shown a rating.
+    rating: venueRatingLabel(v),
     rank: rank || null,
     city: v.city, state: v.state,
     dateLabel: null,
@@ -150,9 +153,8 @@ function normalizeVenueEventCard(ve) {
     external: false,
     image: v.cover_photo_url || null,
     name: ve.title,
-    subtitle: [CATEGORY_LABELS[v.category] || v.category, v.subcategory].filter(Boolean).join(' · '),
-    rating: (v.total_ratings || 0) >= 5 ? v.average_rating : null,
-    ratingCount: v.total_ratings || 0,
+    subtitle: [CATEGORY_LABELS[v.category] || v.category, ...venueSubcategories(v)].filter(Boolean).join(' · '),
+    rating: venueRatingLabel(v),
     rank: null,
     city: v.city, state: v.state,
     dateLabel: formatEventDate(ve.start_time),
@@ -168,7 +170,6 @@ function normalizeTMCard(ev) {
     name: ev.name,
     subtitle: CATEGORY_LABELS[ev.cat] || ev.cat,
     rating: null,
-    ratingCount: 0,
     rank: null,
     city: ev.city, state: ev.state,
     dateLabel: formatTmDate(ev.dateStr, ev.timeStr),
@@ -186,7 +187,11 @@ function DiscoverCard({ item }) {
         <div className="disco-card-name">{item.name}</div>
         {item.subtitle && <div className="disco-card-sub">{item.subtitle}</div>}
         <div className="disco-card-meta">
-          {item.rating != null && <span className="disco-card-rating">⭐ {item.rating.toFixed(1)} ({item.ratingCount})</span>}
+          {item.rating && (
+            <span className="disco-card-rating">
+              ⭐ {item.rating.text}{item.rating.count ? ` (${item.rating.count})` : ''}
+            </span>
+          )}
           {item.dateLabel && <span className="disco-card-date">📅 {item.dateLabel}</span>}
         </div>
         <div className="disco-card-city">📍 {item.city}{item.state ? `, ${item.state}` : ''}</div>

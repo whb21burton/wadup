@@ -6,7 +6,7 @@
 // here" — including moving the venue by clicking a new spot on the map,
 // which only makes sense in this map-embedded context.
 import { useEffect, useState } from 'react';
-import { EMOJI_OPTIONS, venueCategories } from '../lib/data';
+import { EMOJI_OPTIONS, venueCategories, venueSubcategories } from '../lib/data';
 
 // Deliberately not sourced from lib/data's CATEGORY_CHIPS — that list's
 // Bars & Nightlife chip uses id 'bars' for the map's chip-filter UI, but a
@@ -78,7 +78,10 @@ export default function AdminEditPanel({
 }) {
   const [name, setName] = useState(venue.name || '');
   const [categories, setCategories] = useState(venueCategories(venue));
-  const [subcategory, setSubcategory] = useState(venue.subcategory || '');
+  const [subcategories, setSubcategories] = useState(venueSubcategories(venue));
+  // Free-text entry for a subcategory none of the chips offer — added to the
+  // array on Enter / "+ Add", same as clicking a chip.
+  const [customSubcat, setCustomSubcat] = useState('');
   const [adminRating, setAdminRating] = useState(venue.admin_rating || '');
   const [emoji, setEmoji] = useState(venue.custom_emoji || '');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -98,7 +101,8 @@ export default function AdminEditPanel({
   useEffect(() => {
     setName(venue.name || '');
     setCategories(venueCategories(venue));
-    setSubcategory(venue.subcategory || '');
+    setSubcategories(venueSubcategories(venue));
+    setCustomSubcat('');
     setAdminRating(venue.admin_rating || '');
     setEmoji(venue.custom_emoji || '');
     setHideNewBadge(!!venue.hide_new_badge);
@@ -118,12 +122,16 @@ export default function AdminEditPanel({
   }, [relocateTarget]);
 
   const save = async () => {
-    console.log('[EditMode] AdminEditPanel: Save clicked for', venue.id);
     setSaving(true);
     setError('');
     try {
       await onSave({
-        name, categories, subcategory: subcategory || null,
+        name, categories,
+        subcategories,
+        // venues.subcategory stays populated with the FIRST selection so every
+        // existing single-value reader (map pins, discover/browse cards,
+        // search, lib/rankings' VENUE_CARD_FIELDS) keeps working unchanged.
+        subcategory: subcategories[0] || null,
         admin_rating: parseFloat(adminRating) || null,
         custom_emoji: emoji || null,
         hide_new_badge: hideNewBadge,
@@ -134,34 +142,52 @@ export default function AdminEditPanel({
         lng: lng === '' ? null : parseFloat(lng),
       });
     } catch (e) {
-      console.error('[EditMode] AdminEditPanel: save FAILED:', e.message);
       setError(e.message);
     }
     setSaving(false);
   };
 
   const del = async () => {
-    console.log('[EditMode] AdminEditPanel: Delete clicked for', venue.id);
-    if (!window.confirm('Are you sure? This cannot be undone.')) {
-      console.log('[EditMode] AdminEditPanel: delete cancelled');
-      return;
-    }
+    if (!window.confirm('Are you sure? This cannot be undone.')) return;
     setDeleting(true);
     setError('');
     try {
       await onDelete();
     } catch (e) {
-      console.error('[EditMode] AdminEditPanel: delete FAILED:', e.message);
       setError(e.message);
       setDeleting(false);
     }
   };
 
-  // Which SUBCATEGORY_OPTIONS list applies — keyed off whichever category
-  // is checked first above, same "first entry is primary" convention
-  // update-venue.js uses when it syncs venues.category from the array.
-  const primaryCat = categories[0] || venue.category || '';
-  const subcatOptions = SUBCATEGORY_OPTIONS[primaryCat] || [];
+  // Offer the subcategories of EVERY category this venue is tagged with, not
+  // just the primary one — a venue that is both Restaurant and Bars &
+  // Nightlife should be able to pick from both sets. Deduped, since a few
+  // names ('Jazz Club') appear under more than one category.
+  const selectedCats = categories.length ? categories : (venue.category ? [venue.category] : []);
+  const subcatOptions = [...new Set(selectedCats.flatMap(c => SUBCATEGORY_OPTIONS[c] || []))];
+
+  // Anything already saved on the venue that isn't in the offered list (a
+  // free-text entry, or a lowercase Google primaryType like 'night club' from
+  // a Places sync) still needs a chip, or saving would silently drop it.
+  const extraSelected = subcategories.filter(
+    s => !subcatOptions.some(o => o.toLowerCase() === String(s).toLowerCase())
+  );
+
+  const isSubcatSelected = (opt) =>
+    subcategories.some(s => String(s).toLowerCase() === String(opt).toLowerCase());
+
+  const toggleSubcat = (opt) => setSubcategories(prev =>
+    prev.some(s => String(s).toLowerCase() === String(opt).toLowerCase())
+      ? prev.filter(s => String(s).toLowerCase() !== String(opt).toLowerCase())
+      : [...prev, opt]
+  );
+
+  const addCustomSubcat = () => {
+    const value = customSubcat.trim();
+    if (!value) return;
+    if (!isSubcatSelected(value)) setSubcategories(prev => [...prev, value]);
+    setCustomSubcat('');
+  };
 
   return (
     <>
@@ -225,20 +251,38 @@ export default function AdminEditPanel({
             ))}
           </div>
 
-          <label>Subcategory</label>
-          {subcatOptions.length > 0 ? (
-            <select value={subcategory} onChange={(e) => setSubcategory(e.target.value)}>
-              <option value="">Select subcategory…</option>
-              {subcatOptions.map(opt => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          ) : (
+          <label>Subcategories</label>
+          <div className="admin-emoji-hint">
+            Pick as many as fit. The first one stays the venue&apos;s primary
+            subcategory everywhere a single value is shown.
+          </div>
+          <div className="admin-chip-grid">
+            {[...subcatOptions, ...extraSelected].map(opt => (
+              <button
+                key={opt}
+                type="button"
+                className={`admin-chip${isSubcatSelected(opt) ? ' selected' : ''}`}
+                onClick={() => toggleSubcat(opt)}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+          <div className="admin-subcat-add">
             <input
-              value={subcategory}
-              placeholder="e.g. Craft Beer Bar, Speakeasy, Golf Course"
-              onChange={(e) => setSubcategory(e.target.value)}
+              value={customSubcat}
+              placeholder="Add another, e.g. Craft Beer Bar"
+              onChange={(e) => setCustomSubcat(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomSubcat(); } }}
             />
+            <button type="button" className="admin-chip" onClick={addCustomSubcat} disabled={!customSubcat.trim()}>
+              + Add
+            </button>
+          </div>
+          {subcategories.length > 0 && (
+            <div className="admin-emoji-hint">
+              Selected: {subcategories.join(' · ')}
+            </div>
           )}
 
           <label>Badges / Status</label>
