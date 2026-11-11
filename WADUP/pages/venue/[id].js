@@ -424,7 +424,7 @@ export default function VenuePage() {
             style={(() => {
               const ref = Array.isArray(venue.google_photo_refs) ? venue.google_photo_refs[0] : null;
               const photo = venue.cover_photo_url ||
-                (ref && /^places\\/[^/]+\\/photos\\/[^/]+$/.test(ref)
+                (ref && /^places\/[^/]+\/photos\/[^/]+$/.test(ref)
                   ? `/api/places/photo?ref=${encodeURIComponent(ref)}&maxWidth=1200`
                   : venue.google_place_id && /^[A-Za-z0-9_-]{10,200}$/.test(venue.google_place_id)
                     ? `/api/places/photo?placeId=${encodeURIComponent(venue.google_place_id)}&maxWidth=1200`
