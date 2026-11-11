@@ -20,7 +20,7 @@ export default function AdminSidebar({ adminRole }) {
           🏠 Overview
         </Link>
         <Link href="/admin/venues" className={`admin-nav-link${isActive('/admin/venues') ? ' active' : ''}`}>
-          📍 Venues
+          📋 Venue Operations
         </Link>
         {superAdmin && (
           <Link href="/admin/rankings" className={`admin-nav-link${isActive('/admin/rankings') ? ' active' : ''}`}>
@@ -39,7 +39,7 @@ export default function AdminSidebar({ adminRole }) {
         )}
         {superAdmin && (
           <Link href="/admin/sync" className={`admin-nav-link${isActive('/admin/sync') ? ' active' : ''}`}>
-            🔄 Sync Manager
+            📥 Import Places
           </Link>
         )}
         <Link href="/admin/reports" className={`admin-nav-link${isActive('/admin/reports') ? ' active' : ''}`}>
