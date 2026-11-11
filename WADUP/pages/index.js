@@ -211,6 +211,7 @@ export default function WadUp() {
   const [topRanked,      setTopRanked]      = useState([]);
   const [sidebarLoading, setSidebarLoading] = useState(true);
   const [mapReady,       setMapReady]       = useState(false);
+  const [mustSeeInView, setMustSeeInView] = useState(true);
   const [showSplash,     setShowSplash]     = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [zoomClass,      setZoomClass]      = useState('zoom-near');
@@ -479,6 +480,16 @@ export default function WadUp() {
     const map = mapObj.current;
     if (!map) return;
     const bounds = map.getBounds();
+    // Recompute availability from actual visible venues, not a fixed city.
+    // Keep the category visible until the first map bounds and venue fetch
+    // are available so it doesn't flash in/out during initial loading.
+    if (bounds) {
+      setMustSeeInView(venuesRef.current.some(v =>
+        v.live && !v.is_hidden && isVenueEligible(v) &&
+        venueMatchesChip('must-see', v) && v.lat != null && v.lng != null &&
+        bounds.contains(new window.google.maps.LatLng(v.lat, v.lng))
+      ));
+    }
     const chip = activeCategoryRef.current;
     const subcategory = activeSubcategoryRef.current;
 
@@ -1354,6 +1365,7 @@ export default function WadUp() {
     // entirely — WadUp is meant to surface local spots (see isChain in
     // lib/data.js).
     venuesRef.current = data.filter(v => !isChain(v.name)).map(v => ({ ...v, live: true }));
+    updateAreaRanksRef.current?.();
 
     // Bulk-fetch venue_events for today through the end of the day-strip's
     // 10-day range once (rather than one query per pin) — venueEventsRef
@@ -1901,7 +1913,7 @@ export default function WadUp() {
 
   const renderChips = (containerClass) => (
     <div className={containerClass}>
-      {CATEGORY_CHIPS.map(c => (
+      {CATEGORY_CHIPS.filter(c => c.id !== 'must-see' || mustSeeInView).map(c => (
         <button
           key={c.id}
           className={`chip${activeChip === c.id ? ' active' : ''}`}
@@ -1919,7 +1931,7 @@ export default function WadUp() {
   const renderDesktopCategoryList = () => (
     <div className="sidebar-categories">
       <div className="cat-list">
-        {CATEGORY_CHIPS.map(c => {
+        {CATEGORY_CHIPS.filter(c => c.id !== 'must-see' || mustSeeInView).map(c => {
           const hasSubcats = c.subcategories?.length > 0;
           const isActive = activeChip === c.id;
           const isOpen = openDropdown === c.id;
