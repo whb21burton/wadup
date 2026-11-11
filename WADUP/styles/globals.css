@@ -3654,3 +3654,48 @@ html, body {
   border-radius: 15px 15px 0 0;
   background: #e5e8ea;
 }
+
+
+/* Compact, scannable Activities navigation */
+.subcat-list.activities-subcats.open {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 10px 12px 14px;
+  max-height: none;
+  overflow: visible;
+}
+.activities-subcats .subcat-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 49px;
+  padding: 9px 6px;
+  box-sizing: border-box;
+  border: 1px solid #233448;
+  border-radius: 10px;
+  background: #111c2d;
+  color: #c9d5e4;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+}
+.activities-subcats .subcat-item:hover,
+.activities-subcats .subcat-item.active {
+  background: #fff000;
+  border-color: #fff000;
+  color: #101010;
+}
+.activities-more-btn {
+  grid-column: 1 / -1;
+  padding: 10px;
+  background: transparent;
+  border: 1px dashed #395168;
+  border-radius: 9px;
+  color: #cbd8e6;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.activities-more-btn:hover { border-color: #fff000; color: #fff000; }
