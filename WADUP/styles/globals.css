@@ -3641,3 +3641,16 @@ html, body {
   .subcat-list.open { max-height: none; overflow: visible; }
   .subcat-list:not(.open) { max-height: 0; overflow: hidden; }
 }
+
+
+/* Real venue photography in Google Maps InfoWindow */
+.gm-iw .popup-place-photo {
+  display: block;
+  width: calc(100% + 32px);
+  height: 145px;
+  margin: -14px -16px 12px;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 15px 15px 0 0;
+  background: #e5e8ea;
+}
