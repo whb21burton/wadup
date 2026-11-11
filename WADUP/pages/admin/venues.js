@@ -696,13 +696,13 @@ export default function AdminVenues() {
   return (
     <>
       <Head>
-        <title>Venue Manager — WadUp Admin</title>
+        <title>Venue Operations — WadUp Admin</title>
         <meta name="robots" content="noindex, nofollow" />
       </Head>
       <div className="admin-shell">
         <AdminSidebar adminRole={adminRole} />
         <main className="admin-main">
-          <h1 className="admin-page-title">Venue Manager</h1>
+          <h1 className="admin-page-title">Venue Operations</h1>
 
           <div className="admin-view-tabs">
             <button className={`admin-view-tab${viewTab === 'live' ? ' active' : ''}`} onClick={() => setViewTab('live')}>
@@ -792,17 +792,6 @@ export default function AdminVenues() {
                   <span className={`admin-venue-table-status${v.is_hidden ? ' hidden' : ''}`}>
                     {v.is_hidden ? '❌ Hidden' : '✅ Visible'}
                   </span>
-                  {venueCategories(v).includes('nightlife') && (
-                    <input
-                      type="number"
-                      min="1" max="10"
-                      value={v.admin_rank_number || ''}
-                      onChange={(e) => updateAdminRank(v.id, e.target.value)}
-                      placeholder="Rank"
-                      title="Admin rank override (1-10)"
-                      style={{ width: '60px' }}
-                    />
-                  )}
                   <div className="admin-venue-table-actions">
                     <button onClick={() => setEditingVenue(v)}>Edit</button>
                     <button onClick={() => toggleHidden(v)}>{v.is_hidden ? 'Show' : 'Hide'}</button>
