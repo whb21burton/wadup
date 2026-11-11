@@ -1311,7 +1311,6 @@ export default function WadUp() {
     const { data, error } = await supabase
       .from('venues')
       .select('*')
-      .eq('city', 'Chattanooga')
       .eq('is_hidden', false)
       .order('google_rating', { ascending: false });
     if (error || !data) return;
@@ -1322,7 +1321,7 @@ export default function WadUp() {
     // call site. National/regional chains are excluded from the public map
     // entirely — WadUp is meant to surface local spots (see isChain in
     // lib/data.js).
-    venuesRef.current = data.filter(v => !isChain(v.name)).map(v => ({ ...v, live: true }));
+    venuesRef.current = data.map(v => ({ ...v, live: true }));
 
     // Bulk-fetch venue_events for today through the end of the day-strip's
     // 10-day range once (rather than one query per pin) — venueEventsRef
