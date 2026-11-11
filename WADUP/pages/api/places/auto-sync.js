@@ -32,6 +32,7 @@ export const config = {
 };
 
 export default async function handler(req, res) {
+  if (!supabaseAdmin) return res.status(503).json({ error: 'Automatic syncing is disabled: this deployment has no isolated Supabase service-role configuration.' });
   const { data, error } = await supabaseAdmin
     .from('venues')
     .select('last_google_sync')
