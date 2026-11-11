@@ -20,10 +20,12 @@
 // same thing ('pub' → Dive Bar, 'night club' → Dance Club).
 export const CATEGORY_CHIPS = [
   { id: 'events', label: '🎵 Events', subcategories: [
-    { id: 'Concert Hall', label: 'Concert Hall' },
-    { id: 'Theater', label: 'Theater' },
-    { id: 'Comedy Club', label: 'Comedy Club' },
-    { id: 'Music Venue', label: 'Music Venue' },
+    { id: 'live-music', label: '🎵 Live Music & Concerts' },
+    { id: 'comedy', label: '😂 Comedy' },
+    { id: 'arts', label: '🎭 Arts & Entertainment' },
+    { id: 'festivals', label: '🎪 Festivals & Markets' },
+    { id: 'community', label: '🤝 Community Events' },
+    { id: 'special', label: '✨ Special Events' },
   ]},
   { id: 'bars', label: '🍸 Bars & Nightlife', subcategories: [
     { id: 'Sports Bar', label: 'Sports Bar' },
