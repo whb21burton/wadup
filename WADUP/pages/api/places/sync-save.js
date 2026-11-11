@@ -4,6 +4,7 @@
 // `venues` table: the admin already reviewed each one in the preview UI, so
 // there's no need for a second venues_pending review pass on top of that.
 import { requireAdmin } from '../admin/_authAdmin';
+import { isSuperAdmin } from '../../../lib/admin';
 import { supabaseAdmin } from '../supabase-admin';
 
 // Preview-only annotation fields — venues has no columns for these, so they
@@ -18,10 +19,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!supabaseAdmin) return res.status(503).json({ error: 'Import unavailable in this preview: a separate staging database and service-role credential are required. Production credentials are intentionally not used.' });
+  if (!supabaseAdmin) return res.status(503).json({ error: 'This preview does not have a Supabase service-role key. Bulk importing is available on the configured production deployment; no additional database is required.' });
 
   const auth = await requireAdmin(req);
-  if (!auth) return res.status(403).json({ error: 'Not authorized' });
+  if (!auth || !isSuperAdmin(auth.adminRole)) return res.status(403).json({ error: 'Super admin access required' });
 
   const { venues, rejected } = req.body || {};
   if (!Array.isArray(venues)) {
