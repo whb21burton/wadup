@@ -26,8 +26,12 @@ create policy admin_roles_select_own_or_super
     or exists (select 1 from admin_roles ar2 where ar2.user_id = auth.uid() and ar2.role = 'super_admin')
   );
 
+-- Seed this admin only when the referenced profile exists.
+-- Fresh Supabase branches do not copy production auth/profile data.
 insert into admin_roles (user_id, role, assigned_cities, assigned_states)
-values ('1c70f0fd-fd65-4550-8186-a50280f12b53', 'super_admin', null, null)
+select id, 'super_admin', null, null
+from profiles
+where id = '1c70f0fd-fd65-4550-8186-a50280f12b53'
 on conflict (user_id) do update set role = 'super_admin';
 
 -- Needed for the Reports/Moderation Queue's "Suspend User" action to have
