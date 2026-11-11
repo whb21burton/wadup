@@ -71,7 +71,7 @@ function escapeHtml(str) {
 function buildDays() {
   const days = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
   const today = new Date();
-  return Array.from({length:10}, (_,i) => {
+  return Array.from({length:7}, (_,i) => {
     const d = new Date(today); d.setDate(today.getDate() + i);
     return {
       label: days[d.getDay()],
@@ -89,6 +89,24 @@ function buildDays() {
 // A venue's pin/card icon always reflects its *primary* (first) category —
 // see venueCategories() in lib/data.js for the categories[]-with-category
 // fallback this reads from.
+// Event-type filters apply to scheduled shows, not the building's type.
+function matchesEventType(type, name = '', genre = '', segment = '') {
+  if (!type) return true;
+  const text = [name, genre, segment].join(' ').toLowerCase();
+  if (type === 'live-music') return /music|concert|rock|pop|country|blues|jazz|hip.hop|rap|folk|indie|singer|tour|band|orchestra|symphony/i.test(text);
+  if (type === 'comedy') return /comedy|comedian|stand.up|improv|laugh/i.test(text);
+  if (type === 'arts') return /theater|theatre|musical|ballet|dance|opera|art|exhibit|film|cinema|play|performance|puppet/i.test(text);
+  if (type === 'festivals') return /festival|market|fair|craft|bazaar|food truck/i.test(text);
+  if (type === 'community') return /community|fundrais|charity|neighborhood|volunteer|nonprofit|parade/i.test(text);
+  if (type === 'special') return /holiday|special|celebration|pop.up|seasonal|anniversary/i.test(text);
+  return false;
+}
+function matchesTMEventType(ev, type) {
+  return matchesEventType(type, ev.name, ev.genre, ev.segment);
+}
+function matchesVenueEventType(ev, type) {
+  return !!ev && matchesEventType(type, [ev.title, ev.performer].filter(Boolean).join(' '), ev.event_type);
+}
 function venueEmoji(v) {
   return v.custom_emoji || CATEGORY_ICONS[venueCategories(v)[0]] || '📍';
 }
@@ -231,7 +249,17 @@ export default function WadUp() {
   const sheetTouchDeltaY = useRef(0);
   const deferredInstallPrompt = useRef(null);
 
-  const days = buildDays();
+  const [weekStart, setWeekStart] = useState(localIsoDate());
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [eventCountInView, setEventCountInView] = useState(null);
+  const days = useMemo(() => {
+    const start = new Date(weekStart + 'T12:00:00');
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return { iso: localIsoDate(d), num: d.getDate(), label: ['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()], isToday: localIsoDate(d) === localIsoDate() };
+    });
+  }, [weekStart]);
 
   // ── Auto-sync Chattanooga venues from Google Places — fire-and-forget;
   // the route itself checks venues.last_google_sync and only actually
@@ -395,7 +423,7 @@ export default function WadUp() {
       // RE-DROPS ones that pass its own (correct) eligibility check —
       // nothing reconciled the two for a pin this loop was leaving shown.
       const show = chip === 'events'
-        ? venueMatchesChip('events', venue, subcategory) && !!getVenueEventForDay(venue.id, date || todayIsoStr())
+        ? venueMatchesChip('events', venue) && matchesVenueEventType(getVenueEventForDay(venue.id, date || todayIsoStr()), subcategory)
         : venueMatchesChip(chip, venue, subcategory);
       entry.marker.setMap(show ? map : null);
       // Venue pins track their overlay in the separate `overlays` ref, not on
@@ -410,12 +438,15 @@ export default function WadUp() {
     Object.entries(tmMarkers.current).forEach(([id, entry]) => {
       const ev = tmEventsRef.current.find(e => e.id === id);
       if (!ev) return;
-      const catMatch = ev.cat === chip;
+      const catMatch = ev.cat === chip && (chip !== 'events' || matchesTMEventType(ev, subcategory));
       const show = catMatch && isTMEventVisibleForDay(ev, date || todayIsoStr());
       entry.marker.setMap(show ? map : null);
       if (entry.overlay) entry.overlay.setMap(show ? map : null);
     });
 
+    const visibleTM = tmEventsRef.current.filter(ev => ev.cat === chip && (chip !== 'events' || matchesTMEventType(ev, subcategory)) && isTMEventVisibleForDay(ev, date || todayIsoStr()) && map.getBounds()?.contains(new window.google.maps.LatLng(ev.lat, ev.lng)));
+    const visibleVenue = venuesRef.current.filter(v => venueMatchesChip(chip, v, chip === 'events' ? null : subcategory) && (chip !== 'events' || matchesVenueEventType(getVenueEventForDay(v.id, date || todayIsoStr()), subcategory)) && v.lat != null && v.lng != null && map.getBounds()?.contains(new window.google.maps.LatLng(v.lat, v.lng)));
+    setEventCountInView(chip === 'events' ? visibleTM.length + visibleVenue.length : null);
     updateAreaRanks();
   }, []);
 
@@ -460,7 +491,7 @@ export default function WadUp() {
     const eligible = venuesRef.current.filter(v => {
       if (!v.live || v.is_hidden || !isVenueEligible(v)) return false;
       if (chip === 'events') {
-        return venueMatchesChip('events', v, subcategory) && !!getVenueEventForDay(v.id, dayIso);
+        return venueMatchesChip('events', v) && matchesVenueEventType(getVenueEventForDay(v.id, dayIso), subcategory);
       }
       return venueMatchesChip(chip, v, subcategory);
     });
@@ -510,7 +541,7 @@ export default function WadUp() {
     // (isTMEventVisibleForDay) filterPins applies to actual pin visibility.
     const tmInBounds = (chip === 'events' || chip === 'sports')
       ? tmEventsRef.current
-          .filter(ev => ev.cat === chip && isTMEventVisibleForDay(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
+          .filter(ev => ev.cat === chip && (chip !== 'events' || matchesTMEventType(ev, subcategory)) && isTMEventVisibleForDay(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
           .sort((a, b) => {
             const aLive = isTMEventLiveNow(a), bLive = isTMEventLiveNow(b);
             if (aLive !== bLive) return aLive ? -1 : 1;
@@ -1764,7 +1795,19 @@ export default function WadUp() {
   };
 
   // ── Day change ──
-  const onDayClick = (iso) => {
+  const onDayClick = async (iso) => {
+    // The initial venue schedule load covers only ten days. Fetch arbitrary
+    // calendar dates on demand so distant selections aren't silently empty.
+    const start = iso + ' 00:00:00';
+    const end = iso + ' 23:59:59';
+    if (iso > localIsoDate(new Date(Date.now() + 9 * 86400000))) {
+      const { data, error } = await supabase.from('venue_events')
+        .select('venue_id, title, event_type, performer, start_time, end_time')
+        .gte('start_time', start).lte('start_time', end);
+      if (!error) {
+        venueEventsRef.current = [...venueEventsRef.current.filter(e => (e.start_time || '').slice(0,10) !== iso), ...(data || [])];
+      } else console.error('Calendar venue event load failed:', error.message);
+    }
     activeDateRef.current = iso;
     setActiveDate(iso);
     filterPins();
@@ -1909,8 +1952,28 @@ export default function WadUp() {
     </div>
   );
 
+  const shiftWeek = (delta) => {
+    const date = new Date(weekStart + 'T12:00:00');
+    date.setDate(date.getDate() + delta * 7);
+    setWeekStart(localIsoDate(date));
+  };
   const renderDayStrip = (containerClass) => (
-    <div className={containerClass}>
+    <div className="wadup-date-picker">
+      <div className="wadup-date-toolbar">
+        <span>📅 Find events by date</span>
+        <div className="wadup-date-actions">
+          <button type="button" aria-label="Previous week" onClick={() => shiftWeek(-1)}>‹</button>
+          <button type="button" aria-label="Next week" onClick={() => shiftWeek(1)}>›</button>
+          <button type="button" aria-label="Open full calendar" aria-expanded={calendarOpen} onClick={() => setCalendarOpen(v => !v)}>▦</button>
+        </div>
+      </div>
+      {calendarOpen && <input className="wadup-full-calendar" type="date" aria-label="Jump to any date" value={activeDate} onChange={e => {
+        if (!e.target.value) return;
+        setWeekStart(e.target.value);
+        onDayClick(e.target.value);
+        setCalendarOpen(false);
+      }} />}
+      <div className={containerClass}>
       {days.map(d => (
         <button
           key={d.iso}
@@ -1922,6 +1985,8 @@ export default function WadUp() {
           {d.isToday && <div className="day-dot" />}
         </button>
       ))}
+      </div>
+      {activeChip === 'events' && eventCountInView === 0 && <div className="wadup-events-empty">No events found in this area {activeDate === localIsoDate() ? 'today' : 'on this date'}. Check upcoming dates.</div>}
     </div>
   );
 
