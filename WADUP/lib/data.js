@@ -68,15 +68,23 @@ export const CATEGORY_CHIPS = [
     { id: 'Kayaking', label: 'Kayaking' },
     { id: 'Rock Climbing', label: 'Rock Climbing' },
     { id: 'Disc Golf', label: 'Disc Golf' },
+    { id: 'Golf Courses', label: '⛳ Golf Courses & Driving Ranges' },
     { id: 'Bike Trail', label: 'Bike Trail' },
   ]},
   { id: 'activities', label: '🎳 Activities', subcategories: [
-    { id: 'Bowling', label: 'Bowling' },
-    { id: 'Top Golf', label: 'Top Golf' },
-    { id: 'Escape Room', label: 'Escape Room' },
-    { id: 'Axe Throwing', label: 'Axe Throwing' },
-    { id: 'Arcade', label: 'Arcade' },
-    { id: 'Go Karts', label: 'Go Karts' },
+    { id: 'bowling', label: '🎳 Bowling' },
+    { id: 'escape-rooms', label: '🔐 Escape Rooms' },
+    { id: 'arcades-games', label: '🕹️ Arcades & Games' },
+    { id: 'trampoline-parks', label: '🤸 Trampoline Parks' },
+    { id: 'go-karts', label: '🏎️ Go-Karts & Racing' },
+    { id: 'creative', label: '🎨 Creative Experiences' },
+    { id: 'museums', label: '🏛️ Museums & Learning' },
+    { id: 'family-fun', label: '🎡 Family Fun Centers' },
+    { id: 'axe-throwing', label: '🪓 Axe Throwing', more: true },
+    { id: 'laser-tag', label: '🎯 Laser Tag & Paintball', more: true },
+    { id: 'skating', label: '🛼 Skating', more: true },
+    { id: 'climbing', label: '🧗 Indoor Climbing', more: true },
+    { id: 'billiards', label: '🎱 Billiards & Darts', more: true },
   ]},
 ];
 
@@ -167,19 +175,52 @@ export function isMustSeeAttraction(venue) {
   return cats.includes('must-see') || VISITOR_LANDMARKS.has(String(venue.name || '').trim().toLowerCase());
 }
 
+// Golf is a sport/outdoor pursuit, not an Activities entry. Category
+// matching uses existing venue tags first and descriptive names second.
+function golfVenue(v) {
+  const tags = venueSubcategories(v).join(' ').toLowerCase();
+  const name = String(v.name || '').toLowerCase();
+  return /golf|putt.putt|mini.golf|driving range|golf simulator/.test(tags + ' ' + name);
+}
+function activityMatches(v, type) {
+  const tags = venueSubcategories(v).join(' ').toLowerCase();
+  const name = String(v.name || '').toLowerCase();
+  const text = tags + ' ' + name;
+  const patterns = {
+    'bowling': /bowl|spare time/,
+    'escape-rooms': /escape|breakout|puzzle room/,
+    'arcades-games': /arcade|video game|virtual reality|vr gaming|gaming lounge/,
+    'trampoline-parks': /trampoline|sky zone|xtreme air|jump park/,
+    'go-karts': /go.kart|karting|indoor racing/,
+    'creative': /pottery|paint|craft|art studio|workshop|creative experience/,
+    'museums': /museum|discovery|science center|hands.on learning/,
+    'family-fun': /family fun|family entertainment|amusement|fun center|lake winnepesaukah/,
+    'axe-throwing': /axe throw|ax throw/,
+    'laser-tag': /laser tag|paintball|airsoft/,
+    'skating': /skating|roller rink|ice rink/,
+    'climbing': /indoor climb|bouldering|climbing gym/,
+    'billiards': /billiards|pool hall|dart/,
+  };
+  return !!patterns[type]?.test(text);
+}
+
 export function venueMatchesChip(chip, venue, subcategory) {
   if (!chip) return true;
   const cats = venueCategories(venue);
   // The map's chip id is 'bars', but venues are stored under 'nightlife' —
   // match either so the chip actually finds them.
-  if (chip === 'activities' && isMustSeeAttraction(venue)) return false;
+  if (chip === 'activities' && (isMustSeeAttraction(venue) || golfVenue(venue))) return false;
   if (chip === 'activities' && /dread hollow/i.test(String(venue.name || ''))) return false;
   const chipMatches = chip === 'bars'
     ? (cats.includes('nightlife') || cats.includes('bars'))
-    : chip === 'must-see' ? isMustSeeAttraction(venue) : cats.includes(chip);
+    : chip === 'must-see' ? isMustSeeAttraction(venue)
+    : chip === 'outdoors' ? (cats.includes(chip) || golfVenue(venue))
+    : cats.includes(chip);
   if (!chipMatches) return false;
   if (subcategory) {
     const want = String(subcategory).trim().toLowerCase();
+    if (chip === 'activities') return activityMatches(venue, want);
+    if (chip === 'outdoors' && want === 'golf courses') return golfVenue(venue);
     return venueSubcategories(venue).some(s => String(s).trim().toLowerCase() === want);
   }
   return true;
