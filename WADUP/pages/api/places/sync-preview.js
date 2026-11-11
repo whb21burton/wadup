@@ -25,6 +25,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  if (!supabaseAdmin) return res.status(503).json({ error: 'Import unavailable in this preview: a separate staging database and service-role credential are required. Production credentials are intentionally not used.' });
+
   const auth = await requireAdmin(req);
   if (!auth) return res.status(403).json({ error: 'Not authorized' });
   if (!process.env.GOOGLE_PLACES_KEY) {
