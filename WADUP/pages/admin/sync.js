@@ -20,8 +20,17 @@ async function authedFetch(url, session, body, method = 'POST') {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const explanation = [401, 403].includes(res.status)
+      ? 'The preview deployment blocked the API request (Vercel authentication or an expired session). Sign in to the preview and try again.'
+      : [502, 503, 504].includes(res.status)
+        ? 'The Google Places preview request timed out or the server was temporarily unavailable. Try a smaller category search later.'
+        : 'The server returned a web page instead of API data. This is a deployment or API error, not an empty Google Places result.';
+    throw new Error(`${explanation} (HTTP ${res.status}, ${url})`);
+  }
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+  if (!res.ok) throw new Error(data.error || data.detail || `Request failed (HTTP ${res.status})`);
   return data;
 }
 
