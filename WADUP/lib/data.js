@@ -170,6 +170,8 @@ export function venueMatchesChip(chip, venue, subcategory) {
   const cats = venueCategories(venue);
   // The map's chip id is 'bars', but venues are stored under 'nightlife' —
   // match either so the chip actually finds them.
+  if (chip === 'activities' && isMustSeeAttraction(venue)) return false;
+  if (chip === 'activities' && /dread hollow/i.test(String(venue.name || ''))) return false;
   const chipMatches = chip === 'bars'
     ? (cats.includes('nightlife') || cats.includes('bars'))
     : chip === 'must-see' ? isMustSeeAttraction(venue) : cats.includes(chip);
