@@ -218,10 +218,15 @@ export function venueMatchesChip(chip, venue, subcategory) {
     : cats.includes(chip);
   if (!chipMatches) return false;
   if (subcategory) {
-    const want = String(subcategory).trim().toLowerCase();
-    if (chip === 'activities') return activityMatches(venue, want);
-    if (chip === 'outdoors' && want === 'golf courses') return golfVenue(venue);
-    return venueSubcategories(venue).some(s => String(s).trim().toLowerCase() === want);
+    // Multi-select filters use OR: a venue matching any selected type is shown.
+    const selected = Array.isArray(subcategory) ? subcategory : [subcategory];
+    if (selected.length === 0) return true;
+    return selected.some(type => {
+      const want = String(type).trim().toLowerCase();
+      if (chip === 'activities') return activityMatches(venue, want);
+      if (chip === 'outdoors' && want === 'golf courses') return golfVenue(venue);
+      return venueSubcategories(venue).some(s => String(s).trim().toLowerCase() === want);
+    });
   }
   return true;
 }
