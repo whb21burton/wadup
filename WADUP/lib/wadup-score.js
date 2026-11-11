@@ -18,8 +18,8 @@ export function adminBaseline(venue) {
 }
 
 export function wadupScore(venue) {
-  const n = Math.max(0, Number(venue?.total_ratings) || 0);
-  const average = Number(venue?.average_rating);
+  const n = Math.max(0, Number(venue?.weighted_rating_count || venue?.total_ratings) || 0);
+  const average = venue?.weighted_rating_count > 0 ? Number(venue.weighted_rating) : Number(venue?.average_rating);
   const userAverage = Number.isFinite(average) ? clampScore(average) : null;
   const base = adminBaseline(venue);
   return n > 0 && userAverage != null
