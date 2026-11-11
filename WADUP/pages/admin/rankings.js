@@ -16,6 +16,7 @@ export default function AdminRankings() {
   const [category, setCategory] = useState('activities');
   const [search, setSearch] = useState('');
   const [dirty, setDirty] = useState({});
+  const [order, setOrder] = useState([]);
   const [dragged, setDragged] = useState(null);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
@@ -45,6 +46,7 @@ export default function AdminRankings() {
         setStatus(error?.message || '');
         setVenues(data || []);
         setDirty({});
+        setOrder([]);
         setLoading(false);
       });
     return () => { active = false; };
@@ -118,7 +120,7 @@ export default function AdminRankings() {
         <span aria-hidden="true">⠿</span><strong style={{minWidth:42}}>#{i+1}</strong>
         <span style={{flex:1}}>{v.name}</span>
         <span style={{color:'#90a6b6',fontSize:12}}>Google seed {v.google_rating ?? '—'}/5</span>
-        <strong style={{color:'#ffeb00'}}>{(dirty[v.id] ?? wadupScore(v)).toFixed(2)}/10</strong>
+        <strong style={{color:'#ffeb00'}}>{(dirty[v.id] != null ? ((10 * dirty[v.id] + (v.total_ratings || 0) * (Number(v.average_rating) || 0)) / (10 + (v.total_ratings || 0))) : wadupScore(v)).toFixed(2)}/10</strong>
         <button aria-label={`Move ${v.name} up`} disabled={i===0} onClick={()=>reorder(v.id,filtered[i-1].id)}>↑</button>
         <button aria-label={`Move ${v.name} down`} disabled={i===filtered.length-1} onClick={()=>reorder(v.id,filtered[i+1].id)}>↓</button>
       </div>)}
