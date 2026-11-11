@@ -215,7 +215,8 @@ export default function WadUp() {
   // activeCategoryRef: filterPins always reads the ref, never the state.
   const [activeSubcategory, setActiveSubcategory] = useState(null);
   const activeSubcategoryRef = useRef(null);
-  const [openDropdown, setOpenDropdown] = useState(null); // which category's subcategory list is expanded
+  const [openDropdown, setOpenDropdown] = useState(null);
+  const [showMoreActivities, setShowMoreActivities] = useState(false); // which category's subcategory list is expanded
   const [trendingNow,    setTrendingNow]    = useState([]);
   const [topRanked,      setTopRanked]      = useState([]);
   const [sidebarLoading, setSidebarLoading] = useState(true);
@@ -1956,8 +1957,8 @@ export default function WadUp() {
                 {hasSubcats && <span className={`cat-arrow${isOpen ? ' open' : ''}`}>▼</span>}
               </div>
               {hasSubcats && (
-                <div className={`subcat-list${isOpen ? ' open' : ''}`}>
-                  {c.subcategories.map(sub => (
+                <div className={`subcat-list${isOpen ? ' open' : ''}${c.id === 'activities' ? ' activities-subcats' : ''}`}>
+                  {c.subcategories.filter(sub => c.id !== 'activities' || !sub.more || showMoreActivities).map(sub => (
                     <div
                       key={sub.id}
                       className={`subcat-item${isActive && activeSubcategory === sub.id ? ' active' : ''}`}
@@ -1966,6 +1967,13 @@ export default function WadUp() {
                       {sub.label}
                     </div>
                   ))}
+                  {c.id === 'activities' && (
+                    <button type="button" className="activities-more-btn"
+                      onClick={() => setShowMoreActivities(v => !v)}
+                      aria-expanded={showMoreActivities}>
+                      {showMoreActivities ? '− Fewer activities' : '+ More activities'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
