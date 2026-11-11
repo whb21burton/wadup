@@ -54,6 +54,7 @@ export const CATEGORY_CHIPS = [
     { id: 'Soul Food', label: 'Soul Food' },
     { id: 'Southern', label: 'Southern' },
   ]},
+  { id: 'must-see', label: '🏆 Must-See Attractions', subcategories: [] },
   { id: 'sports', label: '🏟️ Sports', subcategories: [
     { id: 'Football', label: '🏈 Football' },
     { id: 'Baseball', label: '⚾ Baseball' },
@@ -90,6 +91,7 @@ export const CATEGORY_LABELS = {
   nightlife: '🍸 Bars & Nightlife',
   restaurant: '🍔 Restaurants',
   sports: '🏟️ Sports',
+  'must-see': '🏆 Must-See Attractions',
   outdoors: '🌳 Outdoors',
   activities: '🎳 Activities',
 };
@@ -150,6 +152,19 @@ export function venueSubcategories(v) {
 //      lib/placesSync.js's mapPlaceToRow). The old `===` compare therefore
 //      never matched a single synced venue, which is why picking any
 //      subcategory in the sidebar emptied the map.
+// Curated visitor landmarks already present in Wadup's venue database.
+// Explicit categories in the venue data also qualify, allowing future cities
+// to curate their own attractions without changing this list.
+const VISITOR_LANDMARKS = new Set([
+  'rock city gardens',
+  'ruby falls',
+  'creative discovery museum',
+]);
+export function isMustSeeAttraction(venue) {
+  const cats = venueCategories(venue).map(c => String(c).toLowerCase());
+  return cats.includes('must-see') || VISITOR_LANDMARKS.has(String(venue.name || '').trim().toLowerCase());
+}
+
 export function venueMatchesChip(chip, venue, subcategory) {
   if (!chip) return true;
   const cats = venueCategories(venue);
@@ -157,7 +172,7 @@ export function venueMatchesChip(chip, venue, subcategory) {
   // match either so the chip actually finds them.
   const chipMatches = chip === 'bars'
     ? (cats.includes('nightlife') || cats.includes('bars'))
-    : cats.includes(chip);
+    : chip === 'must-see' ? isMustSeeAttraction(venue) : cats.includes(chip);
   if (!chipMatches) return false;
   if (subcategory) {
     const want = String(subcategory).trim().toLowerCase();
