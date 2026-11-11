@@ -3620,3 +3620,24 @@ html, body {
   .wadup-date-picker .day-strip { gap: 3px; padding: 4px 5px 8px; }
   .wadup-date-picker .day-btn { min-width: 0; }
 }
+
+
+/* Sidebar scrolling: one continuous scroll area for categories, dates and rankings.
+   The app shell itself remains fixed, so wheel/trackpad scrolling over the
+   sidebar does not move the Google Map. */
+@media (min-width: 769px) {
+  .sidebar {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #315063 transparent;
+  }
+  .sidebar::-webkit-scrollbar { width: 7px; }
+  .sidebar::-webkit-scrollbar-thumb { background: #315063; border-radius: 8px; }
+  .sidebar::-webkit-scrollbar-track { background: transparent; }
+  .sidebar-categories, .sidebar-trending, .wadup-date-picker { flex-shrink: 0; }
+  .sidebar-trending { flex: none; min-height: auto; padding-bottom: 20px; }
+  .subcat-list.open { max-height: none; overflow: visible; }
+  .subcat-list:not(.open) { max-height: 0; overflow: hidden; }
+}
