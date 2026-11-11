@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { supabase } from '../lib/supabase';
 import { CATEGORY_LABELS, tmSegmentToCat, tmSportEmoji, formatTime, venueRatingLabel, venueSubcategories } from '../lib/data';
 import { getTrendingVenues, getBestRated, getLocalFavorites } from '../lib/rankings';
+import { OWN_PROFILE_FIELDS } from '../lib/profiles';
 
 const DEFAULT_CITY   = 'Chattanooga';
 const DEFAULT_COORDS = { lat: 35.0456, lng: -85.3096 };
@@ -244,7 +245,7 @@ export default function Discover() {
   useEffect(() => {
     if (!session?.user) { setProfile(null); return; }
     let cancelled = false;
-    supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    supabase.from('profiles').select(OWN_PROFILE_FIELDS).eq('id', session.user.id).single()
       .then(({ data, error }) => { if (!cancelled && !error) setProfile(data); });
     return () => { cancelled = true; };
   }, [session]);

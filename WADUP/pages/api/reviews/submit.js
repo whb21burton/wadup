@@ -5,6 +5,7 @@
 // server-side, atomically with the write, rather than trusting the client.
 import { supabaseAdmin } from '../supabase-admin';
 import { recalculateVenueRating } from '../../../lib/rankings';
+import { isSuspended } from '../../../lib/profiles';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -17,6 +18,7 @@ export default async function handler(req, res) {
 
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
   if (authError || !user) return res.status(401).json({ error: 'Not signed in' });
+  if (await isSuspended(supabaseAdmin, user.id)) return res.status(403).json({ error: 'Your account is suspended' });
 
   const { venue_id: venueId, overall_rating, subcategory_ratings, content } = req.body || {};
   if (!venueId) return res.status(400).json({ error: 'Missing venue_id' });

@@ -124,8 +124,9 @@ export default function AuthSidebar({ open, onClose, session, profile }) {
     setAuthLoading(false);
     if (error) { setAuthError(error.message); return; }
     setVenueForm(emptyVenue);
+    // handle_new_user creates the venue hidden until an admin approves it.
     if (!data.session) {
-      setAuthInfo('Account created — check your email to confirm, then log in.');
+      setAuthInfo('Account created — check your email to confirm, then log in. Your venue will appear on the map once an admin approves it.');
       setAuthTab('login');
     }
   };

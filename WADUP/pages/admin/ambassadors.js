@@ -82,16 +82,18 @@ export default function AdminAmbassadors() {
 
   useEffect(() => { bootstrap(); }, [bootstrap]);
 
+  // profiles.email isn't readable from the browser, so the ambassador list
+  // and user search go through the service-role route instead.
   const loadAmbassadors = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('admin_roles')
-      .select('user_id, assigned_cities, profiles(username, email)')
-      .eq('role', 'ambassador')
-      .order('created_at', { ascending: false });
-    setAmbassadors(data || []);
+    try {
+      const { ambassadors: data } = await authedFetch('/api/admin/users', session, { action: 'list-ambassadors' });
+      setAmbassadors(data || []);
+    } catch (e) {
+      setError(e.message);
+    }
     setLoading(false);
-  }, []);
+  }, [session]);
 
   useEffect(() => { if (!checking) loadAmbassadors(); }, [checking, loadAmbassadors]);
 
@@ -104,12 +106,13 @@ export default function AdminAmbassadors() {
   const searchUsers = async () => {
     const q = userQuery.trim();
     if (!q) { setUserResults(null); return; }
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, username, email, account_type')
-      .or(`username.ilike.%${q}%,email.ilike.%${q}%`)
-      .limit(10);
-    setUserResults(data || []);
+    setError('');
+    try {
+      const { users } = await authedFetch('/api/admin/users', session, { action: 'search', q });
+      setUserResults(users || []);
+    } catch (e) {
+      setError(e.message);
+    }
   };
 
   const confirmPromote = async () => {

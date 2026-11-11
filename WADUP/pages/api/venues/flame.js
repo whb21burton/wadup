@@ -4,6 +4,7 @@
 import crypto from 'crypto';
 import { supabaseAdmin } from '../supabase-admin';
 import { getAdminRole, isSuperAdmin } from '../../../lib/admin';
+import { isSuspended } from '../../../lib/profiles';
 
 function getClientIp(req) {
   const fwd = req.headers['x-forwarded-for'];
@@ -20,6 +21,7 @@ async function getVoterWeight(req) {
 
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !user) return { weight: 1, userId: null };
+  if (await isSuspended(supabaseAdmin, user.id)) return { suspended: true };
 
   const adminRole = await getAdminRole(supabaseAdmin, user.id);
   if (adminRole) return { weight: isSuperAdmin(adminRole) ? 1000 : 100, userId: user.id };
@@ -44,7 +46,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing venue_id or invalid flame_level (must be 1, 2, or 3)' });
   }
 
-  const { weight, userId } = await getVoterWeight(req);
+  const { weight, userId, suspended } = await getVoterWeight(req);
+  if (suspended) return res.status(403).json({ error: 'Your account is suspended' });
   const ipHash = userId ? null : crypto.createHash('sha256').update(getClientIp(req)).digest('hex');
   const today = new Date().toISOString().slice(0, 10);
 

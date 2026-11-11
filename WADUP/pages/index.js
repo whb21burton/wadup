@@ -10,6 +10,7 @@ import {
 import { getLiveTrendingVenueIds, getBestRated, getScheduleTrendingVenues } from '../lib/rankings';
 import { supabase } from '../lib/supabase';
 import { getAdminRole } from '../lib/admin';
+import { OWN_PROFILE_FIELDS } from '../lib/profiles';
 import AuthSidebar from '../components/AuthSidebar';
 import AdminEditPanel from '../components/AdminEditPanel';
 
@@ -292,7 +293,7 @@ export default function WadUp() {
     let cancelled = false;
     supabase
       .from('profiles')
-      .select('*')
+      .select(OWN_PROFILE_FIELDS)
       .eq('id', session.user.id)
       .single()
       .then(({ data, error }) => {

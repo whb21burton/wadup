@@ -7,6 +7,7 @@ import { CATEGORY_LABELS, venueCategories, formatTime } from '../../lib/data';
 import { getBestRated } from '../../lib/rankings';
 import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
+import { OWN_PROFILE_FIELDS } from '../../lib/profiles';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -124,7 +125,7 @@ export default function VenuePage() {
   useEffect(() => {
     if (!session?.user) { setProfile(null); return; }
     let cancelled = false;
-    supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    supabase.from('profiles').select(OWN_PROFILE_FIELDS).eq('id', session.user.id).single()
       .then(({ data, error }) => { if (!cancelled && !error) setProfile(data); });
     return () => { cancelled = true; };
   }, [session]);

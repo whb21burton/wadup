@@ -4,6 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
 import { CATEGORY_LABELS } from '../../lib/data';
+import { OWN_PROFILE_FIELDS, PUBLIC_PROFILE_FIELDS } from '../../lib/profiles';
 
 const AVATAR_COLORS = ['#FF4500', '#00E5FF', '#FFD700', '#7cffb0', '#ff6fb0', '#9b8cff'];
 function avatarColor(username) {
@@ -51,7 +52,7 @@ export default function UserProfile() {
   useEffect(() => {
     if (!session?.user) { setViewerProfile(null); return; }
     let cancelled = false;
-    supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    supabase.from('profiles').select(OWN_PROFILE_FIELDS).eq('id', session.user.id).single()
       .then(({ data, error }) => { if (!cancelled && !error) setViewerProfile(data); });
     return () => { cancelled = true; };
   }, [session]);
@@ -68,7 +69,7 @@ export default function UserProfile() {
     setNotFound(false);
 
     const { data: profileData, error } = await supabase
-      .from('profiles').select('*').eq('username', username).single();
+      .from('profiles').select(PUBLIC_PROFILE_FIELDS).eq('username', username).single();
     if (error || !profileData) { setNotFound(true); setLoading(false); return; }
     setProfile(profileData);
 

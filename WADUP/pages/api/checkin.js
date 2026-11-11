@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabase-admin';
+import { isSuspended } from '../../lib/profiles';
 
 const COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours — anti-abuse re-checkin window
 
@@ -13,6 +14,7 @@ export default async function handler(req, res) {
 
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
   if (authError || !user) return res.status(401).json({ error: 'Not signed in' });
+  if (await isSuspended(supabaseAdmin, user.id)) return res.status(403).json({ error: 'Your account is suspended' });
 
   const { venueId } = req.body || {};
   if (!venueId) return res.status(400).json({ error: 'Missing venueId' });
