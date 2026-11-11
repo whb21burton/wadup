@@ -3602,3 +3602,21 @@ html, body {
 /* ── Subtle Admin link in the AuthSidebar (only shown to admins at all) ── */
 .admin-quick-link-subtle { opacity: 0.75; }
 .admin-quick-link-subtle:hover { opacity: 1; }
+
+
+/* Wadup event discovery: seven-day selector and arbitrary-date calendar */
+.wadup-date-picker { width: 100%; min-width: 0; }
+.wadup-date-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px 6px; color: #d6e7ed; font-size: 12px; font-weight: 700; }
+.wadup-date-actions { display: flex; align-items: center; gap: 5px; }
+.wadup-date-actions button { border: 1px solid #204052; background: #0b1c2a; color: #e7f8ff; border-radius: 8px; min-width: 29px; height: 29px; cursor: pointer; font-size: 18px; }
+.wadup-date-actions button:hover { border-color: #ffeb00; }
+.wadup-full-calendar { display: block; box-sizing: border-box; width: calc(100% - 24px); margin: 4px 12px 8px; padding: 9px; background: #f2f4f7; border: 1px solid #3a6070; border-radius: 9px; color: #151515; color-scheme: light; }
+.wadup-date-picker .sidebar-days, .wadup-date-picker .day-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; overflow: visible; width: 100%; box-sizing: border-box; padding: 7px 9px 11px; }
+.wadup-date-picker .day-btn { min-width: 0; width: 100%; padding-left: 0; padding-right: 0; }
+.wadup-events-empty { margin: 4px 10px 12px; padding: 10px 12px; background: #0b1b29; border: 1px solid #1a3a4c; border-radius: 9px; color: #a8c7d6; font-size: 12px; line-height: 1.5; }
+.sidebar.collapsed .wadup-date-picker { display: none; }
+@media (max-width: 768px) {
+  .wadup-date-toolbar { padding: 5px 8px; }
+  .wadup-date-picker .day-strip { gap: 3px; padding: 4px 5px 8px; }
+  .wadup-date-picker .day-btn { min-width: 0; }
+}
