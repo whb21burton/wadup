@@ -23,6 +23,11 @@ export default function AdminSidebar({ adminRole }) {
           📍 Venues
         </Link>
         {superAdmin && (
+          <Link href="/admin/rankings" className={`admin-nav-link${isActive('/admin/rankings') ? ' active' : ''}`}>
+            🏆 Rankings Manager
+          </Link>
+        )}
+        {superAdmin && (
           <Link href="/admin/ambassadors" className={`admin-nav-link${isActive('/admin/ambassadors') ? ' active' : ''}`}>
             🧑‍🤝‍🧑 Ambassadors
           </Link>
