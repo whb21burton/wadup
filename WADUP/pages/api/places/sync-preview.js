@@ -12,6 +12,7 @@
 // new places are returned for review — see pages/admin/sync.js and
 // sync-save.js, which writes what gets approved.
 import { requireAdmin } from '../admin/_authAdmin';
+import { isSuperAdmin } from '../../../lib/admin';
 import { supabaseAdmin } from '../supabase-admin';
 import { SEARCH_GROUPS, runSearchForPreview } from '../../../lib/placesSync';
 
@@ -25,10 +26,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!supabaseAdmin) return res.status(503).json({ error: 'Import unavailable in this preview: a separate staging database and service-role credential are required. Production credentials are intentionally not used.' });
+  if (!supabaseAdmin) return res.status(503).json({ error: 'This preview does not have a Supabase service-role key. Bulk importing is available on the configured production deployment; no additional database is required.' });
 
   const auth = await requireAdmin(req);
-  if (!auth) return res.status(403).json({ error: 'Not authorized' });
+  if (!auth || !isSuperAdmin(auth.adminRole)) return res.status(403).json({ error: 'Super admin access required' });
   if (!process.env.GOOGLE_PLACES_KEY) {
     return res.status(500).json({ error: 'GOOGLE_PLACES_KEY is not configured on the server' });
   }
