@@ -24,7 +24,7 @@ const WEEK = 7 * DAY;
 // Must include every column venueRatingTier reads (weighted_rating,
 // weighted_rating_count, admin_rating, google_rating, google_review_count) —
 // a card selected without them silently renders as unrated.
-const VENUE_CARD_FIELDS = 'id, name, category, subcategory, subcategories, city, state, address, lat, lng, average_rating, total_ratings, weighted_rating, weighted_rating_count, admin_rating, google_rating, google_review_count, cover_photo_url, view_count, save_count';
+const VENUE_CARD_FIELDS = 'id, name, category, categories, subcategory, subcategories, city, state, address, lat, lng, average_rating, total_ratings, weighted_rating, weighted_rating_count, admin_rating, google_rating, google_review_count, cover_photo_url, view_count, save_count';
 
 function recencyMultiplier(ageMs) {
   if (ageMs <= 2 * HOUR) return 3;
@@ -102,7 +102,7 @@ export async function getBestRated(city, limit = 20, category = null) {
     .select(VENUE_CARD_FIELDS)
     .eq('city', city)
     .eq('is_hidden', false);
-  if (category) query = query.overlaps('categories', [category]);
+  // Filter using the same rules as the map (including golf/outdoors).
 
   const { data, error } = await query;
   if (error || !data?.length) return [];
@@ -110,6 +110,7 @@ export async function getBestRated(city, limit = 20, category = null) {
   return data
     // A venue with no rating on any rung isn't "best rated" — without this,
     // an unrated venue would tie at 0 and fill the list arbitrarily.
+    .filter(v => !category || venueMatchesChip(category, v))
     .filter(v => (venueRatingTier(v)?.value || 0) > 0)
     .sort((a, b) => venueRatingScore(b) - venueRatingScore(a))
     .slice(0, limit);
