@@ -158,7 +158,9 @@ export function venueSubcategories(v) {
 const VISITOR_LANDMARKS = new Set([
   'rock city gardens',
   'ruby falls',
-  'creative discovery museum',
+  'tennessee aquarium',
+  'tennessee aquarium river journey',
+  'tennessee aquarium ocean journey',
 ]);
 export function isMustSeeAttraction(venue) {
   const cats = venueCategories(venue).map(c => String(c).toLowerCase());
