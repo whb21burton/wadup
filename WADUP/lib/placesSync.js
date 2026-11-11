@@ -105,8 +105,8 @@ export const SEARCH_GROUPS = [
 
   // Activities
   { types: ['bowling_alley'],          wadupCat: 'activities' },
-  { types: ['golf_course'],            wadupCat: 'activities' },
-  { types: ['miniature_golf_course'],  wadupCat: 'activities' },
+  { types: ['golf_course'],            wadupCat: 'outdoors' },
+  { types: ['miniature_golf_course'],  wadupCat: 'outdoors' },
   { types: ['amusement_center'],       wadupCat: 'activities' },
   { types: ['escape_room'],            wadupCat: 'activities' },
   { types: ['axe_throwing'],           wadupCat: 'activities' },
