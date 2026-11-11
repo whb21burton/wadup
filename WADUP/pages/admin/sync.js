@@ -3,8 +3,6 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { supabase } from '../../lib/supabase';
 import { getAdminRole, isSuperAdmin } from '../../lib/admin';
-import { venueCategories } from '../../lib/data';
-import { isChain, isBlockedPrimaryType, BAR_PRIMARY_TYPES } from '../../lib/placesSync';
 import AdminSidebar from '../../components/AdminSidebar';
 
 const CATEGORIES = [
@@ -25,18 +23,6 @@ async function authedFetch(url, session, body, method = 'POST') {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
-}
-
-// A live venue's stored subcategory is primaryType with underscores turned
-// into spaces (see lib/placesSync.js's mapPlaceToRow) — undo that to check
-// it against the same blocklists sync-preview.js flags candidates with.
-function wrongTypeReason(v) {
-  if (isChain(v.name)) return 'chain';
-  const primaryType = (v.subcategory || '').replace(/ /g, '_');
-  if (!primaryType) return null;
-  if (isBlockedPrimaryType(primaryType)) return 'blocked type';
-  if (venueCategories(v).includes('nightlife') && !BAR_PRIMARY_TYPES.includes(primaryType)) return 'not a bar type';
-  return null;
 }
 
 export default function SyncManager() {
