@@ -3,7 +3,7 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { supabase } from '../../lib/supabase';
 import { getAdminRole, isSuperAdmin } from '../../lib/admin';
-import { venueCategories } from '../../lib/data';
+import { venueMatchesChip } from '../../lib/data';
 import { adminBaseline, scoreBetween, wadupScore } from '../../lib/wadup-score';
 import AdminSidebar from '../../components/AdminSidebar';
 
@@ -53,7 +53,7 @@ export default function AdminRankings() {
   }, [role, city]);
 
   const filtered = useMemo(() => venues.filter(v =>
-    venueCategories(v).includes(category) &&
+    venueMatchesChip(category, v) &&
     v.name.toLowerCase().includes(search.toLowerCase())
   ).sort((a,b) => (dirty[b.id] ?? adminBaseline(b)) - (dirty[a.id] ?? adminBaseline(a)) || a.name.localeCompare(b.name)),
   [venues, category, search, dirty]);
