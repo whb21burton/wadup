@@ -90,6 +90,21 @@ function buildDays() {
 // see venueCategories() in lib/data.js for the categories[]-with-category
 // fallback this reads from.
 // Event-type filters apply to scheduled shows, not the building's type.
+// Prefer an approved/custom cover, then an existing Google photo reference,
+// then securely request the first Google Places photo by Place ID.
+function venuePhotoUrl(v, width = 600) {
+  if (v.cover_photo_url && /^https?:\/\//i.test(v.cover_photo_url)) return v.cover_photo_url;
+  const ref = Array.isArray(v.google_photo_refs) ? v.google_photo_refs[0] : null;
+  if (ref && /^places\/[^/]+\/photos\/[^/]+$/.test(ref))
+    return `/api/places/photo?ref=${encodeURIComponent(ref)}&maxWidth=${width}`;
+  if (v.google_place_id && /^[A-Za-z0-9_-]{10,200}$/.test(v.google_place_id))
+    return `/api/places/photo?placeId=${encodeURIComponent(v.google_place_id)}&maxWidth=${width}`;
+  return null;
+}
+function venuePopupPhoto(v) {
+  const src = venuePhotoUrl(v);
+  return src ? `<img class="popup-place-photo" src="${escapeHtml(src)}" alt="Photo of ${escapeHtml(v.name)}" loading="lazy" onerror="this.style.display='none'" />` : '';
+}
 function matchesEventType(type, name = '', genre = '', segment = '') {
   if (!type) return true;
   const text = [name, genre, segment].join(' ').toLowerCase();
@@ -918,6 +933,7 @@ export default function WadUp() {
 
     const iwHtml = `
       <div class="gm-iw">
+        ${venuePopupPhoto(v)}
         <div class="popup-name">${escapeHtml(v.name)}</div>
         ${eventPopupHtml}
         <div class="popup-type">${escapeHtml(cats.map(c => CATEGORY_LABELS[c] || c).join(' · '))}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
@@ -1116,6 +1132,7 @@ export default function WadUp() {
 
     const iwHtml = `
       <div class="gm-iw">
+        ${venuePopupPhoto(v)}
         <div class="popup-name">${escapeHtml(v.name)}</div>
         ${eventPopupHtml}
         <div class="popup-type">${escapeHtml(CATEGORY_LABELS.nightlife || 'Nightlife')}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
