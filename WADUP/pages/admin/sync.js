@@ -54,11 +54,6 @@ export default function SyncManager() {
   const [saving, setSaving] = useState(false);
   const [previewError, setPreviewError] = useState('');
 
-  const [currentVenues, setCurrentVenues] = useState([]);
-  const [loadingVenues, setLoadingVenues] = useState(true);
-  const [venueSearch, setVenueSearch] = useState('');
-  const [actionError, setActionError] = useState('');
-
   // Sync Manager can trigger real Google API cost and bulk live-table
   // writes — restricted to super_admin, same as Ambassadors/Analytics.
   const bootstrap = useCallback(async () => {
@@ -72,19 +67,6 @@ export default function SyncManager() {
   }, [router]);
 
   useEffect(() => { bootstrap(); }, [bootstrap]);
-
-  const loadCurrentVenues = useCallback(async () => {
-    setLoadingVenues(true);
-    const { data } = await supabase
-      .from('venues')
-      .select('id, name, google_place_id, source, subcategory, categories, category, is_hidden')
-      .eq('city', 'Chattanooga')
-      .order('name', { ascending: true });
-    setCurrentVenues((data || []).filter(v => venueCategories(v).includes(category)));
-    setLoadingVenues(false);
-  }, [category]);
-
-  useEffect(() => { if (session) loadCurrentVenues(); }, [session, loadCurrentVenues]);
 
   const fetchPreview = async () => {
     setLoading(true);
@@ -135,7 +117,6 @@ export default function SyncManager() {
       setPreviewResults(null);
       setApprovedIds(new Set());
       setRejectedIds(new Set());
-      loadCurrentVenues();
       window.alert(`Saved ${data.saved} venue${data.saved === 1 ? '' : 's'}, recorded ${data.rejected} rejection${data.rejected === 1 ? '' : 's'}.`);
     } catch (e) {
       setPreviewError(e.message);
@@ -143,42 +124,21 @@ export default function SyncManager() {
     setSaving(false);
   };
 
-  const hideVenue = async (v) => {
-    setActionError('');
-    try {
-      await authedFetch('/api/admin/update-venue', session, { venueId: v.id, updates: { is_hidden: !v.is_hidden } });
-      loadCurrentVenues();
-    } catch (e) { setActionError(e.message); }
-  };
-
-  const deleteVenue = async (v) => {
-    if (!window.confirm(`Permanently delete "${v.name}"? This cannot be undone.`)) return;
-    setActionError('');
-    try {
-      await authedFetch('/api/admin/delete-venue', session, { venueId: v.id });
-      loadCurrentVenues();
-    } catch (e) { setActionError(e.message); }
-  };
-
-  const visibleCurrentVenues = currentVenues.filter(v =>
-    !venueSearch.trim() || v.name.toLowerCase().includes(venueSearch.trim().toLowerCase())
-  );
-
   if (checking) return <div className="venue-page-status admin-loading"><div className="cover-spin" /></div>;
 
   return (
     <>
       <Head>
-        <title>Sync Manager — WadUp Admin</title>
+        <title>Import Places — WadUp Admin</title>
         <meta name="robots" content="noindex, nofollow" />
       </Head>
       <div className="admin-shell">
         <AdminSidebar adminRole={adminRole} />
         <main className="admin-main">
           <h1 style={{ color: '#FFFC00', fontFamily: "'Bebas Neue', sans-serif", fontSize: '2rem', letterSpacing: '0.03em', marginBottom: '6px' }}>
-            🔄 Sync Manager
+            📥 Import Places
           </h1>
-          <p className="admin-page-sub">Preview Google Places results before anything gets saved, and manage what&apos;s already live.</p>
+          <p className="admin-page-sub">Review Google Places candidates before importing them. Edit existing venues directly from their map profiles.</p>
 
           <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
             {CATEGORIES.map(c => (
@@ -274,63 +234,7 @@ export default function SyncManager() {
             </div>
           )}
 
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-              <h2 style={{ color: '#00e5ff' }}>
-                Current {CATEGORIES.find(c => c.id === category)?.label} ({currentVenues.length})
-              </h2>
-              <input
-                value={venueSearch}
-                onChange={(e) => setVenueSearch(e.target.value)}
-                placeholder="Search current venues..."
-                style={{ padding: '8px 12px', background: '#0a1628', border: '1px solid #1a2a4a', borderRadius: '8px', color: '#fff', width: '240px' }}
-              />
-            </div>
 
-            {actionError && <div style={{ color: '#ff6666', marginBottom: '12px' }}>⚠️ {actionError}</div>}
-
-            {loadingVenues ? (
-              <div style={{ color: '#888' }}>Loading…</div>
-            ) : visibleCurrentVenues.length === 0 ? (
-              <div style={{ color: '#888' }}>No venues match.</div>
-            ) : (
-              visibleCurrentVenues.map(v => {
-                const reason = wrongTypeReason(v);
-                return (
-                  <div
-                    key={v.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px',
-                      marginBottom: '6px', borderRadius: '8px', background: '#0a1628',
-                      border: `1px solid ${reason ? '#ff4444' : '#1a2a4a'}`,
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, color: reason ? '#ff8888' : '#fff' }}>
-                        {v.name}{v.is_hidden ? ' (hidden)' : ''}
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: '#888' }}>
-                        {v.google_place_id || 'no google_place_id'} · {v.source}
-                        {reason && <span style={{ color: '#ff4444' }}> · ⛔ {reason}</span>}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => hideVenue(v)}
-                      style={{ padding: '6px 12px', background: '#1a2a4a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 700 }}
-                    >
-                      {v.is_hidden ? 'Show' : 'Hide'}
-                    </button>
-                    <button
-                      onClick={() => deleteVenue(v)}
-                      style={{ padding: '6px 12px', background: '#ff4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 700 }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
         </main>
       </div>
     </>
