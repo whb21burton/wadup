@@ -1,3 +1,4 @@
+import { wadupScore } from './wadup-score';
 // lib/data.js — venue data, category chips, and Ticketmaster helpers
 
 // ── Category chips shown on the map screen ── Events is the default/first
@@ -315,59 +316,28 @@ export function isVenueEligible(v) {
 // of WadUp reviews; below that threshold, its Google rating (imported at
 // sync time — see pages/api/places/sync.js) is the more meaningful number.
 export function hasWadupRating(v) {
-  return (v.total_ratings || 0) >= 5;
+  return (Number(v?.total_ratings) || 0) > 0;
 }
 export function effectiveRating(v) {
-  return hasWadupRating(v) ? v.average_rating : v.google_rating;
+  return wadupScore(v);
 }
 export function effectiveRatingCount(v) {
-  return hasWadupRating(v) ? v.total_ratings : v.google_review_count;
+  return Number(v?.total_ratings) || 0;
 }
 
-// ── The one rating chain ───────────────────────────────────────────────────
-// Falls back from a real weighted_rating (once 5+ WadUp reviews exist), to an
-// admin-set admin_rating, to Google's rating. This is the same three-rung
-// chain pages/index.js ranks map pins by (areaRatingOf, which now delegates
-// here) — previously it was written out three separate times, in
-// pages/index.js, in lib/rankings.js, and nowhere at all on the pages that
-// needed it most: discover and browse both read average_rating/total_ratings,
-// columns that are empty for every venue in the database, so neither page has
-// ever displayed a rating.
-//
-// `scale` matters: weighted_rating and admin_rating are 0-10, google_rating is
-// 0-5. They are NOT interchangeable numbers, so anything displaying one has to
-// say which scale it's on (see venueRatingLabel), and anything RANKING across
-// a mix of them has to normalize first (see venueRatingScore).
+// A single public Wadup /10 score for imported and community-rated venues.
+// Google ratings seed the editorial prior; they are not displayed as reviews.
 export function venueRatingTier(v) {
   if (!v) return null;
-  if ((v.weighted_rating_count || 0) >= 5) {
-    return { value: Number(v.weighted_rating) || 0, scale: 10, count: v.weighted_rating_count || 0, source: 'wadup' };
-  }
-  if (v.admin_rating != null) {
-    return { value: Number(v.admin_rating) || 0, scale: 10, count: 0, source: 'admin' };
-  }
-  if (v.google_rating != null) {
-    return { value: Number(v.google_rating) || 0, scale: 5, count: v.google_review_count || 0, source: 'google' };
-  }
-  return null;
+  return { value: wadupScore(v), scale: 10, count: Number(v.total_ratings) || 0,
+    source: (Number(v.total_ratings) || 0) > 0 ? 'wadup' : 'baseline' };
 }
-
-// 0-1, comparable across the three rungs — for ordering a list that mixes them.
 export function venueRatingScore(v) {
-  const tier = venueRatingTier(v);
-  if (!tier || !tier.scale) return 0;
-  return tier.value / tier.scale;
+  return v ? wadupScore(v) / 10 : 0;
 }
-
-// "8.5/10" or "4.5" — the /10 suffix is what keeps an admin-rated venue from
-// looking like it scored 8.5 out of 5 next to a Google-rated one.
 export function venueRatingLabel(v) {
   const tier = venueRatingTier(v);
-  if (!tier || !(tier.value > 0)) return null;
-  return {
-    ...tier,
-    text: tier.scale === 10 ? `${tier.value.toFixed(1)}/10` : tier.value.toFixed(1),
-  };
+  return tier ? { ...tier, text: `${tier.value.toFixed(1)}/10` } : null;
 }
 
 // Parses a Google Places `regularOpeningHours` object (the shape stored in
