@@ -21,15 +21,32 @@ export default async function handler(req, res) {
       const details = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
         headers: { 'X-Goog-Api-Key': process.env.GOOGLE_PLACES_KEY, 'X-Goog-FieldMask': 'photos' },
       });
-      if (!details.ok) return res.status(404).json({ error: 'Place photo unavailable' });
+      if (!details.ok) {
+        const payload = await details.json().catch(() => ({}));
+        const reason = payload?.error?.status || 'UNKNOWN';
+        console.error('Google Places photo details failed', { status: details.status, reason });
+        // Preserve Google's actual failure class; do not mislabel permission,
+        // billing, or quota errors as a missing photo.
+        return res.status(details.status).json({
+          error: 'Google Places photo lookup failed',
+          upstreamStatus: details.status,
+          reason,
+        });
+      }
       const place = await details.json();
       photoRef = place.photos?.[0]?.name;
-      if (!photoRef || !REF_PATTERN.test(photoRef)) return res.status(404).json({ error: 'No photo for this place' });
+      if (!photoRef || !REF_PATTERN.test(photoRef)) {
+        console.warn('Google Places returned no usable photo reference', { hasPhotos: !!place.photos?.length });
+        return res.status(404).json({ error: 'No photo available for this place' });
+      }
     }
     const upstreamUrl = `https://places.googleapis.com/v1/${photoRef}/media?maxWidthPx=${width}&key=${process.env.GOOGLE_PLACES_KEY}`;
     const upstream = await fetch(upstreamUrl);
     if (!upstream.ok) {
-      return res.status(upstream.status).json({ error: 'Photo fetch failed' });
+      const payload = await upstream.json().catch(() => ({}));
+      const reason = payload?.error?.status || 'UNKNOWN';
+      console.error('Google Places photo media failed', { status: upstream.status, reason });
+      return res.status(upstream.status).json({ error: 'Photo fetch failed', upstreamStatus: upstream.status, reason });
     }
     const buffer = Buffer.from(await upstream.arrayBuffer());
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
