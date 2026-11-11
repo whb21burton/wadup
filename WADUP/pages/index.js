@@ -100,6 +100,7 @@ function venuePopupPhoto(v) {
     : '';
 }
 function matchesEventType(type, name = '', genre = '', segment = '') {
+  if (Array.isArray(type)) return type.length === 0 || type.some(t => matchesEventType(t, name, genre, segment));
   if (!type) return true;
   const text = [name, genre, segment].join(' ').toLowerCase();
   if (type === 'live-music') return /music|concert|rock|pop|country|blues|jazz|hip.hop|rap|folk|indie|singer|tour|band|orchestra|symphony/i.test(text);
@@ -1811,8 +1812,8 @@ export default function WadUp() {
 
   const onSubcategoryClick = (catId, subcatId, e) => {
     e.stopPropagation();
-    activeCategoryRef.current = catId;
     const current = activeCategoryRef.current === catId ? activeSubcategoryRef.current : [];
+    activeCategoryRef.current = catId;
     const selected = Array.isArray(current) ? current : current ? [current] : [];
     const next = selected.includes(subcatId)
       ? selected.filter(id => id !== subcatId)
