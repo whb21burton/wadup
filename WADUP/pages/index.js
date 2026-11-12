@@ -142,6 +142,41 @@ function trendingReasonBadge(v) {
 export default function WadUp() {
   const mapRef       = useRef(null);
   const mapObj       = useRef(null);
+  const userLocationMarkerRef = useRef(null);
+  const userAccuracyCircleRef = useRef(null);
+  const userLocationRef = useRef(null);
+  const locationWatchRef = useRef(null);
+  const updateUserLocationMarker = (location, targetMap = mapObj.current) => {
+    if (!targetMap || !window.google?.maps || !location) return;
+    const position = { lat: location.lat, lng: location.lng };
+    if (!userLocationMarkerRef.current) {
+      userLocationMarkerRef.current = new window.google.maps.Marker({
+        position, map: targetMap,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 9, fillColor: '#4285F4', fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 2,
+        },
+        zIndex: 999,
+        title: 'Your approximate location',
+      });
+    } else {
+      userLocationMarkerRef.current.setPosition(position);
+      userLocationMarkerRef.current.setMap(targetMap);
+    }
+    if (!userAccuracyCircleRef.current) {
+      userAccuracyCircleRef.current = new window.google.maps.Circle({
+        map: targetMap, center: position, radius: location.accuracy || 0,
+        strokeColor: '#4285F4', strokeOpacity: 0.5, strokeWeight: 1,
+        fillColor: '#4285F4', fillOpacity: 0.08,
+        clickable: false,
+      });
+    } else {
+      userAccuracyCircleRef.current.setCenter(position);
+      userAccuracyCircleRef.current.setRadius(location.accuracy || 0);
+      userAccuracyCircleRef.current.setMap(targetMap);
+    }
+  };
   const infoWindow   = useRef(null);
   const mapMarkers   = useRef({});
   const tmMarkers    = useRef({});
@@ -1623,17 +1658,9 @@ export default function WadUp() {
         openEditPanel(venue);
       };
 
-      // User dot
-      new window.google.maps.Marker({
-        position: { lat: userPos.lat, lng: userPos.lng },
-        map,
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 9, fillColor:'#4285F4', fillOpacity:1,
-          strokeColor:'#fff', strokeWeight:2,
-        },
-        zIndex: 999,
-      });
+      // Location dot is created only after the browser returns real coordinates.
+      // Never draw it at the fallback Chattanooga map center.
+      if (userLocationRef.current) updateUserLocationMarker(userLocationRef.current, map);
 
       // Zoom listener
       map.addListener('zoom_changed', () => {
@@ -1699,13 +1726,22 @@ export default function WadUp() {
       document.head.appendChild(script);
     }
 
-    // Geolocation
+    // Geolocation can resolve after the map has initialized. Update the
+    // existing marker directly; React state alone does not move a Google marker.
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => {},
-        { timeout: 5000 }
-      );
+      const onPosition = pos => {
+        const location = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+        userLocationRef.current = location;
+        setUserPos({ lat: location.lat, lng: location.lng });
+        updateUserLocationMarker(location);
+      };
+      navigator.geolocation.getCurrentPosition(onPosition, () => {}, {
+        enableHighAccuracy: true, timeout: 15000, maximumAge: 0,
+      });
+      const watchId = navigator.geolocation.watchPosition(onPosition, () => {}, {
+        enableHighAccuracy: true, timeout: 20000, maximumAge: 10000,
+      });
+      locationWatchRef.current = watchId;
     }
   }, []);  // eslint-disable-line
 
