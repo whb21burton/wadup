@@ -16,7 +16,7 @@ export default async function handler(req, res) {
       .select('id,tile_id,started_at,finished_at,status,api_calls,discovered,staged,error')
       .order('started_at', { ascending: false }).limit(100),
     supabaseAdmin.from('venues_pending').select('id', { count: 'exact', head: true })
-      .eq('status', 'pending'),
+      .or('status.eq.pending,status.is.null'),
     supabaseAdmin.from('venues').select('id', { count: 'exact', head: true })
       .eq('category', 'restaurant').eq('is_hidden', false),
   ]);
