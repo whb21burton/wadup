@@ -835,7 +835,7 @@ export default function WadUp() {
 
       // Keep non-top-10 restaurants discoverable at every zoom level.
       // Their smaller dot remains clickable and opens the existing venue popup.
-      contentEl.className = 'wu-pin-discovery visible';
+      contentEl.className = 'wu-pin-discovery visible' + (map.getZoom() <= 13 ? ' wu-discovery-compact' : '');
 
       const dot = document.createElement('div');
       dot.className = 'wu-discovery-dot';
@@ -1697,8 +1697,10 @@ export default function WadUp() {
           el.classList.remove('zoom-far','zoom-mid','zoom-near');
           el.classList.add(zc);
         });
-        // Discovery dots remain visible while zooming. Ranked name pills
-        // and the existing viewport-relative top-10 ranking are unchanged.
+        // Keep sparse discovery dots smaller at regional zoom levels.
+        document.querySelectorAll('.wu-pin-discovery').forEach(el => {
+          el.classList.toggle('wu-discovery-compact', z <= 13);
+        });
       });
 
       // Clicking the bare map (not a pin — every pin's own click handler
