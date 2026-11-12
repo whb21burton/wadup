@@ -186,8 +186,8 @@ export default function WadUp() {
   // Desktop sidebar's category dropdown — see onCategoryClick/onSubcategoryClick
   // and renderDesktopCategoryList. Same synchronous-ref pattern as
   // activeCategoryRef: filterPins always reads the ref, never the state.
-  const [activeSubcategory, setActiveSubcategory] = useState(null);
-  const activeSubcategoryRef = useRef(null);
+  const [activeSubcategory, setActiveSubcategory] = useState([]);
+  const activeSubcategoryRef = useRef([]);
   const [openDropdown, setOpenDropdown] = useState(null); // which category's subcategory list is expanded
   const [trendingNow,    setTrendingNow]    = useState([]);
   const [topRanked,      setTopRanked]      = useState([]);
@@ -367,7 +367,7 @@ export default function WadUp() {
     setSidebarLoading(false);
   }, []);
 
-  useEffect(() => { loadSidebarLists(activeChip, activeSubcategory); }, [activeChip, activeSubcategory, loadSidebarLists]);
+  useEffect(() => { loadSidebarLists(activeChip, activeSubcategory.length === 1 ? activeSubcategory[0] : null); }, [activeChip, activeSubcategory, loadSidebarLists]);
 
   // ── Filter map pins — flags drive direct marker/overlay visibility ──
   // Reads activeCategoryRef/activeDateRef (never the activeChip/activeDate
@@ -1734,9 +1734,9 @@ export default function WadUp() {
   // — otherwise it'd keep silently narrowing the mobile chip's results.
   const onChipClick = (chip) => {
     activeCategoryRef.current = chip;
-    activeSubcategoryRef.current = null;
+    activeSubcategoryRef.current = [];
     setActiveChip(chip);
-    setActiveSubcategory(null);
+    setActiveSubcategory([]);
     filterPins();
   };
 
@@ -1746,9 +1746,9 @@ export default function WadUp() {
   // subcategory together without touching which dropdown is open.
   const onCategoryClick = (catId) => {
     activeCategoryRef.current = catId;
-    activeSubcategoryRef.current = null;
+    activeSubcategoryRef.current = [];
     setActiveChip(catId);
-    setActiveSubcategory(null);
+    setActiveSubcategory([]);
     setOpenDropdown(prev => (prev === catId ? null : catId));
     filterPins();
   };
@@ -1756,9 +1756,11 @@ export default function WadUp() {
   const onSubcategoryClick = (catId, subcatId, e) => {
     e.stopPropagation();
     activeCategoryRef.current = catId;
-    activeSubcategoryRef.current = subcatId;
+    const previous = activeCategoryRef.current === catId ? activeSubcategoryRef.current : [];
+    const next = previous.includes(subcatId) ? previous.filter(id => id !== subcatId) : [...previous, subcatId];
+    activeSubcategoryRef.current = next;
     setActiveChip(catId);
-    setActiveSubcategory(subcatId);
+    setActiveSubcategory(next);
     filterPins();
   };
 
@@ -1893,7 +1895,7 @@ export default function WadUp() {
                   {c.subcategories.map(sub => (
                     <div
                       key={sub.id}
-                      className={`subcat-item${isActive && activeSubcategory === sub.id ? ' active' : ''}`}
+                      className={`subcat-item${isActive && activeSubcategory.includes(sub.id) ? ' active' : ''}`}
                       onClick={(e) => onSubcategoryClick(c.id, sub.id, e)}
                     >
                       {sub.label}
