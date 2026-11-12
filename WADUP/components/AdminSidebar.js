@@ -33,6 +33,11 @@ export default function AdminSidebar({ adminRole }) {
           </span>
         )}
         {superAdmin && (
+          <Link href="/admin/restaurant-coverage" className={`admin-nav-link${isActive('/admin/restaurant-coverage') ? ' active' : ''}`}>
+            🗺️ Restaurant Coverage
+          </Link>
+        )}
+        {superAdmin && (
           <Link href="/admin/sync" className={`admin-nav-link${isActive('/admin/sync') ? ' active' : ''}`}>
             🔄 Sync Manager
           </Link>
