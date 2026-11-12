@@ -1678,19 +1678,10 @@ export default function WadUp() {
         infoWindow.current?.close();
       });
 
-      // Panning/zooming changes which venues are "in bounds" for area
-      // ranking without touching the chip filter at all, so this needs its
-      // own listener rather than piggybacking on filterPins. Rankings are
-      // now fully viewport-based (see updateAreaRanks), so this needs to
-      // track pans/zooms closely — kept to a short 100ms debounce (rather
-      // than none at all) since bounds_changed still fires many times per
-      // second during a drag/zoom gesture, and a full pin redrop on every
-      // single one of those would be a real jank/performance risk.
-      let boundsChangeTimer = null;
-      map.addListener('bounds_changed', () => {
-        clearTimeout(boundsChangeTimer);
-        boundsChangeTimer = setTimeout(() => updateAreaRanks(), 100);
-      });
+      // Re-rank only when the map settles. bounds_changed fires repeatedly
+      // during pan/zoom and rebuilding every pin while tiles load can make
+      // Google Maps feel slow or unresponsive.
+      map.addListener('idle', () => updateAreaRanks());
 
       setMapReady(true);
 
