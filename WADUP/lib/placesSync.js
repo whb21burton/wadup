@@ -74,7 +74,6 @@ export const SEARCH_GROUPS = [
   { types: ['cafe'],                   wadupCat: 'restaurant' },
   { types: ['coffee_shop'],            wadupCat: 'restaurant' },
   { types: ['bakery'],                 wadupCat: 'restaurant' },
-  { types: ['ice_cream_shop'],         wadupCat: 'restaurant' },
   { types: ['food_court'],             wadupCat: 'restaurant' },
 
   // Events & Entertainment
