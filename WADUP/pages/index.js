@@ -607,49 +607,11 @@ export default function WadUp() {
   // and TM event pins (tmMarkers) — called fresh on every drop, so within a
   // dense cluster the first pin dropped keeps the real coordinate and later
   // ones fan out around it in ring order. ──
+  // Always anchor venue and event pins to their stored geographic coordinates.
+  // Never nudge them to avoid collisions: rank redraws and zoom changes must
+  // not move a business to another building or street.
   function getOffsetPosition(lat, lng) {
-    const OFFSET_STEP = 0.0003; // ~30 meters
-    const positions = [];
-
-    Object.values(mapMarkers.current).forEach(entry => {
-      const pos = entry.marker.getPosition();
-      if (pos) positions.push({ lat: pos.lat(), lng: pos.lng() });
-    });
-    Object.values(tmMarkers.current).forEach(entry => {
-      const pos = entry.marker.getPosition();
-      if (pos) positions.push({ lat: pos.lat(), lng: pos.lng() });
-    });
-
-    let finalLat = lat, finalLng = lng;
-    let attempts = 0;
-    const maxAttempts = 8;
-
-    // Offset directions: right, up-right, up, up-left, left, down-left, down, down-right
-    const offsets = [
-      [0, OFFSET_STEP],
-      [OFFSET_STEP * 0.7, OFFSET_STEP * 0.7],
-      [OFFSET_STEP, 0],
-      [OFFSET_STEP * 0.7, -OFFSET_STEP * 0.7],
-      [0, -OFFSET_STEP],
-      [-OFFSET_STEP * 0.7, -OFFSET_STEP * 0.7],
-      [-OFFSET_STEP, 0],
-      [-OFFSET_STEP * 0.7, OFFSET_STEP * 0.7],
-    ];
-
-    while (attempts < maxAttempts) {
-      const tooClose = positions.some(p =>
-        Math.abs(p.lat - finalLat) < 0.0002 &&
-        Math.abs(p.lng - finalLng) < 0.0002
-      );
-      if (!tooClose) break;
-
-      const [latOffset, lngOffset] = offsets[attempts % offsets.length];
-      finalLat = lat + latOffset;
-      finalLng = lng + lngOffset;
-      attempts++;
-    }
-
-    return { lat: finalLat, lng: finalLng };
+    return { lat, lng };
   }
 
   // ── Events-chip day-scoped helpers ── all keyed against whichever day is
