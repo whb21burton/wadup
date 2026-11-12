@@ -180,7 +180,6 @@ export default function WadUp() {
   const infoWindow   = useRef(null);
   const mapMarkers   = useRef({});
   const tmMarkers    = useRef({});
-  const restaurantClustersRef = useRef([]);
   const overlays     = useRef({});
   const tmEventsRef  = useRef([]);
   const venuesRef    = useRef([]);
@@ -536,67 +535,35 @@ export default function WadUp() {
       if (overlays.current[v.id]) overlays.current[v.id].setMap(null);
     });
 
-    // Remove the previous cluster overlays before rebuilding this viewport.
-    restaurantClustersRef.current.forEach(overlay => overlay.setMap(null));
-    restaurantClustersRef.current = [];
     ranked.forEach(v => dropPinForVenue(v, v._areaRank));
 
-    // Cluster non-top-10 restaurant dots using proximity in SCREEN pixels,
-    // not latitude/longitude grid cells (which split adjacent restaurants
-    // across arbitrary boundaries). Keep ranked pins completely independent.
-    if (chip === 'restaurant' && map.getZoom() < 17) {
+    // Show a deliberately sparse selection of individual blue discovery dots
+    // at wide zooms. No count bubbles: each visible dot is one real venue.
+    // More dots are revealed as the map zooms in. Ranked name pins remain.
+    if (chip === 'restaurant') {
       const zoom = map.getZoom();
       const projection = map.getProjection();
       if (projection) {
-        const radius = zoom <= 11 ? 65 : zoom <= 13 ? 53 : 43;
+        const minDistance = zoom <= 10 ? 68 : zoom <= 12 ? 48 : zoom <= 14 ? 31 : zoom <= 16 ? 17 : 0;
+        const maxDots = zoom <= 10 ? 35 : zoom <= 12 ? 65 : zoom <= 14 ? 130 : zoom <= 16 ? 240 : Infinity;
         const scale = Math.pow(2, zoom);
+        const visible = [];
+        // Give consistently distributed venues priority rather than only
+        // favoring highly rated venues in one dense downtown block.
         const candidates = ranked.filter(v => v._areaRank > 10 &&
           Number.isFinite(v.lat) && Number.isFinite(v.lng) &&
           !venueCategories(v).includes('nightlife'));
-        const points = candidates.map(v => {
-          const p = projection.fromLatLngToPoint(new window.google.maps.LatLng(v.lat, v.lng));
-          return { v, x: p.x * scale, y: p.y * scale };
-        });
-        // Connected components: two nearby dots belong to the same cluster,
-        // even when they would have landed in different grid cells.
-        const parent = points.map((_, i) => i);
-        const root = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-        for (let i = 0; i < points.length; i++) {
-          for (let j = i + 1; j < points.length; j++) {
-            const dx = points[i].x - points[j].x;
-            const dy = points[i].y - points[j].y;
-            if (dx * dx + dy * dy <= radius * radius) parent[root(j)] = root(i);
-          }
-        }
-        const groups = new Map();
-        points.forEach((p, i) => {
-          const k = root(i);
-          if (!groups.has(k)) groups.set(k, []);
-          groups.get(k).push(p.v);
-        });
-        groups.forEach(group => {
-          if (group.length < 2) return;
-          group.forEach(v => {
+        for (const v of candidates) {
+          const point = projection.fromLatLngToPoint(new window.google.maps.LatLng(v.lat, v.lng));
+          const x = point.x * scale, y = point.y * scale;
+          const separated = visible.every(p => (p.x - x) ** 2 + (p.y - y) ** 2 >= minDistance ** 2);
+          const show = visible.length < maxDots && separated;
+          if (show) visible.push({ x, y });
+          else {
             mapMarkers.current[v.id]?.marker.setMap(null);
             overlays.current[v.id]?.setMap(null);
-          });
-          const lat = group.reduce((sum, v) => sum + v.lat, 0) / group.length;
-          const lng = group.reduce((sum, v) => sum + v.lng, 0) / group.length;
-          const el = document.createElement('button');
-          el.type = 'button';
-          el.className = 'wu-restaurant-cluster';
-          el.textContent = String(group.length);
-          el.title = group.length + ' restaurants — zoom in to explore';
-          el.setAttribute('aria-label', el.title);
-          el.addEventListener('click', e => {
-            e.stopPropagation();
-            map.panTo({ lat, lng });
-            map.setZoom(Math.min(18, zoom + 2));
-          });
-          restaurantClustersRef.current.push(makeOverlay(
-            new window.google.maps.LatLng(lat, lng), el, map, 'center'
-          ));
-        });
+          }
+        }
       }
     }
 
