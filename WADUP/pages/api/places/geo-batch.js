@@ -8,7 +8,7 @@ import { supabaseAdmin } from '../supabase-admin';
 import { searchNearby, mapPlaceToRow, isChain, isBlockedPrimaryType } from '../../../lib/placesSync';
 
 export const config = { maxDuration: 60 };
-const TYPES = ['restaurant', 'cafe', 'bakery', 'ice_cream_shop'];
+const TYPES = ['restaurant', 'cafe', 'bakery'];
 const valid = (x, min, max) => Number.isFinite(x) && x >= min && x <= max;
 
 export default async function handler(req, res) {
