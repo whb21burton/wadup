@@ -1755,8 +1755,8 @@ export default function WadUp() {
 
   const onSubcategoryClick = (catId, subcatId, e) => {
     e.stopPropagation();
-    activeCategoryRef.current = catId;
     const previous = activeCategoryRef.current === catId ? activeSubcategoryRef.current : [];
+    activeCategoryRef.current = catId;
     const next = previous.includes(subcatId) ? previous.filter(id => id !== subcatId) : [...previous, subcatId];
     activeSubcategoryRef.current = next;
     setActiveChip(catId);
