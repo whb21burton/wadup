@@ -250,14 +250,19 @@ export async function searchNearby(types, center) {
 // query.
 export function mapPlaceToRow(place, wadupCat) {
   const streetAddress = (place.formattedAddress || '').split(',')[0]?.trim() || null;
+  // Use Google's actual locality for regional/nationwide imports instead of
+  // stamping every restaurant as Chattanooga.
+  const addressParts = (place.formattedAddress || '').split(',').map(x => x.trim());
+  const locality = addressParts.length >= 3 ? addressParts[addressParts.length - 3] : null;
+  const stateMatch = (addressParts[addressParts.length - 2] || '').match(/\\b([A-Z]{2})\\b/);
   const photoName = place.photos?.[0]?.name; // "places/PLACE_ID/photos/PHOTO_ID"
 
   return {
     google_place_id: place.id,
     name: place.displayName?.text || 'Unnamed venue',
     address: streetAddress,
-    city: 'Chattanooga',
-    state: 'TN',
+    city: locality || 'Unknown',
+    state: stateMatch?.[1] || null,
     lat: place.location?.latitude ?? null,
     lng: place.location?.longitude ?? null,
     phone: place.internationalPhoneNumber || null,
