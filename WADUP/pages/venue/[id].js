@@ -557,8 +557,16 @@ export default function VenuePage() {
 
             <div className="venue-contact-row">
               {venue.phone && <a href={`tel:${venue.phone}`}>📞 {venue.phone}</a>}
-              {venue.website && (
-                <a href={ensureUrl(venue.website)} target="_blank" rel="noreferrer">🌐 {venue.website}</a>
+              {venue.website ? (
+                <a href={ensureUrl(venue.website)} target="_blank" rel="noreferrer">🌐 Visit website</a>
+              ) : (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([venue.name, venue.address, venue.city, venue.state].filter(Boolean).join(', '))}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  📍 Find business details on Google Maps
+                </a>
               )}
             </div>
 
