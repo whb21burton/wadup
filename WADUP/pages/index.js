@@ -770,8 +770,9 @@ export default function WadUp() {
       contentEl.appendChild(iconSpan);
     } else if (tier === 'discovery') {
 
-      contentEl.className = 'wu-pin-discovery';
-      if (map.getZoom() >= 17) contentEl.classList.add('visible');
+      // Keep non-top-10 restaurants discoverable at every zoom level.
+      // Their smaller dot remains clickable and opens the existing venue popup.
+      contentEl.className = 'wu-pin-discovery visible';
 
       const dot = document.createElement('div');
       dot.className = 'wu-discovery-dot';
@@ -1633,12 +1634,8 @@ export default function WadUp() {
           el.classList.remove('zoom-far','zoom-mid','zoom-near');
           el.classList.add(zc);
         });
-        // Tier 2 discovery dots only ever show at zoom 17+.
-        const showDiscovery = z >= 17;
-        const discoveryEls = document.querySelectorAll('.wu-pin-discovery');
-        discoveryEls.forEach(el => {
-          el.classList.toggle('visible', showDiscovery);
-        });
+        // Discovery dots remain visible while zooming. Ranked name pills
+        // and the existing viewport-relative top-10 ranking are unchanged.
       });
 
       // Clicking the bare map (not a pin — every pin's own click handler
