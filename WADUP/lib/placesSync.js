@@ -137,42 +137,23 @@ export const SEARCH_CONCURRENCY = 8;
 
 // WadUp is meant to surface local/independent spots, not national chains —
 // skip any place whose name matches one of these (case-insensitive substring).
+// Only exclude drive-through-oriented fast-food brands and businesses that
+// are not restaurants. Sit-down chains and quality counter-service venues
+// (Five Guys, Cracker Barrel, Texas Roadhouse, etc.) are intentionally allowed.
 export const CHAIN_BLOCKLIST = [
-  // Fast food / casual chains
-  'mcdonald', 'taco bell', 'burger king', 'wendy', 'chick-fil-a', 'subway',
-  'domino', 'pizza hut', 'papa john', 'kfc', 'popeyes', 'sonic', 'arby',
-  'cracker barrel', 'buffalo wild wings', 'applebee', 'chili', 'olive garden',
-  'red lobster', 'ihop', 'denny', 'waffle house', 'starbucks', 'dunkin',
-  'panera', 'chipotle', 'panda express', 'five guys', 'shake shack',
-  'in-n-out', 'whataburger', 'cook out', 'hardee', 'jack in the box',
-  'little caesar', 'papa murphy', 'jersey mike', 'jimmy john', 'firehouse',
-  'wingstop', 'raising cane', 'zaxby', 'golden corral', 'longhorn',
-  'texas roadhouse', 'outback', 'red robin', 'hooters', 'dennys', 'bob evan',
-  'brothers bagel',
-  // Grocery stores
-  'food city', 'kroger', 'publix', 'walmart', 'target', 'aldi', 'lidl',
-  'whole foods', 'trader joe', 'costco', 'sams club', "sam's club",
-  'food lion', 'giant', 'safeway', 'albertsons', 'meijer', 'heb',
-  'ingles', 'bi-lo', 'piggly wiggly', 'winn dixie', 'dollar',
-  // Pharmacies
-  'cvs', 'walgreen', 'rite aid',
-  // Gas stations
-  'shell', 'bp gas', 'exxon', 'chevron', 'marathon gas', 'speedway',
-  'wawa', 'sheetz', 'quiktrip', 'circle k', 'racetrac',
-  // Hotels (that aren't bars)
-  'holiday inn', 'marriott', 'hilton', 'hyatt', 'hampton inn',
-  'best western', 'comfort inn', 'days inn', 'super 8', 'motel 6',
-  'doubletree', 'embassy suites', 'courtyard', 'quality inn', 'ramada',
-  // Movie theaters / bookstores / big-box
-  'amc ', 'amc classic', 'amc majestic', 'amc northgate', 'amc dine-in',
-  'regal cinema', 'cinemark', 'marcus theater', 'landmark cinema',
-  'barnes & noble', "dick's sporting", 'academy sports',
-  'planet fitness', 'la fitness', 'anytime fitness', "gold's gym",
-  'great clips', 'sport clips', 'supercuts', 'chuck e cheese',
-  // Other non-venue business types that have slipped through
-  'silberman group', 'insurance', 'health insurance',
-  'nail salon', 'nail spa', 'beauty salon', 'hair salon',
-  'sweet and savory classroom', 'cooking class',
+  'mcdonald', 'taco bell', 'burger king', 'wendy', 'chick-fil-a',
+  'kfc', 'popeyes', 'sonic drive', "arby's", 'hardee', 'jack in the box',
+  'cook out', 'steak n shake', "steak 'n shake", 'zaxby',
+  'raising cane', 'whataburger', 'in-n-out',
+  'food city', 'kroger', 'publix', 'walmart', 'target', 'aldi',
+  'lidl', 'whole foods', 'trader joe', 'costco', 'sams club',
+  "sam's club", 'cvs', 'walgreen', 'rite aid',
+  'shell gas', 'exxon gas', 'chevron gas', 'marathon gas',
+  'circle k', 'racetrac', 'quiktrip',
+  'holiday inn', 'marriott hotel', 'hilton hotel', 'hyatt hotel',
+  'hampton inn', 'best western', 'comfort inn', 'days inn',
+  'super 8', 'motel 6', 'quality inn',
+  'nail salon', 'beauty salon', 'hair salon', 'insurance agency',
   'church', 'ministry', 'cathedral', 'chapel',
 ];
 
