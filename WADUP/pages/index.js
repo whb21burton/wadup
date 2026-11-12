@@ -541,48 +541,63 @@ export default function WadUp() {
     restaurantClustersRef.current = [];
     ranked.forEach(v => dropPinForVenue(v, v._areaRank));
 
-    // At regional/city zoom, aggregate only non-top-10 restaurant dots.
-    // Top-10 named rank pills are never clustered. Use a screen-scale
-    // geographic grid, so clusters become individual dots as users zoom in.
-    if (chip === 'restaurant' && !subcategory && map.getZoom() < 16) {
+    // Cluster non-top-10 restaurant dots using proximity in SCREEN pixels,
+    // not latitude/longitude grid cells (which split adjacent restaurants
+    // across arbitrary boundaries). Keep ranked pins completely independent.
+    if (chip === 'restaurant' && map.getZoom() < 17) {
       const zoom = map.getZoom();
-      const centerLat = map.getCenter()?.lat() || 35;
-      const degreesPerPixel = 360 / (256 * Math.pow(2, zoom));
-      const latCell = degreesPerPixel * 72;
-      const lngCell = latCell / Math.max(0.25, Math.cos(centerLat * Math.PI / 180));
-      const groups = new Map();
-      ranked.filter(v => v._areaRank > 10 && v.lat != null && v.lng != null &&
-        !venueCategories(v).includes('nightlife') &&
-        !(venueCategories(v).includes('outdoors') && /park/i.test(v.name || '')) &&
-        !(venueCategories(v).includes('activities') && /golf/i.test(v.name || ''))
-      ).forEach(v => {
-        const key = Math.floor(v.lat / latCell) + ':' + Math.floor(v.lng / lngCell);
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(v);
-      });
-      groups.forEach(group => {
-        if (group.length < 2) return; // Keep isolated restaurants clickable.
-        group.forEach(v => {
-          mapMarkers.current[v.id]?.marker.setMap(null);
-          overlays.current[v.id]?.setMap(null);
+      const projection = map.getProjection();
+      if (projection) {
+        const radius = zoom <= 11 ? 65 : zoom <= 13 ? 53 : 43;
+        const scale = Math.pow(2, zoom);
+        const candidates = ranked.filter(v => v._areaRank > 10 &&
+          Number.isFinite(v.lat) && Number.isFinite(v.lng) &&
+          !venueCategories(v).includes('nightlife'));
+        const points = candidates.map(v => {
+          const p = projection.fromLatLngToPoint(new window.google.maps.LatLng(v.lat, v.lng));
+          return { v, x: p.x * scale, y: p.y * scale };
         });
-        const lat = group.reduce((sum, v) => sum + v.lat, 0) / group.length;
-        const lng = group.reduce((sum, v) => sum + v.lng, 0) / group.length;
-        const el = document.createElement('button');
-        el.type = 'button';
-        el.className = 'wu-restaurant-cluster';
-        el.textContent = String(group.length);
-        el.title = group.length + ' more restaurants — zoom in to explore';
-        el.setAttribute('aria-label', el.title);
-        el.addEventListener('click', e => {
-          e.stopPropagation();
-          map.panTo({ lat, lng });
-          map.setZoom(Math.min(17, zoom + 2));
+        // Connected components: two nearby dots belong to the same cluster,
+        // even when they would have landed in different grid cells.
+        const parent = points.map((_, i) => i);
+        const root = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+        for (let i = 0; i < points.length; i++) {
+          for (let j = i + 1; j < points.length; j++) {
+            const dx = points[i].x - points[j].x;
+            const dy = points[i].y - points[j].y;
+            if (dx * dx + dy * dy <= radius * radius) parent[root(j)] = root(i);
+          }
+        }
+        const groups = new Map();
+        points.forEach((p, i) => {
+          const k = root(i);
+          if (!groups.has(k)) groups.set(k, []);
+          groups.get(k).push(p.v);
         });
-        restaurantClustersRef.current.push(makeOverlay(
-          new window.google.maps.LatLng(lat, lng), el, map, 'center'
-        ));
-      });
+        groups.forEach(group => {
+          if (group.length < 2) return;
+          group.forEach(v => {
+            mapMarkers.current[v.id]?.marker.setMap(null);
+            overlays.current[v.id]?.setMap(null);
+          });
+          const lat = group.reduce((sum, v) => sum + v.lat, 0) / group.length;
+          const lng = group.reduce((sum, v) => sum + v.lng, 0) / group.length;
+          const el = document.createElement('button');
+          el.type = 'button';
+          el.className = 'wu-restaurant-cluster';
+          el.textContent = String(group.length);
+          el.title = group.length + ' restaurants — zoom in to explore';
+          el.setAttribute('aria-label', el.title);
+          el.addEventListener('click', e => {
+            e.stopPropagation();
+            map.panTo({ lat, lng });
+            map.setZoom(Math.min(18, zoom + 2));
+          });
+          restaurantClustersRef.current.push(makeOverlay(
+            new window.google.maps.LatLng(lat, lng), el, map, 'center'
+          ));
+        });
+      }
     }
 
     // Ticketmaster events have no WadUp rating to sort against, so rather
