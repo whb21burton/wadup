@@ -157,9 +157,10 @@ export function venueMatchesChip(chip, venue, subcategory) {
     ? (cats.includes('nightlife') || cats.includes('bars'))
     : cats.includes(chip);
   if (!chipMatches) return false;
-  if (subcategory) {
-    const want = String(subcategory).trim().toLowerCase();
-    return venueSubcategories(venue).some(s => String(s).trim().toLowerCase() === want);
+  const selected = Array.isArray(subcategory) ? subcategory : (subcategory ? [subcategory] : []);
+  if (selected.length) {
+    const wants = new Set(selected.map(s => String(s).trim().toLowerCase()));
+    return venueSubcategories(venue).some(s => wants.has(String(s).trim().toLowerCase()));
   }
   return true;
 }
