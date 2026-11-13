@@ -55,7 +55,7 @@ function withTMAffiliateTracking(ticketUrl) {
 
 const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', restaurant: '🍔', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
 const ACTIVITY_ICONS = [
-  [/bowling/i, '🎳'], [/disc golf/i, '🥏'], [/golf/i, '⛳'],
+  [/bowling/i, '🎳'], [/pickleball/i, '🏓'], [/disc golf/i, '🥏'], [/golf/i, '⛳'],
   [/amusement park/i, '🎢'], [/trampoline/i, '🤸'], [/playground/i, '🛝'],
   [/creative classes/i, '🎨'], [/aquarium/i, '🐠'], [/zoo/i, '🦒'],
   [/climbing/i, '🧗'], [/kayak|canoe/i, '🛶'], [/paddleboard/i, '🏄'],
