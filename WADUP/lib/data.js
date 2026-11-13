@@ -47,6 +47,7 @@ export const CATEGORY_CHIPS = [
     { id: 'Pizza', label: 'Pizza' },
     { id: 'Breakfast', label: 'Breakfast' },
     { id: 'Southern', label: 'Southern' },
+    { id: 'Other Restaurants', label: 'Other Restaurants' },
   ]},
   { id: 'sports', label: '🏟️ Sports', subcategories: [
     { id: 'Football', label: '🏈 Football' },
@@ -101,6 +102,7 @@ export const CATEGORY_CHIPS = [
 // filters. Do not rely on the admin manually re-tagging every venue.
 const SUBCATEGORY_ALIASES = {
   'italian/greek': ['italian','italian restaurant','greek','greek restaurant'],
+  'other restaurants': ['restaurant','brazilian restaurant','buffet restaurant','european restaurant','french restaurant','latin american restaurant','sandwich shop','desserts','bar and grill'],
   'american': ['american restaurant'],
   'mexican': ['mexican restaurant','tex mex restaurant'],
   'asian': ['asian restaurant','chinese restaurant','japanese restaurant','thai restaurant','sushi restaurant','ramen restaurant'],
