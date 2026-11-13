@@ -26,6 +26,22 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'Not authorized for this city' });
   }
 
+  // Re-running approval must never create a duplicate live business.
+  if (pending.status === 'approved') {
+    return res.status(409).json({ error: 'This venue has already been approved' });
+  }
+  if (pending.google_place_id) {
+    const { data: existing, error: duplicateError } = await supabaseAdmin
+      .from('venues').select('id').eq('google_place_id', pending.google_place_id).limit(1);
+    if (duplicateError) return res.status(503).json({ error: 'Could not check duplicate venues' });
+    if (existing?.length) {
+      return res.status(409).json({
+        error: 'Venue already exists on Wadup',
+        existingVenueId: existing[0].id,
+      });
+    }
+  }
+
   const o = overrides || {};
   const categories = Array.isArray(o.categories) && o.categories.length
     ? o.categories
