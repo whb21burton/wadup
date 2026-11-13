@@ -54,6 +54,43 @@ function withTMAffiliateTracking(ticketUrl) {
 }
 
 const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', restaurant: '🍔', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
+const ACTIVITY_ICONS = [
+  [/bowling/i, '🎳'], [/pickleball/i, '🏓'], [/disc golf/i, '🥏'], [/golf/i, '⛳'],
+  [/amusement park/i, '🎢'], [/trampoline/i, '🤸'], [/playground/i, '🛝'],
+  [/creative classes/i, '🎨'], [/aquarium/i, '🐠'], [/zoo/i, '🦒'],
+  [/climbing/i, '🧗'], [/kayak|canoe/i, '🛶'], [/paddleboard/i, '🏄'],
+  [/skate park|skateboard/i, '🛹'], [/skating|ice rink|roller rink/i, '⛸️'],
+  [/basketball/i, '🏀'], [/hockey/i, '🏒'], [/escape/i, '🔐'],
+  [/axe throw/i, '🪓'], [/arcade|pinball/i, '🕹️'],
+  [/kart|racing/i, '🏎️'], [/museum/i, '🏛️'],
+];
+function activityIcon(v) {
+  const terms = [v.subcategory, ...(v.subcategories || [])].filter(Boolean).join(' ');
+  return ACTIVITY_ICONS.find(([re]) => re.test(terms))?.[1] || '🎳';
+}
+function outdoorIcon(v) {
+  const terms = [v.subcategory, ...(v.subcategories || [])].filter(Boolean).join(' ');
+  if (/dog park/i.test(terms)) return '🌳🐕';
+  if (/kayak|canoe/i.test(terms)) return '🛶';
+  if (/paddleboard/i.test(terms)) return '🏄';
+  if (/climb/i.test(terms)) return '🧗';
+  if (/bike|cycling/i.test(terms)) return '🚴';
+  if (/hiking|trail/i.test(terms)) return '🥾';
+  if (/outdoor shop/i.test(terms)) return '🎒';
+  if (/campground/i.test(terms)) return '🏕️';
+  if (/nature preserve/i.test(terms)) return '🌿';
+  if (/outdoor attraction/i.test(terms)) return '🏞️';
+  return '🌳';
+}
+function tmMatchesSportFilter(ev, selected) {
+  if (!selected?.length) return true;
+  const details = [ev.genre, ev.subGenre, ev.name].filter(Boolean).join(' ').toLowerCase();
+  return selected.some(s => s === 'Other Sports'
+    ? !/football|baseball|basketball|soccer|hockey|golf|racing|nascar|formula|indycar|tennis/i.test(details)
+    : (s === 'Racing' ? /racing|nascar|formula|indycar|grand prix/i.test(details)
+      : details.includes(s.toLowerCase())));
+}
+
 
 // Popups are built as raw HTML strings for Google's InfoWindow — escape any
 // text that ultimately comes from an API response or (eventually) user input.
@@ -90,7 +127,8 @@ function buildDays() {
 // see venueCategories() in lib/data.js for the categories[]-with-category
 // fallback this reads from.
 function venueEmoji(v) {
-  return v.custom_emoji || CATEGORY_ICONS[venueCategories(v)[0]] || '📍';
+  const primary = venueCategories(v)[0];
+  return v.custom_emoji || (primary === 'activities' ? activityIcon(v) : primary === 'outdoors' ? outdoorIcon(v) : CATEGORY_ICONS[primary]) || '📍';
 }
 
 // ── Two-tier pin system ── the rating used to ORDER pins/sidebar items falls
@@ -222,7 +260,18 @@ export default function WadUp() {
   // and renderDesktopCategoryList. Same synchronous-ref pattern as
   // activeCategoryRef: filterPins always reads the ref, never the state.
   const [activeSubcategory, setActiveSubcategory] = useState([]);
-  const activeSubcategoryRef = useRef([]);
+  const activeSubcategoryRef = useRef({});
+  const [subcategoryByChip, setSubcategoryByChip] = useState({});
+  const matchesSelectedVenue = (venue, date) => {
+    const chip = activeCategoryRef.current;
+    return chip !== 'sports' && venueMatchesChip(chip, venue, activeSubcategoryRef.current[chip] || []) &&
+      (chip !== 'events' || !!getVenueEventForDay(venue.id, date));
+  };
+  const matchesSelectedTM = (ev, date) => {
+    const chip = activeCategoryRef.current;
+    return ev.cat === chip && (chip !== 'sports' || tmMatchesSportFilter(ev, activeSubcategoryRef.current[chip] || [])) &&
+      isTMEventVisibleForDay(ev, date);
+  };
   const [openDropdown, setOpenDropdown] = useState(null); // which category's subcategory list is expanded
   const [trendingNow,    setTrendingNow]    = useState([]);
   const [topRanked,      setTopRanked]      = useState([]);
@@ -415,8 +464,6 @@ export default function WadUp() {
 
     const chip = activeCategoryRef.current;
     const date = activeDateRef.current;
-    const subcategory = activeSubcategoryRef.current;
-
     Object.entries(mapMarkers.current).forEach(([id, entry]) => {
       const venue = venuesRef.current.find(v => v.id === id);
       if (!venue) return;
@@ -429,9 +476,7 @@ export default function WadUp() {
       // this loop only ever HIDES pins, and updateAreaRanks only ever
       // RE-DROPS ones that pass its own (correct) eligibility check —
       // nothing reconciled the two for a pin this loop was leaving shown.
-      const show = chip === 'events'
-        ? venueMatchesChip('events', venue, subcategory) && !!getVenueEventForDay(venue.id, date || todayIsoStr())
-        : venueMatchesChip(chip, venue, subcategory);
+      const show = matchesSelectedVenue(venue, date || todayIsoStr());
       entry.marker.setMap(show ? map : null);
       // Venue pins track their overlay in the separate `overlays` ref, not on
       // this mapMarkers entry (unlike TM pins below, whose entry bundles
@@ -445,8 +490,7 @@ export default function WadUp() {
     Object.entries(tmMarkers.current).forEach(([id, entry]) => {
       const ev = tmEventsRef.current.find(e => e.id === id);
       if (!ev) return;
-      const catMatch = ev.cat === chip;
-      const show = catMatch && isTMEventVisibleForDay(ev, date || todayIsoStr());
+      const show = matchesSelectedTM(ev, date || todayIsoStr());
       entry.marker.setMap(show ? map : null);
       if (entry.overlay) entry.overlay.setMap(show ? map : null);
     });
@@ -484,7 +528,7 @@ export default function WadUp() {
     if (!map) return;
     const bounds = map.getBounds();
     const chip = activeCategoryRef.current;
-    const subcategory = activeSubcategoryRef.current;
+    const selected = [chip];
 
     const dayIso = activeDateRef.current || todayIsoStr();
 
@@ -492,13 +536,9 @@ export default function WadUp() {
     // 'events' only actually shows once it has a real venue_events row for
     // whichever day is selected (see getVenueEventForDay). Every other chip
     // keeps the plain category match it always had.
-    const eligible = venuesRef.current.filter(v => {
-      if (!v.live || v.is_hidden || !isVenueEligible(v)) return false;
-      if (chip === 'events') {
-        return venueMatchesChip('events', v, subcategory) && !!getVenueEventForDay(v.id, dayIso);
-      }
-      return venueMatchesChip(chip, v, subcategory);
-    });
+    const eligible = venuesRef.current.filter(v =>
+      v.live && !v.is_hidden && isVenueEligible(v) && matchesSelectedVenue(v, dayIso)
+    );
     const inViewport = eligible.filter(v =>
       v.lat != null && v.lng != null && bounds && bounds.contains(new window.google.maps.LatLng(v.lat, v.lng))
     );
@@ -510,7 +550,7 @@ export default function WadUp() {
     // "which event is worth seeing right now." Every other chip keeps the
     // existing rating-based sort.
     let ranked;
-    if (chip === 'events') {
+    if (selected.length === 1 && selected[0] === 'events') {
       const withEvent = inViewport.map(v => {
         const todayEvent = getVenueEventForDay(v.id, dayIso);
         return { ...v, _todayEvent: todayEvent, _isLive: isEventLive(todayEvent) };
@@ -547,9 +587,9 @@ export default function WadUp() {
     // and only ever considered for the Events/Sports chips — same cat===chip
     // gate filterPins uses for TM pins, plus the same day+3hr-showable window
     // (isTMEventVisibleForDay) filterPins applies to actual pin visibility.
-    const tmInBounds = (chip === 'events' || chip === 'sports')
+    const tmInBounds = (selected.includes('events') || selected.includes('sports'))
       ? tmEventsRef.current
-          .filter(ev => ev.cat === chip && isTMEventVisibleForDay(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
+          .filter(ev => matchesSelectedTM(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
           .sort((a, b) => {
             const aLive = isTMEventLiveNow(a), bLive = isTMEventLiveNow(b);
             if (aLive !== bLive) return aLive ? -1 : 1;
@@ -559,7 +599,7 @@ export default function WadUp() {
       : [];
 
     let combined;
-    if (chip === 'events') {
+    if (selected.length === 1 && selected[0] === 'events') {
       // Tier order: everything live right now (venues + TM mixed), then
       // upcoming venues (event_rank order), then upcoming TM (by start time)
       // — matches the ranked/tmInBounds tiers built above.
@@ -573,7 +613,9 @@ export default function WadUp() {
       combined = [...ranked.map(v => ({ ...v, _type: 'venue' })), ...tmInBounds]
         .map((item, i) => ({ ...item, _areaRank: i + 1 }));
     }
-    setTopRanked(combined.slice(0, 10));
+    // A venue can match several categories, but appears only once by ID.
+    const seen = new Set();
+    setTopRanked(combined.filter(item => { const key = item._type + ':' + item.id; if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 10));
   }, []);
 
   useEffect(() => { updateAreaRanksRef.current = updateAreaRanks; }, [updateAreaRanks]);
@@ -783,8 +825,13 @@ export default function WadUp() {
       contentEl.className = 'wu-pin-discovery visible' + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
       contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
 
-      const dot = document.createElement('div');
-      dot.className = 'wu-discovery-dot';
+      const chosenEmoji = ['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕'].includes(v.custom_emoji) ? v.custom_emoji : null;
+      const dot = document.createElement(chosenEmoji ? 'span' : 'div');
+      dot.className = chosenEmoji ? 'wu-bar-discovery-emoji' : 'wu-discovery-dot';
+      if (chosenEmoji) {
+        dot.textContent = chosenEmoji;
+        dot.style.cssText = 'font-size:calc(var(--wu-dot-size, 8px) * 1.5);line-height:1;';
+      }
 
       const label = document.createElement('div');
       label.className = 'wu-discovery-label';
@@ -941,6 +988,13 @@ export default function WadUp() {
     filterPinsRef.current?.();
   }, [adminRole, mapReady, dropVenuePin]);
 
+  // Owner-selected map icons are constrained to an approved set.
+  // Default bars use beer; restaurant discovery keeps its dot unless an
+  // owner explicitly selects an icon. No new visible filters are added.
+  const OWNER_MAP_EMOJIS = new Set(['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕']);
+  const venueMapEmoji = (v, fallback = null) =>
+    OWNER_MAP_EMOJIS.has(v.custom_emoji) ? v.custom_emoji : fallback;
+
   // ── Drop a bar/nightlife pin ── same viewport-scoped areaRank as
   // dropVenuePin (a venues.admin_rank_number override, when set, wins over
   // it — see calculateDisplayRank in lib/rankings.js for the same
@@ -963,10 +1017,10 @@ export default function WadUp() {
     }
     if (!v.live) return;
 
-    const rank = v.admin_rank_number || areaRank;
-    const isTop10 = rank != null && rank <= 10;
-    const isTop5 = rank != null && rank <= 5;
-    const showName = rank != null && (map.getZoom() < 14 ? isTop10 : isTop5);
+    // Use the exact same viewport-relative top-10 rank as restaurant pins.
+    // Do not override it with a permanent admin rank or hide ranks 6-10 on zoom.
+    const rank = areaRank;
+    const showName = getVenueTier(areaRank) === 'top10';
     const rankStyle = showName ? getRankStyle(rank) : null;
 
     const flameLevel = v.current_flame || 0;
@@ -1016,7 +1070,7 @@ export default function WadUp() {
 
       const nameSpan = document.createElement('span');
       nameSpan.className = 'wu-name';
-      nameSpan.textContent = `${rankStyle.prefix} ${v.name}`;
+      nameSpan.textContent = `${venueMapEmoji(v, '🍺')} ${rankStyle.prefix} ${v.name}`;
       nameSpan.style.color = rankStyle.color;
       textWrap.appendChild(nameSpan);
 
@@ -1038,21 +1092,25 @@ export default function WadUp() {
       contentEl.appendChild(pill);
       contentEl.appendChild(tail);
     } else {
-      contentEl.className = `wu-bar-icon-pin${isLiveEvent ? ' wu-pin-live' : ''}`;
-      const eventBadgeHtml = eventsChipActive && todayEvent
-        ? (isLiveEvent
-            ? '<span class="wu-live-music-note">🎵</span>'
-            : `<span class="wu-badge wu-event-badge">${getEventIcon(todayEvent.event_type)}</span>`)
-        : '';
-      contentEl.innerHTML = eventBadgeHtml + (flameEmoji
-        ? `<div class="wu-flame-ring flame-${flameLevel}">${flameEmoji}</div><div class="wu-beer-icon">🍺</div>`
-        : '<div class="wu-beer-icon">🍺</div>');
+      // Same discovery tier, zoom scaling and label rules as restaurants;
+      // the only visual difference is an emoji instead of a blue dot.
+      contentEl.className = 'wu-pin-discovery visible wu-bar-discovery' + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
+      contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
+      const emoji = document.createElement('span');
+      emoji.className = 'wu-bar-discovery-emoji';
+      emoji.textContent = venueMapEmoji(v, '🍺');
+      emoji.style.cssText = 'font-size:calc(var(--wu-dot-size, 8px) * 1.5);line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));';
+      const label = document.createElement('div');
+      label.className = 'wu-discovery-label';
+      label.textContent = v.name;
+      contentEl.appendChild(emoji);
+      contentEl.appendChild(label);
     }
 
     // Ranked pill bubbles need to consistently paint in front of the small
     // beer-icon pins — #1 gets the highest baseline, #10 the lowest, and
     // every icon-only bar sits at a fixed low baseline below all of them.
-    const baseZIndex = showName ? 1000 + (10 - Math.min(rank || 10, 10)) : 10;
+    const baseZIndex = showName ? 1000 + (10 - Math.min(rank || 10, 10)) : 1;
 
     const el = document.createElement('div');
     el.className = 'wu-pin-wrapper';
@@ -1098,7 +1156,7 @@ export default function WadUp() {
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
       zIndex: baseZIndex,
     });
-    const overlay = makeOverlay(pos, el, map, showName ? 'bottom' : 'center');
+    const overlay = makeOverlay(pos, el, map, showName ? 'bottom' : 'top');
 
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
@@ -1112,9 +1170,13 @@ export default function WadUp() {
     el.addEventListener('mouseenter', () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
       el.style.zIndex = '9999';
+      // Only reveal a non-ranked beer label on hover; permanent labels
+      // overlap heavily in dense downtown nightlife clusters.
+
     });
     el.addEventListener('mouseleave', () => {
       el.style.zIndex = String(baseZIndex);
+
     });
 
     mapMarkers.current[v.id] = { marker };
@@ -1320,7 +1382,10 @@ export default function WadUp() {
       .select('*')
       .eq('is_hidden', false)
       .order('google_rating', { ascending: false });
-    if (error || !data) return;
+    if (error || !data) {
+      console.error('Wadup venue load failed:', error || 'No venue rows returned');
+      return;
+    }
 
     // The rest of this file was written against the earlier mock venue shape
     // (`cat` instead of `category`, and a `live` flag every mock row hardcoded
@@ -1587,8 +1652,9 @@ export default function WadUp() {
           map.setCenter({ lat: state.lat, lng: state.lng });
           map.setZoom(state.zoom);
           if (state.chip) {
-            activeCategoryRef.current = state.chip;
-            setActiveChip(state.chip);
+            const restored = Array.isArray(state.chip) ? (state.chip[0] || 'events') : state.chip;
+            activeCategoryRef.current = restored;
+            setActiveChip(restored);
           }
           if (state.date) {
             activeDateRef.current = state.date;
@@ -1717,48 +1783,68 @@ export default function WadUp() {
   }, []);
 
   useEffect(() => {
-    let t;
-    const onResize = () => {
-      clearTimeout(t);
-      t = setTimeout(nudgeMap, 200);
+    const element = mapRef.current;
+    if (!element) return;
+    let timer;
+    let lastWidth = 0, lastHeight = 0;
+    const scheduleMapResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!element.isConnected || !element.clientWidth || !element.clientHeight) return;
+        nudgeMap();
+      }, 100);
     };
-    window.addEventListener('resize', onResize);
-    return () => { window.removeEventListener('resize', onResize); clearTimeout(t); };
+    // A sidebar, responsive layout, or browser zoom can change the map's
+    // container size without firing window.resize.
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(entries => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      const width = Math.round(rect.width), height = Math.round(rect.height);
+      if (width === lastWidth && height === lastHeight) return;
+      lastWidth = width; lastHeight = height;
+      scheduleMapResize();
+    }) : null;
+    observer?.observe(element);
+    window.addEventListener('resize', scheduleMapResize);
+    window.addEventListener('orientationchange', scheduleMapResize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', scheduleMapResize);
+      window.removeEventListener('orientationchange', scheduleMapResize);
+      clearTimeout(timer);
+    };
   }, [nudgeMap]);
 
   // ── Chip change (mobile HUD's flat chip row) ── (also triggers the
   // loadSidebarLists effect above, via activeChip). No subcategory UI exists
   // on mobile, so any subcategory picked earlier on desktop is cleared here
   // — otherwise it'd keep silently narrowing the mobile chip's results.
-  const onChipClick = (chip) => {
-    activeCategoryRef.current = chip;
-    activeSubcategoryRef.current = [];
-    setActiveChip(chip);
-    setActiveSubcategory([]);
-    filterPins();
-  };
-
-  // ── Desktop sidebar category dropdown ── clicking a category row both
-  // selects it (filters the map) and toggles that category's subcategory
-  // list open/closed; clicking a subcategory row selects the category +
-  // subcategory together without touching which dropdown is open.
-  const onCategoryClick = (catId) => {
+  // Exactly one main category at a time; subcategory selections may be multiple.
+  // First click selects a main category; subsequent clicks on that
+  // category expand/collapse its subcategories. Only one menu stays open.
+  const selectCategory = (catId) => {
+    if (activeCategoryRef.current === catId) {
+      setOpenDropdown(prev => prev === catId ? null : catId);
+      return;
+    }
     activeCategoryRef.current = catId;
-    activeSubcategoryRef.current = [];
     setActiveChip(catId);
-    setActiveSubcategory([]);
-    setOpenDropdown(prev => (prev === catId ? null : catId));
+    setOpenDropdown(null);
     filterPins();
   };
-
+  const onChipClick = selectCategory;
+  const onCategoryClick = selectCategory;
   const onSubcategoryClick = (catId, subcatId, e) => {
     e.stopPropagation();
-    const previous = activeCategoryRef.current === catId ? activeSubcategoryRef.current : [];
-    activeCategoryRef.current = catId;
+    const previous = activeSubcategoryRef.current[catId] || [];
     const next = previous.includes(subcatId) ? previous.filter(id => id !== subcatId) : [...previous, subcatId];
-    activeSubcategoryRef.current = next;
-    setActiveChip(catId);
+    activeSubcategoryRef.current = { ...activeSubcategoryRef.current, [catId]: next };
+    setSubcategoryByChip(activeSubcategoryRef.current);
     setActiveSubcategory(next);
+    if (activeCategoryRef.current !== catId) {
+      activeCategoryRef.current = catId;
+      setActiveChip(catId);
+    }
     filterPins();
   };
 
@@ -1881,23 +1967,31 @@ export default function WadUp() {
           const isOpen = openDropdown === c.id;
           return (
             <div key={c.id}>
-              <div
+              <button
+                type="button"
                 className={`cat-item${isActive ? ' active' : ''}`}
+                aria-pressed={isActive}
+                aria-expanded={hasSubcats ? isOpen : undefined}
+                aria-label={`${c.label}: ${isActive ? (isOpen ? 'collapse subcategories' : 'expand subcategories') : 'select category'}`}
                 onClick={() => onCategoryClick(c.id)}
+                style={{ width: '100%', border: 0, textAlign: 'left', background: isActive ? '#FFFC00' : 'transparent', color: isActive ? '#000' : '#aaa', appearance: 'none', WebkitAppearance: 'none' }}
               >
                 <span>{c.label}</span>
                 {hasSubcats && <span className={`cat-arrow${isOpen ? ' open' : ''}`}>▼</span>}
-              </div>
+              </button>
               {hasSubcats && (
                 <div className={`subcat-list${isOpen ? ' open' : ''}`}>
                   {c.subcategories.map(sub => (
-                    <div
+                    <button
+                      type="button"
                       key={sub.id}
-                      className={`subcat-item${isActive && activeSubcategory.includes(sub.id) ? ' active' : ''}`}
+                      className={`subcat-item${isActive && (subcategoryByChip[c.id] || []).includes(sub.id) ? ' active' : ''}`}
+                      aria-pressed={isActive && (subcategoryByChip[c.id] || []).includes(sub.id)}
                       onClick={(e) => onSubcategoryClick(c.id, sub.id, e)}
+                      style={{ width: '100%', textAlign: 'left', border: 0 }}
                     >
                       {sub.label}
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}

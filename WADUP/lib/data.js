@@ -24,22 +24,20 @@ export const CATEGORY_CHIPS = [
     { id: 'Theater', label: 'Theater' },
     { id: 'Comedy Club', label: 'Comedy Club' },
     { id: 'Music Venue', label: 'Music Venue' },
+    { id: 'Seasonal Event Venue', label: 'Seasonal Event Venues' },
   ]},
   { id: 'bars', label: '🍸 Bars & Nightlife', subcategories: [
     { id: 'Sports Bar', label: 'Sports Bar' },
     { id: 'Speakeasy', label: 'Speakeasy' },
     { id: 'Dance Club', label: 'Dance Club' },
     { id: 'Brewery', label: 'Brewery' },
-    { id: 'Wine Bar', label: 'Wine Bar' },
-    { id: 'Cocktail Bar', label: 'Cocktail Bar' },
     { id: 'Dive Bar', label: 'Dive Bar' },
     { id: 'Karaoke Bar', label: 'Karaoke Bar' },
-    { id: 'Live Music Bar', label: 'Live Music Bar' },
     { id: 'Rooftop Bar', label: 'Rooftop Bar' },
   ]},
   { id: 'restaurant', label: '🍔 Restaurants', subcategories: [
     { id: 'American', label: 'American' },
-    { id: 'Italian', label: 'Italian' },
+    { id: 'Italian/Greek', label: 'Italian/Greek' },
     { id: 'Mexican', label: 'Mexican' },
     { id: 'Asian', label: 'Asian' },
     { id: 'BBQ', label: 'BBQ' },
@@ -49,6 +47,7 @@ export const CATEGORY_CHIPS = [
     { id: 'Pizza', label: 'Pizza' },
     { id: 'Breakfast', label: 'Breakfast' },
     { id: 'Southern', label: 'Southern' },
+    { id: 'Other Restaurants', label: 'Other Restaurants' },
   ]},
   { id: 'sports', label: '🏟️ Sports', subcategories: [
     { id: 'Football', label: '🏈 Football' },
@@ -56,24 +55,93 @@ export const CATEGORY_CHIPS = [
     { id: 'Basketball', label: '🏀 Basketball' },
     { id: 'Soccer', label: '⚽ Soccer' },
     { id: 'Hockey', label: '🏒 Hockey' },
+    { id: 'Golf', label: '⛳ Golf' },
+    { id: 'Racing', label: '🏎️ Racing' },
+    { id: 'Tennis', label: '🎾 Tennis' },
+    { id: 'Other Sports', label: '🏆 Other Sports' },
   ]},
   { id: 'outdoors', label: '🌳 Outdoors', subcategories: [
-    { id: 'Park', label: 'Park' },
-    { id: 'Hiking Trail', label: 'Hiking Trail' },
-    { id: 'Kayaking', label: 'Kayaking' },
-    { id: 'Rock Climbing', label: 'Rock Climbing' },
-    { id: 'Disc Golf', label: 'Disc Golf' },
-    { id: 'Bike Trail', label: 'Bike Trail' },
+    { id: 'Park', label: '🌳 Parks' },
+    { id: 'Dog Park', label: '🐕 Dog Parks' },
+    { id: 'Hiking Trail', label: '🥾 Hiking Trails' },
+    { id: 'Bike Trail', label: '🚴 Bike Trails' },
+    { id: 'Outdoor Shop', label: '🎒 Outdoor Shops' },
+    { id: 'Nature Preserve', label: '🌿 Nature Preserves' },
+    { id: 'Campground', label: '🏕️ Campgrounds' },
+    { id: 'Attraction', label: '🏞️ Outdoor Attractions' },
+    { id: 'Historic Site', label: '🏛️ Historic Sites' },
+    { id: 'Kayaking', label: '🛶 Kayaking' },
+    { id: 'Paddleboarding', label: '🏄 Paddleboarding' },
+    { id: 'Rock Climbing', label: '🧗 Outdoor Climbing' },
   ]},
   { id: 'activities', label: '🎳 Activities', subcategories: [
-    { id: 'Bowling', label: 'Bowling' },
-    { id: 'Top Golf', label: 'Top Golf' },
-    { id: 'Escape Room', label: 'Escape Room' },
-    { id: 'Axe Throwing', label: 'Axe Throwing' },
-    { id: 'Arcade', label: 'Arcade' },
-    { id: 'Go Karts', label: 'Go Karts' },
+    { id: 'Bowling', label: '🎳 Bowling' },
+    { id: 'Golf', label: '⛳ Golf Courses' },
+    { id: 'Disc Golf', label: '🥏 Disc Golf' },
+    { id: 'Pickleball', label: '🏓 Pickleball Courts' },
+    { id: 'Mini Golf', label: '⛳ Mini Golf' },
+    { id: 'Escape Room', label: '🔐 Escape Rooms' },
+    { id: 'Axe Throwing', label: '🪓 Axe Throwing' },
+    { id: 'Arcade', label: '🕹️ Arcades' },
+    { id: 'Trampoline Park', label: '🤸 Trampoline Parks' },
+    { id: 'Amusement Park', label: '🎢 Amusement Parks' },
+    { id: 'Indoor Playground', label: '🛝 Indoor Playgrounds' },
+    { id: 'Creative Classes', label: '🎨 Classes & Workshops' },
+    { id: 'Attraction', label: '🐠 Zoos & Attractions' },
+    { id: 'Go Karts', label: '🏎️ Go Karts' },
+    { id: 'Climbing Gym', label: '🧗 Climbing Gyms' },
+    { id: 'Kayaking', label: '🛶 Kayak Rentals' },
+    { id: 'Paddleboarding', label: '🏄 Paddleboard Rentals' },
+    { id: 'Skate Park', label: '🛹 Skate Parks' },
+    { id: 'Skating Rink', label: '⛸️ Skating Rinks' },
+    { id: 'Public Basketball', label: '🏀 Public Basketball' },
+    { id: 'Public Hockey', label: '🏒 Public Hockey' },
+    { id: 'Museums', label: '🏛️ Museums' },
   ]},
 ];
+
+// Legacy values and Google Places primary types need to match the visible
+// filters. Do not rely on the admin manually re-tagging every venue.
+const SUBCATEGORY_ALIASES = {
+  'italian/greek': ['italian','italian restaurant','greek','greek restaurant'],
+  'other restaurants': ['restaurant','brazilian restaurant','buffet restaurant','european restaurant','french restaurant','latin american restaurant','sandwich shop','desserts','bar and grill'],
+  'american': ['american restaurant'],
+  'mexican': ['mexican restaurant','tex mex restaurant'],
+  'asian': ['asian restaurant','chinese restaurant','japanese restaurant','thai restaurant','sushi restaurant','ramen restaurant'],
+  'bbq': ['barbecue restaurant','bbq restaurant'],
+  'seafood': ['seafood restaurant'],
+  'steakhouse': ['steak house'],
+  'burgers': ['hamburger restaurant'],
+  'pizza': ['pizza restaurant'],
+  'breakfast': ['breakfast restaurant','brunch restaurant'],
+  'sports bar': ['sports bar'],
+  'dance club': ['nightclub','night club','dance hall'],
+  'karaoke bar': ['karaoke','karaoke bar'],
+  'brewery': ['brewery'],
+  'other bars': ['bar','pub','cocktail bar','wine bar'],
+  'lounge': ['cocktail lounge','wine lounge'],
+  'pool hall': ['billiards','billiard hall','pool hall'],
+  'beer bar': ['craft beer bar'],
+  'hiking trail': ['hiking','hiking area'],
+  'historic site': ['historic sites','historical landmark'],
+  'attraction': ['outdoor attraction'],
+  'rock climbing': ['outdoor climbing'],
+  'climbing gym': ['climbing','indoor climbing','rock climbing gym'],
+  'golf': ['golf course'],
+  'pickleball': ['pickleball court','pickleball courts','pickleball facility','pickleball club'],
+  'mini golf': ['miniature golf course'],
+  'escape room': ['escape rooms'],
+  'park': ['parks & nature','national park','city park','public park'],
+  'arcade': ['arcades & games','amusement center'],
+  'music venue': ['live events','live music venue'],
+  'concert hall': ['concert hall'],
+};
+function normalizeSubcategory(s) { return String(s || '').trim().toLowerCase(); }
+function subcategoryMatches(value, selected) {
+  const target = normalizeSubcategory(selected);
+  const actual = normalizeSubcategory(value);
+  return actual === target || (SUBCATEGORY_ALIASES[target] || []).includes(actual);
+}
 
 // Keyed by the real category values stored on a venue (venues.categories /
 // .category) or a Ticketmaster event (.cat) — deliberately NOT derived from
@@ -158,7 +226,7 @@ export function venueMatchesChip(chip, venue, subcategory) {
   const selected = Array.isArray(subcategory) ? subcategory : (subcategory ? [subcategory] : []);
   if (selected.length) {
     const wants = new Set(selected.map(s => String(s).trim().toLowerCase()));
-    return venueSubcategories(venue).some(s => wants.has(String(s).trim().toLowerCase()));
+    return venueSubcategories(venue).some(s => [...wants].some(w => subcategoryMatches(s, w)));
   }
   return true;
 }
@@ -410,6 +478,13 @@ const SPORT_EMOJI_RULES = [
   { test: /\bnba\b|basketball/i,          emoji: '🏀' },
   { test: /\bnhl\b|hockey/i,              emoji: '🏒' },
   { test: /\bmls\b|soccer|football club/i, emoji: '⚽' },
+  { test: /golf|\bpga\b|\blpga\b|masters tournament/i, emoji: '⛳' },
+  { test: /racing|nascar|formula 1|\bf1\b|indycar|motocross|grand prix/i, emoji: '🏎️' },
+  { test: /tennis|\batp\b|\bwta\b/i, emoji: '🎾' },
+  { test: /wrestling|\bwwe\b/i, emoji: '🤼' },
+  { test: /boxing|\bufc\b|\bmma\b/i, emoji: '🥊' },
+  { test: /volleyball/i, emoji: '🏐' },
+  { test: /lacrosse/i, emoji: '🥍' },
 ];
 
 // Detects a sport-specific emoji from a Ticketmaster event's segment/genre

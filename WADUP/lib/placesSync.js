@@ -87,11 +87,12 @@ export const SEARCH_GROUPS = [
   { types: ['art_gallery'],            wadupCat: 'events' },
   { types: ['museum'],                 wadupCat: 'events' },
 
-  // Sports
-  { types: ['stadium'],                wadupCat: 'sports' },
-  { types: ['sports_complex'],         wadupCat: 'sports' },
-  { types: ['athletic_field'],         wadupCat: 'sports' },
-  { types: ['sports_club'],            wadupCat: 'sports' },
+  // Sports category is reserved for dated sporting events, not facilities.
+  // Facilities are discoverable as Activities (no additional API calls).
+  { types: ['stadium'],                wadupCat: 'activities' },
+  { types: ['sports_complex'],         wadupCat: 'activities' },
+  { types: ['athletic_field'],         wadupCat: 'activities' },
+  { types: ['sports_club'],            wadupCat: 'activities' },
 
   // Outdoors
   { types: ['park'],                   wadupCat: 'outdoors' },
