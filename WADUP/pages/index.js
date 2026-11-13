@@ -1986,7 +1986,7 @@ export default function WadUp() {
                       className={`subcat-item${isActive && (subcategoryByChip[c.id] || []).includes(sub.id) ? ' active' : ''}`}
                       aria-pressed={isActive && (subcategoryByChip[c.id] || []).includes(sub.id)}
                       onClick={(e) => onSubcategoryClick(c.id, sub.id, e)}
-                      style={{ width: '100%', textAlign: 'left', border: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', color: 'inherit' }}
+                      style={{ width: '100%', textAlign: 'left', border: 0 }}
                     >
                       {sub.label}
                     </button>
