@@ -825,8 +825,13 @@ export default function WadUp() {
       contentEl.className = 'wu-pin-discovery visible' + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
       contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
 
-      const dot = document.createElement('div');
-      dot.className = 'wu-discovery-dot';
+      const chosenEmoji = ['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕'].includes(v.custom_emoji) ? v.custom_emoji : null;
+      const dot = document.createElement(chosenEmoji ? 'span' : 'div');
+      dot.className = chosenEmoji ? 'wu-bar-discovery-emoji' : 'wu-discovery-dot';
+      if (chosenEmoji) {
+        dot.textContent = chosenEmoji;
+        dot.style.cssText = 'font-size:calc(var(--wu-dot-size, 8px) * 1.5);line-height:1;';
+      }
 
       const label = document.createElement('div');
       label.className = 'wu-discovery-label';
