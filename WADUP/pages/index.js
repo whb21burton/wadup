@@ -1797,18 +1797,20 @@ export default function WadUp() {
   // on mobile, so any subcategory picked earlier on desktop is cleared here
   // — otherwise it'd keep silently narrowing the mobile chip's results.
   // Exactly one main category at a time; subcategory selections may be multiple.
+  // First click selects a main category; subsequent clicks on that
+  // category expand/collapse its subcategories. Only one menu stays open.
   const selectCategory = (catId) => {
-    if (activeCategoryRef.current === catId) return;
+    if (activeCategoryRef.current === catId) {
+      setOpenDropdown(prev => prev === catId ? null : catId);
+      return;
+    }
     activeCategoryRef.current = catId;
     setActiveChip(catId);
+    setOpenDropdown(null);
     filterPins();
   };
   const onChipClick = selectCategory;
-  // The check area selects only. The title/arrow toggles only the dropdown.
-  // Only one dropdown can be open at a time, independently of selection.
-  const onCategoryClick = (catId) => {
-    setOpenDropdown(prev => prev === catId ? null : catId);
-  };
+  const onCategoryClick = selectCategory;
   const onSubcategoryClick = (catId, subcatId, e) => {
     e.stopPropagation();
     const previous = activeSubcategoryRef.current[catId] || [];
@@ -1942,41 +1944,18 @@ export default function WadUp() {
           const isOpen = openDropdown === c.id;
           return (
             <div key={c.id}>
-              <div className={`cat-item${isActive ? ' active' : ''}`}>
-                <button
-                  type="button"
-                  aria-label={`${isActive ? 'Selected' : 'Select'} ${c.label}`}
-                  aria-pressed={isActive}
-                  title={isActive ? 'Currently selected' : 'Show on map'}
-                  onClick={() => selectCategory(c.id)}
-                  style={{
-                    flex: '0 0 38px', alignSelf: 'stretch', border: 0,
-                    background: 'transparent', cursor: 'pointer',
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    color: isActive ? '#087a2f' : '#26313a',
-                    fontSize: 24, fontWeight: 900, lineHeight: 1,
-                    textShadow: isActive ? '0 0 1px #087a2f' : 'none',
-                  }}
-                >
-                  {isActive ? '✔' : '○'}
-                </button>
-                <button
-                  type="button"
-                  aria-expanded={isOpen}
-                  aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${c.label} subcategories`}
-                  onClick={() => onCategoryClick(c.id)}
-                  style={{
-                    flex: 1, minWidth: 0, border: 0, background: 'transparent',
-                    cursor: 'pointer', display: 'flex', alignItems: 'center',
-                    justifyContent: 'space-between', textAlign: 'left',
-                    font: 'inherit', fontWeight: 'inherit', color: 'inherit',
-                    padding: '0 12px 0 0',
-                  }}
-                >
-                  <span>{c.label}</span>
-                  {hasSubcats && <span className={`cat-arrow${isOpen ? ' open' : ''}`}>▼</span>}
-                </button>
-              </div>
+              <button
+                type="button"
+                className={`cat-item${isActive ? ' active' : ''}`}
+                aria-pressed={isActive}
+                aria-expanded={hasSubcats ? isOpen : undefined}
+                aria-label={`${c.label}: ${isActive ? (isOpen ? 'collapse subcategories' : 'expand subcategories') : 'select category'}`}
+                onClick={() => onCategoryClick(c.id)}
+                style={{ width: '100%', border: 0, textAlign: 'left' }}
+              >
+                <span>{c.label}</span>
+                {hasSubcats && <span className={`cat-arrow${isOpen ? ' open' : ''}`}>▼</span>}
+              </button>
               {hasSubcats && (
                 <div className={`subcat-list${isOpen ? ' open' : ''}`}>
                   {c.subcategories.map(sub => (
