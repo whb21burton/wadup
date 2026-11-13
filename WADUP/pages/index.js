@@ -54,6 +54,38 @@ function withTMAffiliateTracking(ticketUrl) {
 }
 
 const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', restaurant: '🍔', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
+const ACTIVITY_ICONS = [
+  [/bowling/i, '🎳'], [/disc golf/i, '🥏'], [/golf/i, '⛳'],
+  [/climbing/i, '🧗'], [/kayak|canoe/i, '🛶'], [/paddleboard/i, '🏄'],
+  [/skate park|skateboard/i, '🛹'], [/skating|ice rink|roller rink/i, '⛸️'],
+  [/basketball/i, '🏀'], [/hockey/i, '🏒'], [/escape/i, '🔐'],
+  [/axe throw/i, '🪓'], [/arcade|pinball/i, '🕹️'],
+  [/kart|racing/i, '🏎️'], [/museum/i, '🏛️'],
+];
+function activityIcon(v) {
+  const terms = [v.subcategory, ...(v.subcategories || [])].filter(Boolean).join(' ');
+  return ACTIVITY_ICONS.find(([re]) => re.test(terms))?.[1] || '🎳';
+}
+function outdoorIcon(v) {
+  const terms = [v.subcategory, ...(v.subcategories || [])].filter(Boolean).join(' ');
+  if (/dog park/i.test(terms)) return '🐕';
+  if (/kayak|canoe/i.test(terms)) return '🛶';
+  if (/paddleboard/i.test(terms)) return '🏄';
+  if (/climb/i.test(terms)) return '🧗';
+  if (/bike|cycling/i.test(terms)) return '🚴';
+  if (/hiking|trail/i.test(terms)) return '🥾';
+  if (/outdoor shop/i.test(terms)) return '🎒';
+  return '🌳';
+}
+function tmMatchesSportFilter(ev, selected) {
+  if (!selected?.length) return true;
+  const details = [ev.genre, ev.subGenre, ev.name].filter(Boolean).join(' ').toLowerCase();
+  return selected.some(s => s === 'Other Sports'
+    ? !/football|baseball|basketball|soccer|hockey|golf|racing|nascar|formula|indycar|tennis/i.test(details)
+    : (s === 'Racing' ? /racing|nascar|formula|indycar|grand prix/i.test(details)
+      : details.includes(s.toLowerCase())));
+}
+
 
 // Popups are built as raw HTML strings for Google's InfoWindow — escape any
 // text that ultimately comes from an API response or (eventually) user input.
@@ -90,7 +122,8 @@ function buildDays() {
 // see venueCategories() in lib/data.js for the categories[]-with-category
 // fallback this reads from.
 function venueEmoji(v) {
-  return v.custom_emoji || CATEGORY_ICONS[venueCategories(v)[0]] || '📍';
+  const primary = venueCategories(v)[0];
+  return v.custom_emoji || (primary === 'activities' ? activityIcon(v) : primary === 'outdoors' ? outdoorIcon(v) : CATEGORY_ICONS[primary]) || '📍';
 }
 
 // ── Two-tier pin system ── the rating used to ORDER pins/sidebar items falls
@@ -446,7 +479,7 @@ export default function WadUp() {
       const ev = tmEventsRef.current.find(e => e.id === id);
       if (!ev) return;
       const catMatch = ev.cat === chip;
-      const show = catMatch && isTMEventVisibleForDay(ev, date || todayIsoStr());
+      const show = catMatch && (chip !== 'sports' || tmMatchesSportFilter(ev, subcategory)) && isTMEventVisibleForDay(ev, date || todayIsoStr());
       entry.marker.setMap(show ? map : null);
       if (entry.overlay) entry.overlay.setMap(show ? map : null);
     });
@@ -497,7 +530,7 @@ export default function WadUp() {
       if (chip === 'events') {
         return venueMatchesChip('events', v, subcategory) && !!getVenueEventForDay(v.id, dayIso);
       }
-      return venueMatchesChip(chip, v, subcategory);
+      return chip === 'sports' ? false : venueMatchesChip(chip, v, subcategory);
     });
     const inViewport = eligible.filter(v =>
       v.lat != null && v.lng != null && bounds && bounds.contains(new window.google.maps.LatLng(v.lat, v.lng))
@@ -549,7 +582,7 @@ export default function WadUp() {
     // (isTMEventVisibleForDay) filterPins applies to actual pin visibility.
     const tmInBounds = (chip === 'events' || chip === 'sports')
       ? tmEventsRef.current
-          .filter(ev => ev.cat === chip && isTMEventVisibleForDay(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
+          .filter(ev => ev.cat === chip && (chip !== 'sports' || tmMatchesSportFilter(ev, subcategory)) && isTMEventVisibleForDay(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
           .sort((a, b) => {
             const aLive = isTMEventLiveNow(a), bLive = isTMEventLiveNow(b);
             if (aLive !== bLive) return aLive ? -1 : 1;
