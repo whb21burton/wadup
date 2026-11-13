@@ -34,13 +34,6 @@ export const CATEGORY_CHIPS = [
     { id: 'Dive Bar', label: 'Dive Bar' },
     { id: 'Karaoke Bar', label: 'Karaoke Bar' },
     { id: 'Rooftop Bar', label: 'Rooftop Bar' },
-    { id: 'Pool Hall', label: '🎱 Pool Halls' },
-    { id: 'Beer Bar', label: '🍺 Beer Bars' },
-    { id: 'Lounge', label: 'Lounges' },
-    { id: 'Distillery', label: 'Distilleries' },
-    { id: 'Dance Events', label: 'Dance Events' },
-    { id: 'Adult Entertainment', label: 'Adult Entertainment' },
-    { id: 'Other Bars', label: 'Other Bars' },
   ]},
   { id: 'restaurant', label: '🍔 Restaurants', subcategories: [
     { id: 'American', label: 'American' },
