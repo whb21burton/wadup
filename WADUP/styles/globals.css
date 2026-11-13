@@ -1135,9 +1135,10 @@ html, body {
   transition: transform 0.15s ease, background 0.15s ease;
 }
 .wu-pin-discovery.wu-discovery-compact .wu-discovery-dot {
-  width: 9px;
-  height: 9px;
+  width: 5px;
+  height: 5px;
   border-width: 1px;
+  box-shadow: 0 0 1px rgba(0,0,0,0.28);
 }
 .wu-pin-discovery:hover .wu-discovery-dot {
   transform: scale(1.4);
