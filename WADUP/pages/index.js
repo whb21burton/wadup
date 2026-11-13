@@ -537,35 +537,9 @@ export default function WadUp() {
 
     ranked.forEach(v => dropPinForVenue(v, v._areaRank));
 
-    // Show a deliberately sparse selection of individual blue discovery dots
-    // at wide zooms. No count bubbles: each visible dot is one real venue.
-    // More dots are revealed as the map zooms in. Ranked name pins remain.
-    if (chip === 'restaurant') {
-      const zoom = map.getZoom();
-      const projection = map.getProjection();
-      if (projection) {
-        const minDistance = zoom <= 10 ? 68 : zoom <= 12 ? 48 : zoom <= 14 ? 31 : zoom <= 16 ? 17 : 0;
-        const maxDots = zoom <= 10 ? 35 : zoom <= 12 ? 65 : zoom <= 14 ? 130 : zoom <= 16 ? 240 : Infinity;
-        const scale = Math.pow(2, zoom);
-        const visible = [];
-        // Give consistently distributed venues priority rather than only
-        // favoring highly rated venues in one dense downtown block.
-        const candidates = ranked.filter(v => v._areaRank > 10 &&
-          Number.isFinite(v.lat) && Number.isFinite(v.lng) &&
-          !venueCategories(v).includes('nightlife'));
-        for (const v of candidates) {
-          const point = projection.fromLatLngToPoint(new window.google.maps.LatLng(v.lat, v.lng));
-          const x = point.x * scale, y = point.y * scale;
-          const separated = visible.every(p => (p.x - x) ** 2 + (p.y - y) ** 2 >= minDistance ** 2);
-          const show = visible.length < maxDots && separated;
-          if (show) visible.push({ x, y });
-          else {
-            mapMarkers.current[v.id]?.marker.setMap(null);
-            overlays.current[v.id]?.setMap(null);
-          }
-        }
-      }
-    }
+    // Keep every eligible restaurant visible as a tiny discovery dot at wide zooms.
+    // Never suppress venues based on screen-space spacing or a per-zoom cap.
+    // The top-10 ranked pills and true venue coordinates are unchanged.
 
     // Ticketmaster events have no WadUp rating to sort against, so rather
     // than fabricate a score to interleave them with rated venues, they're
