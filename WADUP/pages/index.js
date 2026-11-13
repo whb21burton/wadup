@@ -1070,7 +1070,7 @@ export default function WadUp() {
 
       const nameSpan = document.createElement('span');
       nameSpan.className = 'wu-name';
-      nameSpan.textContent = `${rankStyle.prefix} ${v.name}`;
+      nameSpan.textContent = `${venueMapEmoji(v, '🍺')} ${rankStyle.prefix} ${v.name}`;
       nameSpan.style.color = rankStyle.color;
       textWrap.appendChild(nameSpan);
 
