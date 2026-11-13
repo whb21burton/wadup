@@ -147,6 +147,9 @@ html, body {
 }
 .subcat-list.open { display: flex; }
 .subcat-item {
+  background: transparent;
+  appearance: none;
+  display: block;
   padding: 7px 14px;
   cursor: pointer;
   border-radius: 6px;
