@@ -248,13 +248,13 @@ export default function WadUp() {
   const pinRegistry   = useRef(new Map());  // id -> { id, type, marker, overlay, el, lat, lng, openPopup }
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
-  const [activeChip,     setActiveChip]     = useState(['events']);
+  const [activeChip,     setActiveChip]     = useState('events');
   const [activeDate,     setActiveDate]     = useState(localIsoDate());
   // filterPins reads these refs, not the state above, so it always sees the
   // current value regardless of when its own closure was created — the
   // state setters below update the ref SYNCHRONOUSLY, in the same click
   // handler, rather than waiting a render cycle for a useEffect to catch up.
-  const activeCategoryRef = useRef(['events']);
+  const activeCategoryRef = useRef('events');
   const activeDateRef = useRef(localIsoDate());
   // Desktop sidebar's category dropdown — see onCategoryClick/onSubcategoryClick
   // and renderDesktopCategoryList. Same synchronous-ref pattern as
@@ -262,14 +262,16 @@ export default function WadUp() {
   const [activeSubcategory, setActiveSubcategory] = useState([]);
   const activeSubcategoryRef = useRef({});
   const [subcategoryByChip, setSubcategoryByChip] = useState({});
-  const selectedCategories = (value) => Array.isArray(value) ? value : (value ? [value] : []);
-  const matchesSelectedVenue = (venue, date) => selectedCategories(activeCategoryRef.current).some(chip => {
-    const subs = activeSubcategoryRef.current[chip] || [];
-    return chip !== 'sports' && venueMatchesChip(chip, venue, subs) &&
+  const matchesSelectedVenue = (venue, date) => {
+    const chip = activeCategoryRef.current;
+    return chip !== 'sports' && venueMatchesChip(chip, venue, activeSubcategoryRef.current[chip] || []) &&
       (chip !== 'events' || !!getVenueEventForDay(venue.id, date));
-  });
-  const matchesSelectedTM = (ev, date) => selectedCategories(activeCategoryRef.current).some(chip =>
-    ev.cat === chip && (chip !== 'sports' || tmMatchesSportFilter(ev, activeSubcategoryRef.current[chip] || [])) && isTMEventVisibleForDay(ev, date));
+  };
+  const matchesSelectedTM = (ev, date) => {
+    const chip = activeCategoryRef.current;
+    return ev.cat === chip && (chip !== 'sports' || tmMatchesSportFilter(ev, activeSubcategoryRef.current[chip] || [])) &&
+      isTMEventVisibleForDay(ev, date);
+  };
   const [openDropdown, setOpenDropdown] = useState(null); // which category's subcategory list is expanded
   const [trendingNow,    setTrendingNow]    = useState([]);
   const [topRanked,      setTopRanked]      = useState([]);
@@ -505,7 +507,7 @@ export default function WadUp() {
   // sitting there minutes/hours after the thing they're advertising is over.
   useEffect(() => {
     const id = setInterval(() => {
-      if (selectedCategories(activeCategoryRef.current).includes('events')) updateAreaRanksRef.current?.();
+      if (activeCategoryRef.current === 'events') updateAreaRanksRef.current?.();
     }, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
@@ -526,7 +528,7 @@ export default function WadUp() {
     if (!map) return;
     const bounds = map.getBounds();
     const chip = activeCategoryRef.current;
-    const selected = selectedCategories(chip);
+    const selected = [chip];
 
     const dayIso = activeDateRef.current || todayIsoStr();
 
@@ -779,7 +781,7 @@ export default function WadUp() {
     // event-specific treatment (animated live note, or the event-type icon)
     // instead of the generic badge system above — see getEventIcon/
     // isEventLive and the .wu-live-music-note/.wu-event-badge CSS.
-    const eventsChipActive = selectedCategories(activeCategoryRef.current).includes('events');
+    const eventsChipActive = activeCategoryRef.current === 'events';
     const dayIsoForPin = activeDateRef.current || todayIsoStr();
     const todayEvent = eventsChipActive ? getVenueEventForDay(v.id, dayIsoForPin) : null;
     const isLiveEvent = isEventLive(todayEvent);
@@ -1627,7 +1629,7 @@ export default function WadUp() {
           map.setCenter({ lat: state.lat, lng: state.lng });
           map.setZoom(state.zoom);
           if (state.chip) {
-            const restored = selectedCategories(state.chip);
+            const restored = Array.isArray(state.chip) ? (state.chip[0] || 'events') : state.chip;
             activeCategoryRef.current = restored;
             setActiveChip(restored);
           }
@@ -1794,16 +1796,15 @@ export default function WadUp() {
   // loadSidebarLists effect above, via activeChip). No subcategory UI exists
   // on mobile, so any subcategory picked earlier on desktop is cleared here
   // — otherwise it'd keep silently narrowing the mobile chip's results.
-  const toggleCategory = (catId) => {
-    const previous = selectedCategories(activeCategoryRef.current);
-    const next = previous.includes(catId) ? previous.filter(id => id !== catId) : [...previous, catId];
-    activeCategoryRef.current = next;
-    setActiveChip(next);
+  // Exactly one main category at a time; subcategory selections may be multiple.
+  const selectCategory = (catId) => {
+    activeCategoryRef.current = catId;
+    setActiveChip(catId);
     filterPins();
   };
-  const onChipClick = toggleCategory;
-  // Selecting a category and expanding its subcategories are separate actions.
+  const onChipClick = selectCategory;
   const onCategoryClick = (catId) => {
+    selectCategory(catId);
     setOpenDropdown(prev => prev === catId ? null : catId);
   };
   const onSubcategoryClick = (catId, subcatId, e) => {
@@ -1813,10 +1814,9 @@ export default function WadUp() {
     activeSubcategoryRef.current = { ...activeSubcategoryRef.current, [catId]: next };
     setSubcategoryByChip(activeSubcategoryRef.current);
     setActiveSubcategory(next);
-    if (!selectedCategories(activeCategoryRef.current).includes(catId)) {
-      const selected = [...selectedCategories(activeCategoryRef.current), catId];
-      activeCategoryRef.current = selected;
-      setActiveChip(selected);
+    if (activeCategoryRef.current !== catId) {
+      activeCategoryRef.current = catId;
+      setActiveChip(catId);
     }
     filterPins();
   };
@@ -1919,7 +1919,7 @@ export default function WadUp() {
       {CATEGORY_CHIPS.map(c => (
         <button
           key={c.id}
-          className={`chip${activeChip.includes(c.id) ? ' active' : ''}`}
+          className={`chip${activeChip === c.id ? ' active' : ''}`}
           onClick={() => onChipClick(c.id)}
         >
           {c.label}
@@ -1936,7 +1936,7 @@ export default function WadUp() {
       <div className="cat-list">
         {CATEGORY_CHIPS.map(c => {
           const hasSubcats = c.subcategories?.length > 0;
-          const isActive = activeChip.includes(c.id);
+          const isActive = activeChip === c.id;
           const isOpen = openDropdown === c.id;
           return (
             <div key={c.id}>
@@ -1946,7 +1946,7 @@ export default function WadUp() {
                   aria-label={`${isActive ? 'Deselect' : 'Select'} ${c.label}`}
                   aria-pressed={isActive}
                   title={isActive ? 'Remove from map' : 'Show on map'}
-                  onClick={() => toggleCategory(c.id)}
+                  onClick={() => selectCategory(c.id)}
                   style={{
                     flex: '0 0 38px', alignSelf: 'stretch', border: 0,
                     background: 'transparent', cursor: 'pointer',
@@ -1956,7 +1956,7 @@ export default function WadUp() {
                     textShadow: isActive ? '0 0 1px #087a2f' : 'none',
                   }}
                 >
-                  {isActive ? '✔' : '☐'}
+                  {isActive ? '✔' : '○'}
                 </button>
                 <button
                   type="button"
