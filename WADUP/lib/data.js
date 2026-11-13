@@ -48,8 +48,6 @@ export const CATEGORY_CHIPS = [
     { id: 'Burgers', label: 'Burgers' },
     { id: 'Pizza', label: 'Pizza' },
     { id: 'Breakfast', label: 'Breakfast' },
-    { id: 'Brunch', label: 'Brunch' },
-    { id: 'Soul Food', label: 'Soul Food' },
     { id: 'Southern', label: 'Southern' },
   ]},
   { id: 'sports', label: '🏟️ Sports', subcategories: [
