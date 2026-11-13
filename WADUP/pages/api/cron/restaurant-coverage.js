@@ -1,5 +1,5 @@
 // Persistent, resumable restaurant coverage worker.
-// Runs only in the 3–7 AM America/New_York window; one geographic tile per
+// Runs only at 11 PM America/New_York; one geographic tile per
 // invocation to stay within Vercel's serverless duration limits.
 // IMPORTANT: GOOGLE_PLACES_FREE_BUDGET_VERIFIED=true must be set only after
 // verifying a real enforced $0 spending guard outside this app. A request
@@ -20,7 +20,7 @@ export default async function handler(req, res) {
   const hour = Number(new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York', hour: 'numeric', hour12: false,
   }).format(new Date()));
-  if (hour < 3 || hour >= 7) return res.json({ status: 'outside_overnight_window' });
+  if (hour !== 23) return res.json({ status: 'outside_overnight_window' });
 
   // Never equate "Google offers free monthly credits" with a hard billing
   // ceiling. Disabled until the account owner has independently verified
