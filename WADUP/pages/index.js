@@ -1017,7 +1017,7 @@ export default function WadUp() {
     // Events chip: same event-badge/live-note override as dropVenuePin — a
     // bar with a live-music/trivia/etc. night tonight gets the animated note
     // or event-type icon instead of its usual flame badge.
-    const eventsChipActive = selectedCategories(activeCategoryRef.current).includes('events');
+    const eventsChipActive = activeCategoryRef.current === 'events';
     const dayIsoForPin = activeDateRef.current || todayIsoStr();
     const todayEvent = eventsChipActive ? getVenueEventForDay(v.id, dayIsoForPin) : null;
     const isLiveEvent = isEventLive(todayEvent);
