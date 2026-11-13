@@ -983,6 +983,13 @@ export default function WadUp() {
     filterPinsRef.current?.();
   }, [adminRole, mapReady, dropVenuePin]);
 
+  // Owner-selected map icons are constrained to an approved set.
+  // Default bars use beer; restaurant discovery keeps its dot unless an
+  // owner explicitly selects an icon. No new visible filters are added.
+  const OWNER_MAP_EMOJIS = new Set(['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕']);
+  const venueMapEmoji = (v, fallback = null) =>
+    OWNER_MAP_EMOJIS.has(v.custom_emoji) ? v.custom_emoji : fallback;
+
   // ── Drop a bar/nightlife pin ── same viewport-scoped areaRank as
   // dropVenuePin (a venues.admin_rank_number override, when set, wins over
   // it — see calculateDisplayRank in lib/rankings.js for the same
@@ -1080,28 +1087,25 @@ export default function WadUp() {
       contentEl.appendChild(pill);
       contentEl.appendChild(tail);
     } else {
-      contentEl.className = `wu-bar-icon-pin wu-bar-icon-named${isLiveEvent ? ' wu-pin-live' : ''}`;
-      const eventBadgeHtml = eventsChipActive && todayEvent
-        ? (isLiveEvent
-            ? '<span class="wu-live-music-note">🎵</span>'
-            : `<span class="wu-badge wu-event-badge">${getEventIcon(todayEvent.event_type)}</span>`)
-        : '';
-      contentEl.innerHTML = eventBadgeHtml + (flameEmoji
-        ? `<div class="wu-flame-ring flame-${flameLevel}">${flameEmoji}</div><div class="wu-beer-icon">🍺</div>`
-        : '<div class="wu-beer-icon">🍺</div>');
-      // Keep the beer marker, but give every non-top-10 bar a readable name,
-      // just like the discovery labels attached to restaurant dots.
+      // Same discovery tier, zoom scaling and label rules as restaurants;
+      // the only visual difference is an emoji instead of a blue dot.
+      contentEl.className = 'wu-pin-discovery visible wu-bar-discovery' + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
+      contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
+      const emoji = document.createElement('span');
+      emoji.className = 'wu-bar-discovery-emoji';
+      emoji.textContent = venueMapEmoji(v, '🍺');
+      emoji.style.cssText = 'font-size:calc(var(--wu-dot-size, 8px) * 1.5);line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));';
       const label = document.createElement('div');
-      label.className = 'wu-bar-discovery-label';
+      label.className = 'wu-discovery-label';
       label.textContent = v.name;
-      label.style.cssText = 'display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;background:rgba(9,13,23,.88);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:2px 5px;font-size:11px;font-weight:600;line-height:1.3;pointer-events:none;z-index:1;';
+      contentEl.appendChild(emoji);
       contentEl.appendChild(label);
     }
 
     // Ranked pill bubbles need to consistently paint in front of the small
     // beer-icon pins — #1 gets the highest baseline, #10 the lowest, and
     // every icon-only bar sits at a fixed low baseline below all of them.
-    const baseZIndex = showName ? 1000 + (10 - Math.min(rank || 10, 10)) : 10;
+    const baseZIndex = showName ? 1000 + (10 - Math.min(rank || 10, 10)) : 1;
 
     const el = document.createElement('div');
     el.className = 'wu-pin-wrapper';
@@ -1147,7 +1151,7 @@ export default function WadUp() {
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
       zIndex: baseZIndex,
     });
-    const overlay = makeOverlay(pos, el, map, showName ? 'bottom' : 'center');
+    const overlay = makeOverlay(pos, el, map, showName ? 'bottom' : 'top');
 
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
@@ -1163,13 +1167,11 @@ export default function WadUp() {
       el.style.zIndex = '9999';
       // Only reveal a non-ranked beer label on hover; permanent labels
       // overlap heavily in dense downtown nightlife clusters.
-      const label = contentEl.querySelector('.wu-bar-discovery-label');
-      if (label) label.style.display = 'block';
+
     });
     el.addEventListener('mouseleave', () => {
       el.style.zIndex = String(baseZIndex);
-      const label = contentEl.querySelector('.wu-bar-discovery-label');
-      if (label) label.style.display = 'none';
+
     });
 
     mapMarkers.current[v.id] = { marker };
