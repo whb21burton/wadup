@@ -1094,7 +1094,7 @@ export default function WadUp() {
       const label = document.createElement('div');
       label.className = 'wu-bar-discovery-label';
       label.textContent = v.name;
-      label.style.cssText = 'position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;background:rgba(9,13,23,.88);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:2px 5px;font-size:11px;font-weight:600;line-height:1.3;pointer-events:none;';
+      label.style.cssText = 'display:none;position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;background:rgba(9,13,23,.88);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:2px 5px;font-size:11px;font-weight:600;line-height:1.3;pointer-events:none;z-index:1;';
       contentEl.appendChild(label);
     }
 
@@ -1161,9 +1161,15 @@ export default function WadUp() {
     el.addEventListener('mouseenter', () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
       el.style.zIndex = '9999';
+      // Only reveal a non-ranked beer label on hover; permanent labels
+      // overlap heavily in dense downtown nightlife clusters.
+      const label = contentEl.querySelector('.wu-bar-discovery-label');
+      if (label) label.style.display = 'block';
     });
     el.addEventListener('mouseleave', () => {
       el.style.zIndex = String(baseZIndex);
+      const label = contentEl.querySelector('.wu-bar-discovery-label');
+      if (label) label.style.display = 'none';
     });
 
     mapMarkers.current[v.id] = { marker };
