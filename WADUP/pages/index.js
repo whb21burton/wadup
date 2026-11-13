@@ -1779,8 +1779,8 @@ export default function WadUp() {
     filterPins();
   };
   const onChipClick = toggleCategory;
+  // Selecting a category and expanding its subcategories are separate actions.
   const onCategoryClick = (catId) => {
-    toggleCategory(catId);
     setOpenDropdown(prev => prev === catId ? null : catId);
   };
   const onSubcategoryClick = (catId, subcatId, e) => {
@@ -1917,12 +1917,40 @@ export default function WadUp() {
           const isOpen = openDropdown === c.id;
           return (
             <div key={c.id}>
-              <div
-                className={`cat-item${isActive ? ' active' : ''}`}
-                onClick={() => onCategoryClick(c.id)}
-              >
-                <span>{isActive ? '☑ ' : '☐ '}{c.label}</span>
-                {hasSubcats && <span className={`cat-arrow${isOpen ? ' open' : ''}`}>▼</span>}
+              <div className={`cat-item${isActive ? ' active' : ''}`}>
+                <button
+                  type="button"
+                  aria-label={`${isActive ? 'Deselect' : 'Select'} ${c.label}`}
+                  aria-pressed={isActive}
+                  title={isActive ? 'Remove from map' : 'Show on map'}
+                  onClick={() => toggleCategory(c.id)}
+                  style={{
+                    flex: '0 0 38px', alignSelf: 'stretch', border: 0,
+                    background: 'transparent', cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    color: isActive ? '#087a2f' : '#26313a',
+                    fontSize: 24, fontWeight: 900, lineHeight: 1,
+                    textShadow: isActive ? '0 0 1px #087a2f' : 'none',
+                  }}
+                >
+                  {isActive ? '✔' : '☐'}
+                </button>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${c.label} subcategories`}
+                  onClick={() => onCategoryClick(c.id)}
+                  style={{
+                    flex: 1, minWidth: 0, border: 0, background: 'transparent',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', textAlign: 'left',
+                    font: 'inherit', fontWeight: 'inherit', color: 'inherit',
+                    padding: '0 12px 0 0',
+                  }}
+                >
+                  <span>{c.label}</span>
+                  {hasSubcats && <span className={`cat-arrow${isOpen ? ' open' : ''}`}>▼</span>}
+                </button>
               </div>
               {hasSubcats && (
                 <div className={`subcat-list${isOpen ? ' open' : ''}`}>
