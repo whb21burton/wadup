@@ -89,8 +89,21 @@ html, body {
    HUD keeps the flat .chip row above, untouched. ── */
 .sidebar-categories {
   padding: 0 12px 16px;
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,229,255,0.42) transparent;
 }
+.sidebar-categories::-webkit-scrollbar { width: 7px; }
+.sidebar-categories::-webkit-scrollbar-track { background: transparent; }
+.sidebar-categories::-webkit-scrollbar-thumb {
+  background: rgba(0,229,255,0.38);
+  border-radius: 8px;
+}
+.sidebar-categories::-webkit-scrollbar-thumb:hover { background: rgba(0,229,255,0.7); }
 .cat-list {
   display: flex;
   flex-direction: column;
@@ -202,8 +215,8 @@ html, body {
 }
 
 .sidebar-trending {
-  flex: 1;
-  min-height: 0;
+  flex: 0 1 220px;
+  min-height: 120px;
   display: flex;
   flex-direction: column;
   border-top: 1px solid rgba(255,255,255,0.08);
