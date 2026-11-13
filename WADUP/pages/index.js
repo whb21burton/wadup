@@ -706,6 +706,10 @@ export default function WadUp() {
     }
   }
 
+  // Smooth, zoom-aware discovery markers: small at regional scale, gradually
+  // increasing in size without the abrupt 5px-to-14px jump at zoom 14.
+  const discoveryDotSize = zoom => Math.max(4, Math.min(13, 5 + (zoom - 9) * 0.85));
+
   // ── Drop a venue pin ── `areaRank` (1-based, scoped to the current
   // viewport — see updateAreaRanks) decides which of the two tiers this pin
   // renders as: rank 1-10 gets an Olympic-styled Top 10 pill, anything else
@@ -776,7 +780,8 @@ export default function WadUp() {
 
       // Keep non-top-10 restaurants discoverable at every zoom level.
       // Their smaller dot remains clickable and opens the existing venue popup.
-      contentEl.className = 'wu-pin-discovery visible' + (map.getZoom() <= 13 ? ' wu-discovery-compact' : '') + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
+      contentEl.className = 'wu-pin-discovery visible' + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
+      contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
 
       const dot = document.createElement('div');
       dot.className = 'wu-discovery-dot';
@@ -1640,7 +1645,7 @@ export default function WadUp() {
         });
         // Keep sparse discovery dots smaller at regional zoom levels.
         document.querySelectorAll('.wu-pin-discovery').forEach(el => {
-          el.classList.toggle('wu-discovery-compact', z <= 13);
+          el.style.setProperty('--wu-dot-size', `${discoveryDotSize(z)}px`);
           el.classList.toggle('wu-discovery-named', z >= 16);
         });
       });
