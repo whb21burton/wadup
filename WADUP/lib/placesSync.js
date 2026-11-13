@@ -212,19 +212,26 @@ export const FIELD_MASK = [
   'places.photos', 'places.primaryType', 'places.types',
 ].join(',');
 
+// Discovery-only field mask: Pro tier, no Enterprise phone/website/hours/rating fields.
+// Enrich individual places later only when a separate SKU budget permits it.
+export const DISCOVERY_FIELD_MASK = [
+  'places.id', 'places.displayName', 'places.formattedAddress',
+  'places.location', 'places.primaryType', 'places.types',
+].join(',');
+
 // The search GROUP determines the category, full stop — no per-place
 // override based on Google's primaryType/types. With single-type searches
 // this granular (a dedicated 'bar' search, a dedicated 'pub' search, etc. —
 // see SEARCH_GROUPS), Google's own type-matching does most of the
 // classification work; isChain/isBlockedPrimaryType/BAR_PRIMARY_TYPES catch
 // what slips through.
-export async function searchNearby(types, center) {
+export async function searchNearby(types, center, options = {}) {
   const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': process.env.GOOGLE_PLACES_KEY,
-      'X-Goog-FieldMask': FIELD_MASK,
+      'X-Goog-FieldMask': options.discoveryOnly ? DISCOVERY_FIELD_MASK : FIELD_MASK,
     },
     body: JSON.stringify({
       includedTypes: types,
