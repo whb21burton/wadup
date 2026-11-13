@@ -1,5 +1,5 @@
 // Persistent, resumable restaurant coverage worker.
-// Runs only at 11 PM America/New_York; one geographic tile per
+// Can run every 15 minutes once verified billing snapshots are available; one geographic tile per
 // invocation to stay within Vercel's serverless duration limits.
 // IMPORTANT: GOOGLE_PLACES_FREE_BUDGET_VERIFIED=true must be set only after
 // verifying a real enforced $0 spending guard outside this app. A request
@@ -9,7 +9,9 @@ import { searchNearby, mapPlaceToRow, isChain, isBlockedPrimaryType } from '../.
 
 export const config = { maxDuration: 60 };
 const TYPES = ['restaurant', 'cafe', 'bakery'];
-const maxCallsPerDay = 12; // 4 tiles x 3 searches; conservative operational cap
+const MONTHLY_FREE_PRO = 5000;
+const MONTHLY_TARGET_PRO = 4500; // reserve 500 for unrelated searches, reporting delay and errors
+const maxCallsPerDay = 150; // spread 4,500 requests over a 30-day month
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
@@ -17,16 +19,34 @@ export default async function handler(req, res) {
       req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const hour = Number(new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York', hour: 'numeric', hour12: false,
-  }).format(new Date()));
-  if (hour !== 23) return res.json({ status: 'outside_overnight_window' });
-
-  // Never equate "Google offers free monthly credits" with a hard billing
-  // ceiling. Disabled until the account owner has independently verified
-  // an enforced no-charge guard. Otherwise this would incur surprise costs.
+  // Never trust our own scan count as total Google usage. Only a fresh,
+  // authoritative billing-SKU snapshot may unlock a scan. A Google Cloud
+  // API-level request total is NOT a substitute for SKU usage.
   if (process.env.GOOGLE_PLACES_FREE_BUDGET_VERIFIED !== 'true')
     return res.json({ status: 'paused_unverified_free_api_limit', queued: true });
+  const now = new Date();
+  const month = now.toISOString().slice(0, 7);
+  const { data: snapshots, error: snapshotError } = await supabaseAdmin
+    .from('google_api_budget_snapshots').select('requests,captured_at')
+    .eq('month_utc', month).eq('sku', 'nearby_search_pro')
+    .eq('source', 'google_cloud').order('captured_at', { ascending: false }).limit(1);
+  if (snapshotError) return res.status(503).json({ status: 'billing_snapshot_unavailable' });
+  const snapshot = snapshots?.[0];
+  if (!snapshot || now.getTime() - new Date(snapshot.captured_at).getTime() > 6 * 3600000)
+    return res.json({ status: 'paused_missing_fresh_sku_usage', queued: true });
+  const monthStart = month + '-01T00:00:00.000Z';
+  const { data: monthRuns, error: monthError } = await supabaseAdmin
+    .from('restaurant_coverage_runs').select('api_calls,started_at')
+    .gte('started_at', monthStart);
+  if (monthError) return res.status(503).json({ status: 'monthly_usage_unavailable' });
+  const afterSnapshot = (monthRuns || []).filter(r =>
+    new Date(r.started_at).getTime() > new Date(snapshot.captured_at).getTime())
+    .reduce((sum, r) => sum + (r.api_calls || 0), 0);
+  const projectedUsage = snapshot.requests + afterSnapshot + TYPES.length;
+  if (projectedUsage > MONTHLY_TARGET_PRO)
+    return res.json({ status: 'monthly_free_headroom_reserved',
+      estimated_used: snapshot.requests + afterSnapshot,
+      target: MONTHLY_TARGET_PRO, published_free_cap: MONTHLY_FREE_PRO });
 
   const dayStart = new Date();
   dayStart.setUTCHours(0, 0, 0, 0);
