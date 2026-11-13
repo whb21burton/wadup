@@ -1362,7 +1362,10 @@ export default function WadUp() {
       .select('*')
       .eq('is_hidden', false)
       .order('google_rating', { ascending: false });
-    if (error || !data) return;
+    if (error || !data) {
+      console.error('Wadup venue load failed:', error || 'No venue rows returned');
+      return;
+    }
 
     // The rest of this file was written against the earlier mock venue shape
     // (`cat` instead of `category`, and a `live` flag every mock row hardcoded
@@ -1951,7 +1954,7 @@ export default function WadUp() {
                 aria-expanded={hasSubcats ? isOpen : undefined}
                 aria-label={`${c.label}: ${isActive ? (isOpen ? 'collapse subcategories' : 'expand subcategories') : 'select category'}`}
                 onClick={() => onCategoryClick(c.id)}
-                style={{ width: '100%', border: 0, textAlign: 'left' }}
+                style={{ width: '100%', border: 0, textAlign: 'left', background: isActive ? '#FFFC00' : 'transparent', color: isActive ? '#000' : '#aaa', appearance: 'none', WebkitAppearance: 'none' }}
               >
                 <span>{c.label}</span>
                 {hasSubcats && <span className={`cat-arrow${isOpen ? ' open' : ''}`}>▼</span>}
