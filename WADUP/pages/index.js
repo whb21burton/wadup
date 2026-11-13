@@ -1005,10 +1005,10 @@ export default function WadUp() {
     }
     if (!v.live) return;
 
-    const rank = v.admin_rank_number || areaRank;
-    const isTop10 = rank != null && rank <= 10;
-    const isTop5 = rank != null && rank <= 5;
-    const showName = rank != null && (map.getZoom() < 14 ? isTop10 : isTop5);
+    // Use the exact same viewport-relative top-10 rank as restaurant pins.
+    // Do not override it with a permanent admin rank or hide ranks 6-10 on zoom.
+    const rank = areaRank;
+    const showName = getVenueTier(areaRank) === 'top10';
     const rankStyle = showName ? getRankStyle(rank) : null;
 
     const flameLevel = v.current_flame || 0;
@@ -1080,7 +1080,7 @@ export default function WadUp() {
       contentEl.appendChild(pill);
       contentEl.appendChild(tail);
     } else {
-      contentEl.className = `wu-bar-icon-pin${isLiveEvent ? ' wu-pin-live' : ''}`;
+      contentEl.className = `wu-bar-icon-pin wu-bar-icon-named${isLiveEvent ? ' wu-pin-live' : ''}`;
       const eventBadgeHtml = eventsChipActive && todayEvent
         ? (isLiveEvent
             ? '<span class="wu-live-music-note">🎵</span>'
@@ -1089,6 +1089,13 @@ export default function WadUp() {
       contentEl.innerHTML = eventBadgeHtml + (flameEmoji
         ? `<div class="wu-flame-ring flame-${flameLevel}">${flameEmoji}</div><div class="wu-beer-icon">🍺</div>`
         : '<div class="wu-beer-icon">🍺</div>');
+      // Keep the beer marker, but give every non-top-10 bar a readable name,
+      // just like the discovery labels attached to restaurant dots.
+      const label = document.createElement('div');
+      label.className = 'wu-bar-discovery-label';
+      label.textContent = v.name;
+      label.style.cssText = 'position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;background:rgba(9,13,23,.88);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:2px 5px;font-size:11px;font-weight:600;line-height:1.3;pointer-events:none;';
+      contentEl.appendChild(label);
     }
 
     // Ranked pill bubbles need to consistently paint in front of the small
