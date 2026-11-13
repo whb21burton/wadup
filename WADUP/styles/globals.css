@@ -1126,22 +1126,16 @@ html, body {
 }
 .wu-pin-discovery:hover .wu-discovery-label { display: block; color: #155e82; background: rgba(255,255,255,.96); border-radius: 4px; padding: 2px 4px; }
 .wu-discovery-dot {
-  width: 14px;
-  height: 14px;
+  width: var(--wu-dot-size, 8px);
+  height: var(--wu-dot-size, 8px);
   border-radius: 50%;
   background: #2797c3;
   border: 1.5px solid #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,0.35);
   transition: transform 0.15s ease, background 0.15s ease;
 }
-.wu-pin-discovery.wu-discovery-compact .wu-discovery-dot {
-  width: 5px;
-  height: 5px;
-  border-width: 1px;
-  box-shadow: 0 0 1px rgba(0,0,0,0.28);
-}
 .wu-pin-discovery:hover .wu-discovery-dot {
-  transform: scale(1.4);
+  transform: scale(1.18);
   background: #176b91;
 }
 .wu-discovery-label {
