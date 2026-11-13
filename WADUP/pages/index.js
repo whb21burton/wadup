@@ -1798,13 +1798,15 @@ export default function WadUp() {
   // — otherwise it'd keep silently narrowing the mobile chip's results.
   // Exactly one main category at a time; subcategory selections may be multiple.
   const selectCategory = (catId) => {
+    if (activeCategoryRef.current === catId) return;
     activeCategoryRef.current = catId;
     setActiveChip(catId);
     filterPins();
   };
   const onChipClick = selectCategory;
+  // The check area selects only. The title/arrow toggles only the dropdown.
+  // Only one dropdown can be open at a time, independently of selection.
   const onCategoryClick = (catId) => {
-    selectCategory(catId);
     setOpenDropdown(prev => prev === catId ? null : catId);
   };
   const onSubcategoryClick = (catId, subcatId, e) => {
@@ -1984,7 +1986,7 @@ export default function WadUp() {
                       className={`subcat-item${isActive && (subcategoryByChip[c.id] || []).includes(sub.id) ? ' active' : ''}`}
                       aria-pressed={isActive && (subcategoryByChip[c.id] || []).includes(sub.id)}
                       onClick={(e) => onSubcategoryClick(c.id, sub.id, e)}
-                      style={{ width: '100%', textAlign: 'left', border: 0, font: 'inherit' }}
+                      style={{ width: '100%', textAlign: 'left', border: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', color: 'inherit' }}
                     >
                       {sub.label}
                     </button>
