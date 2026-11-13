@@ -56,6 +56,8 @@ function withTMAffiliateTracking(ticketUrl) {
 const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', restaurant: '🍔', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
 const ACTIVITY_ICONS = [
   [/bowling/i, '🎳'], [/disc golf/i, '🥏'], [/golf/i, '⛳'],
+  [/amusement park/i, '🎢'], [/trampoline/i, '🤸'], [/playground/i, '🛝'],
+  [/creative classes/i, '🎨'], [/aquarium/i, '🐠'], [/zoo/i, '🦒'],
   [/climbing/i, '🧗'], [/kayak|canoe/i, '🛶'], [/paddleboard/i, '🏄'],
   [/skate park|skateboard/i, '🛹'], [/skating|ice rink|roller rink/i, '⛸️'],
   [/basketball/i, '🏀'], [/hockey/i, '🏒'], [/escape/i, '🔐'],
@@ -68,13 +70,16 @@ function activityIcon(v) {
 }
 function outdoorIcon(v) {
   const terms = [v.subcategory, ...(v.subcategories || [])].filter(Boolean).join(' ');
-  if (/dog park/i.test(terms)) return '🐕';
+  if (/dog park/i.test(terms)) return '🌳🐕';
   if (/kayak|canoe/i.test(terms)) return '🛶';
   if (/paddleboard/i.test(terms)) return '🏄';
   if (/climb/i.test(terms)) return '🧗';
   if (/bike|cycling/i.test(terms)) return '🚴';
   if (/hiking|trail/i.test(terms)) return '🥾';
   if (/outdoor shop/i.test(terms)) return '🎒';
+  if (/campground/i.test(terms)) return '🏕️';
+  if (/nature preserve/i.test(terms)) return '🌿';
+  if (/outdoor attraction/i.test(terms)) return '🏞️';
   return '🌳';
 }
 function tmMatchesSportFilter(ev, selected) {
