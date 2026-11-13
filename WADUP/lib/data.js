@@ -38,6 +38,8 @@ export const CATEGORY_CHIPS = [
     { id: 'Beer Bar', label: '🍺 Beer Bars' },
     { id: 'Lounge', label: 'Lounges' },
     { id: 'Distillery', label: 'Distilleries' },
+    { id: 'Dance Events', label: 'Dance Events' },
+    { id: 'Adult Entertainment', label: 'Adult Entertainment' },
     { id: 'Other Bars', label: 'Other Bars' },
   ]},
   { id: 'restaurant', label: '🍔 Restaurants', subcategories: [
