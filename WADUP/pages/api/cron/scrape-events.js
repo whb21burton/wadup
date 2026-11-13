@@ -4,6 +4,7 @@
 // straight into venue_events; everything else lands in
 // scraped_events_pending for an admin to review (see pages/admin/reports.js).
 import { supabaseAdmin } from '../supabase-admin';
+import { extractStructuredEvents } from '../../../lib/structured-events';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
@@ -34,8 +35,10 @@ export default async function handler(req, res) {
       req.headers['x-admin-password'] !== process.env.ADMIN_SYNC_PASSWORD) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
+  // AI extraction is explicitly opt-in because it incurs external API costs.
+  const aiEnabled = process.env.WADUP_PAID_EVENT_AI_ENABLED === 'true';
+  if (aiEnabled && !process.env.ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: 'AI extraction enabled but ANTHROPIC_API_KEY is missing' });
   }
 
   const { data: venues, error: venuesError } = await supabaseAdmin
@@ -49,7 +52,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ message: 'No venues enabled for scraping' });
   }
 
-  const client = new Anthropic();
+  const client = aiEnabled ? new Anthropic() : null;
   const todayIso = new Date().toISOString().slice(0, 10);
   const results = { scraped: 0, events_found: 0, saved_live: 0, saved_pending: 0, errors: [] };
 
@@ -61,6 +64,28 @@ export default async function handler(req, res) {
       });
       if (!pageRes.ok) throw new Error(`HTTP ${pageRes.status}`);
       const html = await pageRes.text();
+
+      const structured = extractStructuredEvents(html);
+      for (const ev of structured) {
+        const { error } = await supabaseAdmin.from('venue_events').upsert({
+          venue_id: venue.id,
+          title: ev.title,
+          description: ev.description,
+          event_type: ev.event_type,
+          performer: ev.performer,
+          start_time: ev.start_time,
+          is_free: false,
+          source: 'scraped',
+        }, { onConflict: 'venue_id,start_time' });
+        if (error) throw new Error(`structured event upsert: ${error.message}`);
+        results.saved_live++;
+        results.events_found++;
+      }
+      if (!aiEnabled) {
+        await supabaseAdmin.from('venues').update({ last_scraped_at: new Date().toISOString() }).eq('id', venue.id);
+        results.scraped++;
+        continue;
+      }
 
       const text = html
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -83,7 +108,7 @@ Today's date: ${todayIso}
 Website text:
 ${text}
 
-Only include FUTURE events (strictly after today's date). If a date can't be determined, use null for event_date rather than guessing. If no events are found, return an empty events array.`,
+Include events happening today if their start time is still upcoming, as well as future events. If a date can't be determined, use null for event_date rather than guessing. If no events are found, return an empty events array.`,
         }],
         output_config: { format: zodOutputFormat(EventsSchema) },
       });
@@ -91,17 +116,17 @@ Only include FUTURE events (strictly after today's date). If a date can't be det
       const events = response.parsed_output?.events ?? [];
 
       for (const ev of events) {
-        if (!ev.event_date || !DATE_RE.test(ev.event_date) || ev.event_date <= todayIso) continue;
+        if (!ev.event_date || !DATE_RE.test(ev.event_date) || ev.event_date < todayIso) continue;
         const validTime = ev.event_time && TIME_RE.test(ev.event_time) ? ev.event_time : null;
 
-        if (ev.confidence >= 80) {
+        if (ev.confidence >= 80 && validTime) {
           const { error } = await supabaseAdmin.from('venue_events').upsert({
             venue_id: venue.id,
             title: ev.event_name || ev.performer || 'Event',
             description: ev.description || '',
             event_type: ev.event_type,
             performer: ev.performer || null,
-            start_time: `${ev.event_date}T${validTime || '20:00'}:00`,
+            start_time: `${ev.event_date}T${validTime}:00`,
             is_free: false,
             source: 'scraped',
           }, { onConflict: 'venue_id,start_time' });
