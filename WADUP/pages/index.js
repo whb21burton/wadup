@@ -1758,13 +1758,36 @@ export default function WadUp() {
   }, []);
 
   useEffect(() => {
-    let t;
-    const onResize = () => {
-      clearTimeout(t);
-      t = setTimeout(nudgeMap, 200);
+    const element = mapRef.current;
+    if (!element) return;
+    let timer;
+    let lastWidth = 0, lastHeight = 0;
+    const scheduleMapResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!element.isConnected || !element.clientWidth || !element.clientHeight) return;
+        nudgeMap();
+      }, 100);
     };
-    window.addEventListener('resize', onResize);
-    return () => { window.removeEventListener('resize', onResize); clearTimeout(t); };
+    // A sidebar, responsive layout, or browser zoom can change the map's
+    // container size without firing window.resize.
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(entries => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      const width = Math.round(rect.width), height = Math.round(rect.height);
+      if (width === lastWidth && height === lastHeight) return;
+      lastWidth = width; lastHeight = height;
+      scheduleMapResize();
+    }) : null;
+    observer?.observe(element);
+    window.addEventListener('resize', scheduleMapResize);
+    window.addEventListener('orientationchange', scheduleMapResize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', scheduleMapResize);
+      window.removeEventListener('orientationchange', scheduleMapResize);
+      clearTimeout(timer);
+    };
   }, [nudgeMap]);
 
   // ── Chip change (mobile HUD's flat chip row) ── (also triggers the
