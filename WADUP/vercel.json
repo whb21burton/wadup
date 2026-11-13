@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/restaurant-coverage",
-      "schedule": "0 3-4 * * *"
+      "schedule": "*/15 * * * *"
     }
   ]
 }
