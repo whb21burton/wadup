@@ -1943,9 +1943,9 @@ export default function WadUp() {
               <div className={`cat-item${isActive ? ' active' : ''}`}>
                 <button
                   type="button"
-                  aria-label={`${isActive ? 'Deselect' : 'Select'} ${c.label}`}
+                  aria-label={`${isActive ? 'Selected' : 'Select'} ${c.label}`}
                   aria-pressed={isActive}
-                  title={isActive ? 'Remove from map' : 'Show on map'}
+                  title={isActive ? 'Currently selected' : 'Show on map'}
                   onClick={() => selectCategory(c.id)}
                   style={{
                     flex: '0 0 38px', alignSelf: 'stretch', border: 0,
@@ -1978,13 +1978,16 @@ export default function WadUp() {
               {hasSubcats && (
                 <div className={`subcat-list${isOpen ? ' open' : ''}`}>
                   {c.subcategories.map(sub => (
-                    <div
+                    <button
+                      type="button"
                       key={sub.id}
                       className={`subcat-item${isActive && (subcategoryByChip[c.id] || []).includes(sub.id) ? ' active' : ''}`}
+                      aria-pressed={isActive && (subcategoryByChip[c.id] || []).includes(sub.id)}
                       onClick={(e) => onSubcategoryClick(c.id, sub.id, e)}
+                      style={{ width: '100%', textAlign: 'left', border: 0, font: 'inherit' }}
                     >
                       {sub.label}
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
