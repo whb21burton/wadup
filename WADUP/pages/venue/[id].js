@@ -93,7 +93,7 @@ export default function VenuePage() {
   const [editBusy,setEditBusy]=useState(false);
   const [canManage,setCanManage]=useState(false);
   const [editRequested,setEditRequested]=useState(false);
-  const [editSection,setEditSection]=useState('details');
+  const [editSection,setEditSection]=useState(null);
   const [scheduleLoading,setScheduleLoading]=useState(false);
   const scheduleDays=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const activityTypes=[['trivia','Trivia night'],['game_night','Game / bingo night'],['karaoke','Karaoke'],['live_music','Live music'],['special_event','Special event'],['happy_hour','Happy hour'],['food_special','Food / drink special'],['other','Other']];
@@ -150,7 +150,7 @@ export default function VenuePage() {
     setProfileDraft({name:venue.name||'',description:venue.description||'',phone:venue.phone||'',website:venue.website||'',cover_photo_url:venue.cover_photo_url||'',address:venue.address||'',categories:venueCategories(venue),subcategories:Array.isArray(venue.subcategories)?venue.subcategories:(venue.subcategory?[venue.subcategory]:[])});
     setEditSection(section);setEditingProfile(true);setEditError('');
   },[venue]);
-  useEffect(()=>{if(editRequested&&canManage&&venue&&!editingProfile)startEditing();},[editRequested,canManage,venue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The edit URL grants access to the pencil control; it never opens a full form automatically.
   useEffect(()=>{
     if(!id||!session?.access_token){setCanManage(false);return;}
     fetch('/api/admin/venue-permissions?venueId='+encodeURIComponent(id),{headers:{Authorization:'Bearer '+session.access_token}})
@@ -172,7 +172,7 @@ export default function VenuePage() {
     setEditBusy(true);setEditError('');
     try{
       const result=await sendEdit('/api/admin/venue-profile',{venueId:id,updates:profileDraft});
-      setVenue(result.venue);setEditingProfile(false);setEditRequested(false);
+      setVenue(result.venue);setEditingProfile(false);setEditSection(null);setEditRequested(false);
     }catch(e){setEditError(e.message);}finally{setEditBusy(false);}
   };
   const saveActivity=async(action,item)=>{
@@ -507,19 +507,18 @@ export default function VenuePage() {
             >
               ←
             </button>
-            <button
+            {canManage && <button
+              type="button"
               className="right-sidebar-toggle venue-account-btn"
-              onClick={() => setRightSidebarOpen(v => !v)}
-              aria-label="Account"
-            >
-              {profile ? (profile.username || '?').slice(0, 1).toUpperCase() : '👤'}
-            </button>
+              onClick={() => { if (editingProfile) { setEditingProfile(false); setEditSection(null); } else startEditing(null); }}
+              aria-label={editingProfile ? 'Finish editing' : 'Edit venue'}
+              title={editingProfile ? 'Finish editing' : 'Edit venue'}
+            >{editingProfile ? '✓' : '✏️'}</button>}
           </div>
 
           <div className="venue-header-content">
             <h1 className="venue-name">{venue.name}</h1>
-            {canManage&&!editingProfile&&<button className="inline-edit-trigger" onClick={()=>startEditing()}>✏️ Edit Profile</button>}
-            {canManage&&editingProfile&&<div className="inline-editor-toolbar"><strong>✏️ Editing this profile</strong><span>Changes appear here after saving</span><button onClick={()=>{setEditingProfile(false);setEditRequested(false);}}>Exit editing</button></div>}
+            {canManage&&editingProfile&&<div className="inline-editor-toolbar"><strong>✏️ Choose what to edit</strong><span>The public profile stays visible until you select a section.</span><button onClick={()=>setEditSection(editSection==='details'?null:'details')}>{editSection==='details'?'Hide business details':'Business details'}</button><button onClick={()=>setEditSection(editSection==='categories'?null:'categories')}>{editSection==='categories'?'Hide categories':'Categories & location'}</button><button onClick={()=>{setEditingProfile(false);setEditSection(null);}}>Done</button></div>}
             {venue.is_verified && <div className="venue-verified">✓ Verified Business</div>}
             {venue.is_private && <div className="venue-private-badge">🔒 Private Venue</div>}
             {rankings.localFavorite && <div className="venue-local-favorite-badge">🏆 Local Favorite</div>}
@@ -615,18 +614,18 @@ export default function VenuePage() {
 
           <section className="venue-section">
             <h2>About</h2>
-            {canManage&&editingProfile&&<div className="inline-edit-form">
-              <h3>Edit what customers see</h3>
-              {['name','description','phone','website','cover_photo_url','address'].map(field=><label key={field}>{field.replaceAll('_',' ')}
+            {canManage&&editingProfile&&editSection&&<div className="inline-edit-form">
+              <h3>{editSection==='details'?'Business details':'Categories & location'}</h3>
+              {(editSection==='details'?['name','description','phone','website','cover_photo_url']:['address']).map(field=><label key={field}>{field.replaceAll('_',' ')}
                 {field==='description'?<textarea value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>:<input value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>}
               </label>)}
-              <label>Primary category<select value={profileDraft.categories?.[0]||'restaurant'} onChange={e=>setProfileDraft(d=>({...d,categories:[e.target.value,...(d.categories||[]).filter(x=>x!==e.target.value)]}))}>
+              {editSection==='categories'&&<><label>Primary category<select value={profileDraft.categories?.[0]||'restaurant'} onChange={e=>setProfileDraft(d=>({...d,categories:['restaurant','nightlife','activities'].includes(e.target.value)?[e.target.value,...(d.categories||[]).filter(x=>x!==e.target.value&&['restaurant','nightlife','activities'].includes(x))]:[e.target.value]]}))}>
                 {[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['events','Events'],['sports','Sports'],['outdoors','Outdoors'],['activities','Activities']].map(([id,label])=><option key={id} value={id}>{label}</option>)}
               </select></label>
-              <fieldset className="inline-category-fieldset"><legend>Additional categories</legend>{[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['events','Events'],['sports','Sports'],['outdoors','Outdoors'],['activities','Activities']].filter(([id])=>id!==profileDraft.categories?.[0]).map(([id,label])=><label key={id}><input type="checkbox" checked={(profileDraft.categories||[]).includes(id)} onChange={e=>setProfileDraft(d=>({...d,categories:e.target.checked?[...d.categories,id]:d.categories.filter(x=>x!==id)}))}/>{label}</label>)}</fieldset>
-              <label>Subcategories (comma separated)<input value={(profileDraft.subcategories||[]).join(', ')} onChange={e=>setProfileDraft(d=>({...d,subcategories:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)}))}/></label>
+              <fieldset className="inline-category-fieldset"><legend>Additional categories</legend>{[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['activities','Activities']].filter(([id])=>id!==profileDraft.categories?.[0] && ['restaurant','nightlife','activities'].includes(profileDraft.categories?.[0])).map(([id,label])=><label key={id}><input type="checkbox" checked={(profileDraft.categories||[]).includes(id)} onChange={e=>setProfileDraft(d=>({...d,categories:e.target.checked?[...d.categories,id]:d.categories.filter(x=>x!==id)}))}/>{label}</label>)}</fieldset>
+              <label>Subcategories (comma separated)<input value={(profileDraft.subcategories||[]).join(', ')} onChange={e=>setProfileDraft(d=>({...d,subcategories:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)}))}/></label></>}
               {editError&&<p role="alert">{editError}</p>}
-              <div className="inline-edit-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save profile</button><button onClick={()=>setEditingProfile(false)}>Cancel</button></div>
+              <div className="inline-edit-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save profile</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>
             </div>}
             {venue.description && <p className="venue-description">{venue.description}</p>}
 
