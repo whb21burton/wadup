@@ -41,7 +41,7 @@ export default async function handler(req, res) {
       (recurrence === 'weekly' && (!weekdays.length || !weekdays.every(x => DAYS.has(x)))) ||
       (recurrence === 'one_time' && (!DATE.test(date) || !Number.isFinite(Date.parse(date + 'T12:00:00Z')))) ||
       (start && !TIME.test(start)) || (end && (!TIME.test(end) || !start)) ||
-      (url && (!/^https?:\\/\\//i.test(url) || url.length > 2048))) {
+      (url && (!url.startsWith('https://') && !url.startsWith('http://') || url.length > 2048))) {
     return res.status(400).json({ error: 'Check title, date, weekdays, times and source URL' });
   }
   const payload = {
