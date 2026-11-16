@@ -91,6 +91,28 @@ export default function AdminEditPanel({
   const [busy,setBusy] = useState(false);
   const blank = () => ({title:'',kind:'trivia',recurrence:'weekly',weekdays:[],event_date:'',start_time:'',end_time:'',description:'',source_url:'',verified:false,is_active:true});
   const [draft,setDraft] = useState(null);
+  const [calendarMonth,setCalendarMonth]=useState(()=>new Date().getMonth());
+  const [calendarYear,setCalendarYear]=useState(()=>new Date().getFullYear());
+  const [calendarDay,setCalendarDay]=useState(()=>new Date().getDate());
+  const [calendarView,setCalendarView]=useState('month');
+  const [selectedOccurrence,setSelectedOccurrence]=useState(null);
+  const [scheduleConfirm,setScheduleConfirm]=useState(null);
+  const iso=(year,month,day)=>year+'-'+String(month+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+  const occurrenceDate=iso(calendarYear,calendarMonth,calendarDay);
+  const eventOn=(item,date)=>{
+    if(item.is_active===false)return false;
+    if(item.recurrence==='one_time')return item.event_date===date;
+    return (!item.starts_on||date>=item.starts_on)&&(!item.ends_on||date<=item.ends_on)&&
+      (item.weekdays||[]).includes(new Date(date+'T12:00:00Z').getUTCDay());
+  };
+  const occurrencesFor=(date)=>items.filter(item=>eventOn(item,date)&&item.occurrence_overrides?.[date]!=='deleted');
+  const shiftMonth=(delta)=>{const d=new Date(calendarYear,calendarMonth+delta,1);setCalendarYear(d.getFullYear());setCalendarMonth(d.getMonth());setCalendarDay(1);setSelectedOccurrence(null);};
+  const executeOccurrenceAction=async()=>{
+    if(!scheduleConfirm)return;
+    const {action,item,date}=scheduleConfirm;
+    await scheduleRequest(action,{id:item.id,date});
+    setScheduleConfirm(null);setSelectedOccurrence(null);
+  };
   const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const kinds=[['trivia','Trivia'],['game_night','Game / Bingo night'],['karaoke','Karaoke'],['live_music','Live music'],['special_event','Special event'],['happy_hour','Happy hour'],['food_special','Food / drink special'],['other','Other']];
   const scheduleRequest=async(action,item)=>{
@@ -243,6 +265,26 @@ export default function AdminEditPanel({
 .wadup-venue-studio .admin-emoji-row{margin:0!important}
 .wadup-venue-studio .edit-panel-header{min-height:70px!important}
 .wadup-venue-studio select,.wadup-venue-studio input[type=date],.wadup-venue-studio input[type=time]{background:#132535;color:#f1faff;border:1px solid #315368;border-radius:8px;padding:10px}
+.wadup-venue-studio .wadup-calendar button{cursor:pointer;color:inherit}
+.wadup-venue-studio .calendar-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.wadup-venue-studio .calendar-toolbar button,.wadup-venue-studio .calendar-actions button,.wadup-venue-studio .calendar-add{background:#132d40;border:1px solid #306077;border-radius:9px;padding:10px 13px;color:#f4fbff}
+.wadup-venue-studio .calendar-toolbar button.selected,.wadup-venue-studio .calendar-add{background:#057b98}
+.wadup-venue-studio .calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.wadup-venue-studio .calendar-weekday{text-align:center;color:#91aabd;font-size:12px;padding:10px 0}
+.wadup-venue-studio .calendar-cell{display:flex;flex-direction:column;align-items:stretch;text-align:left;gap:4px;min-height:78px;min-width:0;padding:6px;background:#102033;border:1px solid #284255;border-radius:6px}
+.wadup-venue-studio .calendar-cell.selected{border-color:#00d5ef}
+.wadup-venue-studio .calendar-cell small{display:block;background:#204a62;color:#e8f9ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:3px;border-radius:3px;font-size:10px}
+.wadup-venue-studio .calendar-cell small.canceled,.wadup-venue-studio .calendar-event.canceled{text-decoration:line-through;opacity:.55}
+.wadup-venue-studio .calendar-hour{display:grid;grid-template-columns:58px 1fr;min-height:52px;border-top:1px solid #264052;padding:6px 0;gap:8px}
+.wadup-venue-studio .calendar-hour>span{font-size:12px;color:#9bb1c2}
+.wadup-venue-studio .calendar-event{display:flex;flex-direction:column;text-align:left;gap:4px;background:#13516c;border-left:4px solid #00d6f5;border-radius:7px;padding:10px;width:100%;margin-bottom:5px}
+.wadup-venue-studio .calendar-event small{opacity:.8}
+.wadup-venue-studio .calendar-details,.wadup-venue-studio .calendar-confirm{margin-top:16px;background:#102236;border:1px solid #315368;border-radius:12px;padding:16px}
+.wadup-venue-studio .calendar-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.wadup-venue-studio .calendar-details label{display:flex;flex-direction:column;gap:5px}
+.wadup-venue-studio .calendar-details input,.wadup-venue-studio .calendar-details textarea,.wadup-venue-studio .calendar-details select{width:100%;min-width:0;background:#132535;color:#f1faff;border:1px solid #315368;border-radius:8px;padding:10px}
+.wadup-venue-studio .calendar-details input[type=checkbox]{width:auto}
+@media(max-width:700px){.wadup-venue-studio .calendar-cell{min-height:52px;padding:3px}.wadup-venue-studio .calendar-cell small{font-size:8px}.wadup-venue-studio .calendar-toolbar{flex-wrap:wrap}}
 @media(max-width:700px){.wadup-venue-studio .studio-form-grid{grid-template-columns:1fr}.wadup-venue-studio .studio-footer{flex-direction:column;align-items:stretch}}
 `}</style>
       {/* Skipped entirely while relocating — this is a transparent,
@@ -413,27 +455,67 @@ export default function AdminEditPanel({
           </div>
 
           </div>
-          {tab==='schedule'&&<div>
-            <h2>Schedule & specials</h2>
-            <p style={{opacity:.7}}>Recurring trivia, game nights, live music, karaoke and happy hours. Entries are saved to the venue schedule database; feed and happy-hour map indicators are not enabled yet.</p>
-            {busy&&<p>Working…</p>}{scheduleError&&<p role="alert">{scheduleError}</p>}
-            {items.map(item=><div key={item.id} style={{padding:12,border:'1px solid #245369',borderRadius:8,marginBottom:8}}>
-              <strong>{item.title}</strong> · {item.kind} · {item.recurrence==='weekly'?item.weekdays.map(d=>days[d]).join(', '):item.event_date} · {item.start_time||'Time unspecified'}
-              <div style={{display:'flex',gap:8,marginTop:8}}><button type="button" onClick={()=>setDraft({...item,verified:!!item.verified_at,start_time:item.start_time?.slice(0,5)||'',end_time:item.end_time?.slice(0,5)||''})}>Edit</button><button type="button" onClick={()=>{if(window.confirm('Delete this schedule entry?'))scheduleRequest('delete',{id:item.id});}}>Delete</button></div>
-            </div>)}
-            {!draft?<button type="button" onClick={()=>setDraft(blank())}>+ Add schedule entry</button>:<div style={{display:'grid',gap:12,padding:14,border:'1px solid #245369',borderRadius:8}}>
-              <label>Activity title<input value={draft.title} onChange={e=>setDraft(d=>({...d,title:e.target.value}))}/></label>
-              <label>Type<select value={draft.kind} onChange={e=>setDraft(d=>({...d,kind:e.target.value}))}>{kinds.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
-              <label>Frequency<select value={draft.recurrence} onChange={e=>setDraft(d=>({...d,recurrence:e.target.value}))}><option value="weekly">Weekly</option><option value="one_time">One-time</option></select></label>
-              {draft.recurrence==='weekly'?<div><label>Days</label><div style={{display:'flex',gap:12,flexWrap:'wrap'}}>{days.map((day,i)=><label key={day}><input type="checkbox" checked={draft.weekdays.includes(i)} onChange={e=>setDraft(d=>({...d,weekdays:e.target.checked?[...d.weekdays,i]:d.weekdays.filter(x=>x!==i)}))}/>{day}</label>)}</div></div>:<label>Date<input type="date" value={draft.event_date||''} onChange={e=>setDraft(d=>({...d,event_date:e.target.value}))}/></label>}
-              <label>Start time (optional)<input type="time" value={draft.start_time||''} onChange={e=>setDraft(d=>({...d,start_time:e.target.value}))}/></label>
-              <label>End time (optional)<input type="time" value={draft.end_time||''} onChange={e=>setDraft(d=>({...d,end_time:e.target.value}))}/></label>
-              <label>Details<textarea value={draft.description||''} onChange={e=>setDraft(d=>({...d,description:e.target.value}))}/></label>
-              <label>Official source URL<input value={draft.source_url||''} onChange={e=>setDraft(d=>({...d,source_url:e.target.value}))}/></label>
-              <label><input type="checkbox" checked={!!draft.verified} onChange={e=>setDraft(d=>({...d,verified:e.target.checked}))}/> Verified</label>
-              <label><input type="checkbox" checked={draft.is_active!==false} onChange={e=>setDraft(d=>({...d,is_active:e.target.checked}))}/> Active</label>
-              <div><button type="button" disabled={busy||!draft.title.trim()} onClick={()=>scheduleRequest('save',draft)}>Save schedule</button> <button type="button" onClick={()=>setDraft(null)}>Cancel</button></div>
+          {tab==='schedule'&&<div className="wadup-calendar">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:18}}>
+              <div><h2 style={{margin:0}}>Venue Calendar</h2><p className="studio-help">Manage what guests see on this venue's schedule.</p></div>
+              <button type="button" className="calendar-add" onClick={()=>{setDraft({...blank(),event_date:occurrenceDate,starts_on:occurrenceDate,weekdays:[new Date(occurrenceDate+'T12:00:00Z').getUTCDay()]});setSelectedOccurrence(null);}}>+ Add Event</button>
+            </div>
+            {busy&&<p>Updating schedule…</p>}{scheduleError&&<p role="alert" style={{color:'#ff8d8d'}}>{scheduleError}</p>}
+            <div className="calendar-toolbar">
+              <button type="button" onClick={()=>shiftMonth(-1)} aria-label="Previous month">‹</button>
+              <strong>{new Date(calendarYear,calendarMonth,1).toLocaleDateString('en-US',{month:'long',year:'numeric'})}</strong>
+              <button type="button" onClick={()=>shiftMonth(1)} aria-label="Next month">›</button>
+              <div style={{flex:1}}/>
+              <button type="button" className={calendarView==='month'?'selected':''} onClick={()=>setCalendarView('month')}>Month</button>
+              <button type="button" className={calendarView==='day'?'selected':''} onClick={()=>setCalendarView('day')}>Day</button>
+            </div>
+            {calendarView==='month'?<div className="calendar-grid">
+              {days.map(d=><div key={d} className="calendar-weekday">{d}</div>)}
+              {Array.from({length:new Date(calendarYear,calendarMonth,1).getDay()},(_,i)=><div key={'blank'+i} className="calendar-blank"/>)}
+              {Array.from({length:new Date(calendarYear,calendarMonth+1,0).getDate()},(_,i)=>{
+                const n=i+1,date=iso(calendarYear,calendarMonth,n),list=occurrencesFor(date);
+                return <button type="button" key={date} className={'calendar-cell'+(calendarDay===n?' selected':'')} onClick={()=>{setCalendarDay(n);setCalendarView('day');setSelectedOccurrence(null)}}>
+                  <span>{n}</span>{list.slice(0,2).map(e=><small key={e.id} className={e.occurrence_overrides?.[date]==='canceled'?'canceled':''}>{e.title}</small>)}{list.length>2&&<small>+{list.length-2} more</small>}
+                </button>;
+              })}
+            </div>:<div className="calendar-day">
+              <h3>{new Date(occurrenceDate+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',timeZone:'UTC'})}</h3>
+              {Array.from({length:24},(_,hour)=>{
+                const list=occurrencesFor(occurrenceDate).filter(e=>Number((e.start_time||'00:00').slice(0,2))===hour);
+                return <div className="calendar-hour" key={hour}><span>{String(hour%12||12)} {hour<12?'AM':'PM'}</span><div>{list.map(e=><button type="button" key={e.id} className={'calendar-event'+(e.occurrence_overrides?.[occurrenceDate]==='canceled'?' canceled':'')} onClick={()=>{setSelectedOccurrence({item:e,date:occurrenceDate});setDraft(null);}}>
+                  <strong>{e.title}</strong><small>{e.start_time?.slice(0,5)||'All day'} – {e.end_time?.slice(0,5)||'Time not set'} {e.occurrence_overrides?.[occurrenceDate]==='canceled'?'· CANCELED':''}</small>
+                </button>)}</div></div>;
+              })}
             </div>}
+            {selectedOccurrence&&!draft&&<div className="calendar-details">
+              <h3>{selectedOccurrence.item.title}</h3>
+              <p>{selectedOccurrence.item.kind.replaceAll('_',' ')} · {selectedOccurrence.item.start_time?.slice(0,5)||'No start time'} – {selectedOccurrence.item.end_time?.slice(0,5)||'No end time'}</p>
+              {selectedOccurrence.item.occurrence_overrides?.[selectedOccurrence.date]==='canceled'&&<p style={{color:'#ffb48a'}}>Canceled for this date</p>}
+              <div className="calendar-actions">
+                <button type="button" onClick={()=>{const e=selectedOccurrence.item;setDraft({...e,verified:!!e.verified_at,start_time:e.start_time?.slice(0,5)||'',end_time:e.end_time?.slice(0,5)||''});}}>Edit schedule</button>
+                {selectedOccurrence.item.occurrence_overrides?.[selectedOccurrence.date]==='canceled'?<button type="button" onClick={()=>setScheduleConfirm({...selectedOccurrence,action:'restore_occurrence'})}>Restore</button>:<button type="button" onClick={()=>setScheduleConfirm({...selectedOccurrence,action:'cancel_occurrence'})}>Cancel event</button>}
+                <button type="button" onClick={()=>setScheduleConfirm({...selectedOccurrence,action:'delete_occurrence'})}>Delete this date</button>
+                {selectedOccurrence.item.recurrence==='weekly'&&<button type="button" onClick={()=>setScheduleConfirm({...selectedOccurrence,action:'delete_future'})}>Delete all future repeats</button>}
+              </div>
+            </div>}
+            {scheduleConfirm&&<div className="calendar-confirm" role="alertdialog" aria-label="Confirm schedule change">
+              <h3>{scheduleConfirm.action==='delete_future'?'Delete this and all future repeats?':scheduleConfirm.action==='delete_occurrence'?'Delete this occurrence?':scheduleConfirm.action==='cancel_occurrence'?'Cancel this occurrence?':'Restore this occurrence?'}</h3>
+              <p>{scheduleConfirm.action==='delete_future'?'Future repeats will disappear, but past event history stays. This cannot be undone automatically.':scheduleConfirm.action==='cancel_occurrence'?'Guests will see CANCELED for this date. Other weeks stay scheduled.':scheduleConfirm.action==='delete_occurrence'?'This date will disappear from the public calendar. Other repeats stay scheduled.':'This date will become active again.'}</p>
+              <div className="calendar-actions"><button type="button" disabled={busy} onClick={executeOccurrenceAction}>Confirm</button><button type="button" onClick={()=>setScheduleConfirm(null)}>Keep event</button></div>
+            </div>}
+            {draft&&<div className="calendar-details" style={{display:'grid',gap:12}}>
+              <h3>{draft.id?'Edit event':'New event'}</h3>
+              <label>Event category<select value={draft.kind} onChange={e=>setDraft(d=>({...d,kind:e.target.value}))}>{kinds.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
+              <label>Event name<input value={draft.title} placeholder="e.g. American History Trivia" onChange={e=>setDraft(d=>({...d,title:e.target.value}))}/></label>
+              <label>Repeats<select value={draft.recurrence} onChange={e=>setDraft(d=>({...d,recurrence:e.target.value}))}><option value="one_time">Does not repeat</option><option value="weekly">Every week</option></select></label>
+              {draft.recurrence==='weekly'?<><div><label>Repeat on</label><div className="calendar-actions">{days.map((d,i)=><label key={d}><input type="checkbox" checked={(draft.weekdays||[]).includes(i)} onChange={e=>setDraft(v=>({...v,weekdays:e.target.checked?[...v.weekdays,i]:v.weekdays.filter(x=>x!==i)}))}/>{d}</label>)}</div></div><label>Starts on<input type="date" value={draft.starts_on||''} onChange={e=>setDraft(v=>({...v,starts_on:e.target.value}))}/></label><label>Ends on (optional)<input type="date" value={draft.ends_on||''} onChange={e=>setDraft(v=>({...v,ends_on:e.target.value}))}/></label></>:<label>Event date<input type="date" value={draft.event_date||''} onChange={e=>setDraft(v=>({...v,event_date:e.target.value}))}/></label>}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}><label>Start time<input type="time" value={draft.start_time||''} onChange={e=>setDraft(v=>({...v,start_time:e.target.value}))}/></label><label>End time<input type="time" value={draft.end_time||''} onChange={e=>setDraft(v=>({...v,end_time:e.target.value}))}/></label></div>
+              <label>Details<textarea value={draft.description||''} onChange={e=>setDraft(v=>({...v,description:e.target.value}))}/></label>
+              <label>Official source URL<input value={draft.source_url||''} onChange={e=>setDraft(v=>({...v,source_url:e.target.value}))}/></label>
+              <label><input type="checkbox" checked={!!draft.verified} onChange={e=>setDraft(v=>({...v,verified:e.target.checked}))}/> Verified</label>
+              <div className="calendar-actions"><button type="button" disabled={busy||!draft.title?.trim()||!draft.start_time||!draft.end_time||draft.end_time<=draft.start_time} onClick={()=>scheduleRequest('save',draft)}>Save event</button><button type="button" onClick={()=>setDraft(null)}>Discard</button></div>
+            </div>}
+            <p className="studio-help">Happy hours and food specials remain venue-only. Event publication to the main WADUP feed requires separate integration.</p>
           </div>}
           {error && <div className="admin-modal-error">⚠️ {error}</div>}
 
