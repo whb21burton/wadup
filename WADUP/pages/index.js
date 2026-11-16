@@ -249,6 +249,7 @@ export default function WadUp() {
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('events');
+  const [hasMustSeeInView, setHasMustSeeInView] = useState(false);
   const [activeDate,     setActiveDate]     = useState(localIsoDate());
   // filterPins reads these refs, not the state above, so it always sees the
   // current value regardless of when its own closure was created — the
@@ -527,6 +528,13 @@ export default function WadUp() {
     const map = mapObj.current;
     if (!map) return;
     const bounds = map.getBounds();
+    // Hide Must-See outside areas with an actual eligible attraction.
+    const mustSeeVisible = !!bounds && venuesRef.current.some(v =>
+      v.live && !v.is_hidden && venueMatchesChip('must-see', v) &&
+      Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)) &&
+      bounds.contains(new window.google.maps.LatLng(Number(v.lat), Number(v.lng)))
+    );
+    setHasMustSeeInView(prev => prev === mustSeeVisible ? prev : mustSeeVisible);
     const chip = activeCategoryRef.current;
     const selected = [chip];
 
@@ -1943,7 +1951,7 @@ export default function WadUp() {
 
   const renderChips = (containerClass) => (
     <div className={containerClass}>
-      {CATEGORY_CHIPS.map(c => (
+      {CATEGORY_CHIPS.filter(c => c.id !== 'must-see' || hasMustSeeInView || activeChip === 'must-see').map(c => (
         <button
           key={c.id}
           className={`chip${activeChip === c.id ? ' active' : ''}`}
@@ -1961,7 +1969,7 @@ export default function WadUp() {
   const renderDesktopCategoryList = () => (
     <div className="sidebar-categories">
       <div className="cat-list">
-        {CATEGORY_CHIPS.map(c => {
+        {CATEGORY_CHIPS.filter(c => c.id !== 'must-see' || hasMustSeeInView || activeChip === 'must-see').map(c => {
           const hasSubcats = c.subcategories?.length > 0;
           const isActive = activeChip === c.id;
           const isOpen = openDropdown === c.id;
