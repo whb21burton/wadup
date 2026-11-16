@@ -285,6 +285,7 @@ export default function WadUp() {
   const [mapReady,       setMapReady]       = useState(false);
   const [showSplash,     setShowSplash]     = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [wadupFeedExpanded, setWadupFeedExpanded] = useState(true);
   const [zoomClass,      setZoomClass]      = useState('zoom-near');
   const [showAddBanner,  setShowAddBanner]  = useState(false);
   const [sheetExpanded,  setSheetExpanded]  = useState(false);
@@ -2390,10 +2391,10 @@ export default function WadUp() {
 
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}>
             {renderDayStrip('sidebar-days')}
-            <button type="button" onClick={() => { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); setOpenDropdown(null); filterPins(); }}
+            <button type="button" onClick={() => { if (activeChip === 'wadup') { setWadupFeedExpanded(v => !v); } else { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); setWadupFeedExpanded(true); setOpenDropdown(null); filterPins(); } }}
               aria-label="WADUP happenings" aria-pressed={activeChip === 'wadup'}
               style={{ display: 'block', width: '100%', textAlign: 'center', border: 0, background: 'radial-gradient(ellipse at 50% 100%, #055b70 0%, #00313e 42%, #00101b 80%)', padding: '15px 12px 18px', cursor: 'pointer', color: '#e9ffff', fontSize: 46, letterSpacing: 3, fontWeight: 1000, lineHeight: 1.2, textShadow: '0 0 6px #3ef5ff, 0 0 18px #00d9f5, 0 0 32px #00b7dc', fontFamily: 'Impact, Arial Narrow, sans-serif' }}>WADUP</button>
-            {activeChip === 'wadup' && renderWadupFeed()}
+            {activeChip === 'wadup' && wadupFeedExpanded && renderWadupFeed()}
             {renderDesktopCategoryList()}
           </div>
         </aside>
