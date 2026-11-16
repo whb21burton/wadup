@@ -251,7 +251,7 @@ export default function AdminEditPanel({
           map and swallows the exact click "Click map to move" is waiting
           for before it ever reaches Google Maps' own click listener. */}
       {!relocating && <div className="edit-panel-overlay" aria-hidden="true" />}
-      <div className="edit-panel wadup-venue-studio" onClick={(e) => e.stopPropagation()} style={{position:'fixed',left:pos?.left??'5vw',top:pos?.top??'5vh',right:'auto',bottom:'auto',width:'min(1050px,90vw)',height:'min(800px,88vh)',maxWidth:'95vw',maxHeight:'92vh',resize:'both',overflow:'hidden',display:'flex',flexDirection:'column',zIndex:10020,borderRadius:16}}>
+      <div className="edit-panel wadup-venue-studio" onClick={(e) => e.stopPropagation()} style={{position:'fixed',left:pos?.left??'5vw',top:pos?.top??'5vh',right:'auto',bottom:'auto',width:'min(1050px,90vw)',height:'min(800px,88vh)',maxWidth:'95vw',maxHeight:'92vh',resize:'both',overflow:'hidden',display:'flex',flexDirection:'column',zIndex:1000002,borderRadius:16}}>
         <div className="edit-panel-header" style={{cursor:'move',userSelect:'none',flexShrink:0}} onMouseDown={e=>{if(e.button!==0||e.target.closest('button'))return;const rect=e.currentTarget.parentElement.getBoundingClientRect();drag.current={x:e.clientX,y:e.clientY,left:rect.left,top:rect.top};e.preventDefault();}}>
           <span>✏️ Venue Studio · {name}</span>
           <button className="edit-panel-close" onClick={onClose} aria-label="Close">✕</button>
