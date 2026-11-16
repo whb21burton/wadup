@@ -6,7 +6,7 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'data.js'), 'utf8');
 const ranges = [
   ['CATEGORY_CHIPS', 'export const CATEGORY_CHIPS = [', '\n// Legacy values', 'd6ae0619'],
-  ['SUBCATEGORY_ALIASES', 'const SUBCATEGORY_ALIASES = {', '\nfunction normalizeSubcategory', '99e917f5'],
+  ['SUBCATEGORY_ALIASES', 'const SUBCATEGORY_ALIASES = {', '\nfunction normalizeSubcategory', 'e962078f'],
 ];
 function fingerprint(text) {
   let hash = 2166136261;
