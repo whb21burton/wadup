@@ -2,7 +2,8 @@ import { supabaseAdmin } from '../supabase-admin';
 import { requireAdmin } from './_authAdmin';
 import { canAccessCity } from '../../../lib/admin';
 
-const FIELDS=['name','description','phone','website','cover_photo_url'];
+const FIELDS=['name','description','phone','website','cover_photo_url','address'];
+const CATEGORIES=new Set(['restaurant','nightlife','events','sports','outdoors','activities']);
 export default async function handler(req,res){
   if(req.method!=='POST')return res.status(405).json({error:'Method not allowed'});
   const token=(req.headers.authorization||'').split(' ').pop();
@@ -20,6 +21,14 @@ export default async function handler(req,res){
     const value=updates[field];
     if(typeof value!=='string'||value.length>4000)return res.status(400).json({error:'Invalid '+field});
     safe[field]=value.trim();
+  }
+  if(updates.categories!==undefined){
+    if(!Array.isArray(updates.categories)||!updates.categories.length||updates.categories.length>6||!updates.categories.every(x=>CATEGORIES.has(x))||new Set(updates.categories).size!==updates.categories.length)return res.status(400).json({error:'Choose a valid primary and optional secondary categories'});
+    safe.categories=updates.categories;safe.category=updates.categories[0];
+  }
+  if(updates.subcategories!==undefined){
+    if(!Array.isArray(updates.subcategories)||updates.subcategories.length>12||!updates.subcategories.every(x=>typeof x==='string'&&x.trim()&&x.length<=60))return res.status(400).json({error:'Invalid subcategories'});
+    safe.subcategories=updates.subcategories.map(x=>x.trim());safe.subcategory=safe.subcategories[0]||null;
   }
   if(!Object.keys(safe).length)return res.status(400).json({error:'No changes'});
   if(safe.name!==undefined&&!safe.name)return res.status(400).json({error:'Venue name is required'});
