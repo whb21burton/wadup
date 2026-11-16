@@ -5,7 +5,7 @@
 // map-anchored side panel meant for "I'm looking at the pin, fix it right
 // here" — including moving the venue by clicking a new spot on the map,
 // which only makes sense in this map-embedded context.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EMOJI_OPTIONS, venueCategories, venueSubcategories } from '../lib/data';
 
 // Deliberately not sourced from lib/data's CATEGORY_CHIPS — that list's
@@ -75,8 +75,40 @@ export default function AdminEditPanel({
   onClose,
   onSave,            // async (fields) => void — throws on failure
   onDelete,          // async () => void — throws on failure
+  onScheduleRequest,
 }) {
   const [name, setName] = useState(venue.name || '');
+  const [tab,setTab] = useState('profile');
+  const [pos,setPos] = useState(null);
+  const drag = useRef(null);
+  const [address,setAddress] = useState(venue.address||'');
+  const [phone,setPhone] = useState(venue.phone||'');
+  const [website,setWebsite] = useState(venue.website||'');
+  const [description,setDescription] = useState(venue.description||'');
+  const [cover,setCover] = useState(venue.cover_photo_url||'');
+  const [items,setItems] = useState([]);
+  const [scheduleError,setScheduleError] = useState('');
+  const [busy,setBusy] = useState(false);
+  const blank = () => ({title:'',kind:'trivia',recurrence:'weekly',weekdays:[],event_date:'',start_time:'',end_time:'',description:'',source_url:'',verified:false,is_active:true});
+  const [draft,setDraft] = useState(null);
+  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const kinds=[['trivia','Trivia'],['game_night','Game / Bingo night'],['karaoke','Karaoke'],['live_music','Live music'],['special_event','Special event'],['happy_hour','Happy hour'],['food_special','Food / drink special'],['other','Other']];
+  const scheduleRequest=async(action,item)=>{
+    setBusy(true);setScheduleError('');
+    try {
+      const response=await onScheduleRequest({venueId:venue.id,action,item});
+      if(action==='list')setItems(response.items||[]);
+      else {const list=await onScheduleRequest({venueId:venue.id,action:'list'});setItems(list.items||[]);setDraft(null);}
+    }catch(e){setScheduleError(e.message||'Schedule request failed');}
+    finally{setBusy(false);}
+  };
+  useEffect(()=>{
+    const move=e=>{if(!drag.current)return;const d=drag.current;setPos({left:Math.max(0,Math.min(window.innerWidth-200,d.left+e.clientX-d.x)),top:Math.max(0,Math.min(window.innerHeight-70,d.top+e.clientY-d.y))});};
+    const stop=()=>{drag.current=null;};
+    window.addEventListener('mousemove',move);window.addEventListener('mouseup',stop);
+    return()=>{window.removeEventListener('mousemove',move);window.removeEventListener('mouseup',stop);};
+  },[]);
+  useEffect(()=>{if(tab==='schedule'&&onScheduleRequest)scheduleRequest('list');},[tab,venue.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [categories, setCategories] = useState(venueCategories(venue));
   const [subcategories, setSubcategories] = useState(venueSubcategories(venue));
   // Free-text entry for a subcategory none of the chips offer — added to the
@@ -100,6 +132,9 @@ export default function AdminEditPanel({
   // reset to match rather than keeping the previous venue's edits.
   useEffect(() => {
     setName(venue.name || '');
+    setTab('profile');setPos(null);setItems([]);setDraft(null);
+    setAddress(venue.address||'');setPhone(venue.phone||'');setWebsite(venue.website||'');
+    setDescription(venue.description||'');setCover(venue.cover_photo_url||'');
     setCategories(venueCategories(venue));
     setSubcategories(venueSubcategories(venue));
     setCustomSubcat('');
@@ -126,7 +161,7 @@ export default function AdminEditPanel({
     setError('');
     try {
       await onSave({
-        name, categories,
+        name, categories, address, phone, website, description, cover_photo_url: cover || null,
         subcategories,
         // venues.subcategory stays populated with the FIRST selection so every
         // existing single-value reader (map pins, discover/browse cards,
@@ -197,13 +232,15 @@ export default function AdminEditPanel({
           map and swallows the exact click "Click map to move" is waiting
           for before it ever reaches Google Maps' own click listener. */}
       {!relocating && <div className="edit-panel-overlay" onClick={onClose} />}
-      <div className="edit-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="edit-panel-header">
-          <span>✏️ Edit Venue</span>
+      <div className="edit-panel" onClick={(e) => e.stopPropagation()} style={{position:'fixed',left:pos?.left??'10vw',top:pos?.top??'7vh',right:'auto',bottom:'auto',width:'min(1080px,80vw)',height:'min(830px,86vh)',maxWidth:'95vw',maxHeight:'92vh',resize:'both',overflow:'hidden',display:'flex',flexDirection:'column',zIndex:10020,borderRadius:16}}>
+        <div className="edit-panel-header" style={{cursor:'move',userSelect:'none',flexShrink:0}} onMouseDown={e=>{if(e.button!==0||e.target.closest('button'))return;const rect=e.currentTarget.parentElement.getBoundingClientRect();drag.current={x:e.clientX,y:e.clientY,left:rect.left,top:rect.top};e.preventDefault();}}>
+          <span>✏️ Venue Studio · {name}</span>
           <button className="edit-panel-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
-        <div className="edit-panel-body admin-modal-body">
+        <div style={{display:'flex',gap:8,padding:12,flexShrink:0,flexWrap:'wrap',borderBottom:'1px solid #245369'}}>{[['profile','Profile'],['categories','Categories'],['schedule','Schedule & specials'],['location','Location'],['admin','Admin']].map(([id,label])=><button type="button" key={id} onClick={()=>setTab(id)} style={{background:tab===id?'#075a72':'#132638',color:'white',padding:'8px 12px',border:'1px solid #245369',borderRadius:8}}>{label}</button>)}</div>
+        <div className="edit-panel-body admin-modal-body" style={{flex:1,overflowY:'auto',padding:24}}>
+          <div style={{display:tab==='profile'?'block':'none'}}>
           <div
             className="edit-panel-cover"
             style={venue.cover_photo_url ? { backgroundImage: `url(${venue.cover_photo_url})` } : undefined}
@@ -237,7 +274,15 @@ export default function AdminEditPanel({
             </div>
           )}
 
-          <label>Categories</label>
+          <label>Address</label><input value={address} onChange={e=>setAddress(e.target.value)}/>
+          <label>Phone</label><input value={phone} onChange={e=>setPhone(e.target.value)}/>
+          <label>Website</label><input value={website} onChange={e=>setWebsite(e.target.value)}/>
+          <label>Description</label><textarea rows={4} value={description} onChange={e=>setDescription(e.target.value)} style={{width:'100%'}}/>
+          <label>Cover photo URL</label><input value={cover} onChange={e=>setCover(e.target.value)}/>
+          </div><div style={{display:tab==='categories'?'block':'none'}}>
+          <label>Primary category</label>
+          <select value={categories[0]||''} onChange={e=>setCategories(prev=>[e.target.value,...prev.filter(x=>x!==e.target.value)])}>{PANEL_CATEGORIES.map(cat=><option key={cat.id} value={cat.id}>{cat.label}</option>)}</select>
+          <label>Additional categories</label>
           <div className="admin-checkbox-grid">
             {PANEL_CATEGORIES.map(c => (
               <label key={c.id} className="admin-checkbox-item">
@@ -285,6 +330,7 @@ export default function AdminEditPanel({
             </div>
           )}
 
+          </div><div style={{display:tab==='admin'?'block':'none'}}>
           <label>Badges / Status</label>
           <div className="edit-panel-toggle-col">
             <label className="admin-toggle">
@@ -305,6 +351,7 @@ export default function AdminEditPanel({
             </label>
           </div>
 
+          </div><div style={{display:tab==='location'?'block':'none'}}>
           <label>📍 Location</label>
           <div className="admin-form-row">
             <div>
@@ -331,6 +378,7 @@ export default function AdminEditPanel({
             )}
           </div>
 
+          </div><div style={{display:tab==='admin'?'block':'none'}}>
           <label>⭐ Admin Rating (1-10)</label>
           <input
             type="number"
@@ -345,14 +393,37 @@ export default function AdminEditPanel({
             Used for ranking until enough user ratings exist (5+). Google rating: {venue.google_rating != null ? venue.google_rating.toFixed(1) : '—'}.
           </div>
 
+          </div>
+          {tab==='schedule'&&<div>
+            <h2>Schedule & specials</h2>
+            <p style={{opacity:.7}}>Recurring trivia, game nights, live music, karaoke and happy hours. Entries are saved to the venue schedule database; feed and happy-hour map indicators are not enabled yet.</p>
+            {busy&&<p>Working…</p>}{scheduleError&&<p role="alert">{scheduleError}</p>}
+            {items.map(item=><div key={item.id} style={{padding:12,border:'1px solid #245369',borderRadius:8,marginBottom:8}}>
+              <strong>{item.title}</strong> · {item.kind} · {item.recurrence==='weekly'?item.weekdays.map(d=>days[d]).join(', '):item.event_date} · {item.start_time||'Time unspecified'}
+              <div style={{display:'flex',gap:8,marginTop:8}}><button type="button" onClick={()=>setDraft({...item,verified:!!item.verified_at,start_time:item.start_time?.slice(0,5)||'',end_time:item.end_time?.slice(0,5)||''})}>Edit</button><button type="button" onClick={()=>{if(window.confirm('Delete this schedule entry?'))scheduleRequest('delete',{id:item.id});}}>Delete</button></div>
+            </div>)}
+            {!draft?<button type="button" onClick={()=>setDraft(blank())}>+ Add schedule entry</button>:<div style={{display:'grid',gap:12,padding:14,border:'1px solid #245369',borderRadius:8}}>
+              <label>Activity title<input value={draft.title} onChange={e=>setDraft(d=>({...d,title:e.target.value}))}/></label>
+              <label>Type<select value={draft.kind} onChange={e=>setDraft(d=>({...d,kind:e.target.value}))}>{kinds.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
+              <label>Frequency<select value={draft.recurrence} onChange={e=>setDraft(d=>({...d,recurrence:e.target.value}))}><option value="weekly">Weekly</option><option value="one_time">One-time</option></select></label>
+              {draft.recurrence==='weekly'?<div><label>Days</label><div style={{display:'flex',gap:12,flexWrap:'wrap'}}>{days.map((day,i)=><label key={day}><input type="checkbox" checked={draft.weekdays.includes(i)} onChange={e=>setDraft(d=>({...d,weekdays:e.target.checked?[...d.weekdays,i]:d.weekdays.filter(x=>x!==i)}))}/>{day}</label>)}</div></div>:<label>Date<input type="date" value={draft.event_date||''} onChange={e=>setDraft(d=>({...d,event_date:e.target.value}))}/></label>}
+              <label>Start time (optional)<input type="time" value={draft.start_time||''} onChange={e=>setDraft(d=>({...d,start_time:e.target.value}))}/></label>
+              <label>End time (optional)<input type="time" value={draft.end_time||''} onChange={e=>setDraft(d=>({...d,end_time:e.target.value}))}/></label>
+              <label>Details<textarea value={draft.description||''} onChange={e=>setDraft(d=>({...d,description:e.target.value}))}/></label>
+              <label>Official source URL<input value={draft.source_url||''} onChange={e=>setDraft(d=>({...d,source_url:e.target.value}))}/></label>
+              <label><input type="checkbox" checked={!!draft.verified} onChange={e=>setDraft(d=>({...d,verified:e.target.checked}))}/> Verified</label>
+              <label><input type="checkbox" checked={draft.is_active!==false} onChange={e=>setDraft(d=>({...d,is_active:e.target.checked}))}/> Active</label>
+              <div><button type="button" disabled={busy||!draft.title.trim()} onClick={()=>scheduleRequest('save',draft)}>Save schedule</button> <button type="button" onClick={()=>setDraft(null)}>Cancel</button></div>
+            </div>}
+          </div>}
           {error && <div className="admin-modal-error">⚠️ {error}</div>}
 
           <button className="edit-panel-save-btn" onClick={save} disabled={saving || deleting || !name || !categories.length}>
             {saving ? 'Saving…' : '💾 Save Changes'}
           </button>
-          <button className="edit-panel-delete-btn" onClick={del} disabled={saving || deleting}>
+          {tab==='admin'&&<button className="edit-panel-delete-btn" onClick={del} disabled={saving || deleting}>
             {deleting ? 'Deleting…' : '🗑️ Delete Venue'}
-          </button>
+          </button>}
         </div>
       </div>
     </>
