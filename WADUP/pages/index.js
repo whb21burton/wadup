@@ -71,6 +71,7 @@ function activityIcon(v) {
 function outdoorIcon(v) {
   const terms = [v.subcategory, ...(v.subcategories || [])].filter(Boolean).join(' ');
   if (/dog park/i.test(terms)) return '🌳🐕';
+  if (/raft|rafting|whitewater/i.test(terms)) return '🚣';
   if (/kayak|canoe/i.test(terms)) return '🛶';
   if (/paddleboard/i.test(terms)) return '🏄';
   if (/climb/i.test(terms)) return '🧗';
