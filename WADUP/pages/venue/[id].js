@@ -605,7 +605,7 @@ export default function VenuePage() {
               </label>)}
               {editError&&<p role="alert">{editError}</p>}
               <div className="inline-edit-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save profile</button><button onClick={()=>setEditingProfile(false)}>Cancel</button></div>
-            </div>
+            </div>}
             {venue.description && <p className="venue-description">{venue.description}</p>}
 
             {schedule.length > 0 && (
