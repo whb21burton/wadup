@@ -92,6 +92,9 @@ export default function VenuePage() {
   const [editError,setEditError]=useState('');
   const [editBusy,setEditBusy]=useState(false);
   const [canManage,setCanManage]=useState(false);
+  const [editRequested,setEditRequested]=useState(false);
+  const [editSection,setEditSection]=useState('details');
+  const [scheduleLoading,setScheduleLoading]=useState(false);
   const scheduleDays=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const activityTypes=[['trivia','Trivia night'],['game_night','Game / bingo night'],['karaoke','Karaoke'],['live_music','Live music'],['special_event','Special event'],['happy_hour','Happy hour'],['food_special','Food / drink special'],['other','Other']];
   const blankActivity=()=>({title:'',kind:'trivia',recurrence:'weekly',weekdays:[],event_date:'',start_time:'',end_time:'',description:'',source_url:'',verified:false,is_active:true});
@@ -141,6 +144,13 @@ export default function VenuePage() {
   }, [session]);
 
   const requireLogin = useCallback(() => setRightSidebarOpen(true), []);
+  useEffect(()=>{if(router.isReady)setEditRequested(router.query.edit==='1');},[router.isReady,router.query.edit]);
+  const startEditing=useCallback((section='details')=>{
+    if(!venue)return;
+    setProfileDraft({name:venue.name||'',description:venue.description||'',phone:venue.phone||'',website:venue.website||'',cover_photo_url:venue.cover_photo_url||'',address:venue.address||'',categories:venueCategories(venue),subcategories:Array.isArray(venue.subcategories)?venue.subcategories:(venue.subcategory?[venue.subcategory]:[])});
+    setEditSection(section);setEditingProfile(true);setEditError('');
+  },[venue]);
+  useEffect(()=>{if(editRequested&&canManage&&venue&&!editingProfile)startEditing();},[editRequested,canManage,venue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{
     if(!id||!session?.access_token){setCanManage(false);return;}
     fetch('/api/admin/venue-permissions?venueId='+encodeURIComponent(id),{headers:{Authorization:'Bearer '+session.access_token}})
@@ -148,7 +158,8 @@ export default function VenuePage() {
   },[id,session?.access_token]);
   const reloadActivities=useCallback(async()=>{
     if(!id)return;
-    try{const r=await fetch('/api/admin/venue-schedule?venueId='+encodeURIComponent(id));if(r.ok){const d=await r.json();setActivitySchedule(d.items||[]);}}catch(e){}
+    setScheduleLoading(true);
+    try{const r=await fetch('/api/admin/venue-schedule?venueId='+encodeURIComponent(id));if(r.ok){const d=await r.json();setActivitySchedule(d.items||[]);}}catch(e){}finally{setScheduleLoading(false);}
   },[id]);
   useEffect(()=>{reloadActivities();},[reloadActivities]);
   const sendEdit=async(url,body)=>{
@@ -161,7 +172,7 @@ export default function VenuePage() {
     setEditBusy(true);setEditError('');
     try{
       const result=await sendEdit('/api/admin/venue-profile',{venueId:id,updates:profileDraft});
-      setVenue(result.venue);setEditingProfile(false);
+      setVenue(result.venue);setEditingProfile(false);setEditRequested(false);
     }catch(e){setEditError(e.message);}finally{setEditBusy(false);}
   };
   const saveActivity=async(action,item)=>{
@@ -460,6 +471,11 @@ export default function VenuePage() {
       </Head>
 
       <style jsx global>{`
+      .inline-editor-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#083342;color:#e9ffff;border:1px solid #00b6d0;border-radius:10px;padding:12px;margin:14px 0}
+      .inline-editor-toolbar span{font-size:12px;opacity:.8;flex:1}
+      .inline-editor-toolbar button{background:#1b5260;color:white;border:1px solid #46a3b7;border-radius:7px;padding:8px}
+      .inline-category-fieldset{border:1px solid #3e6678;border-radius:9px;padding:12px;display:flex;gap:12px;flex-wrap:wrap}
+      .inline-category-fieldset label{display:flex!important;gap:6px;align-items:center}
       .inline-edit-trigger{background:#073c4d;color:#00d5ed;border:1px solid #00b7d1;border-radius:10px;padding:10px 14px;margin:10px 0;font-weight:700;cursor:pointer}
       .inline-edit-form{display:grid;gap:14px;background:#071724;color:#f0faff;border:1px solid #13708a;border-radius:16px;padding:18px;margin:16px 0}
       .inline-edit-form h3{margin:0}.inline-edit-form label{display:grid;gap:6px;font-size:13px;font-weight:700}
@@ -502,7 +518,8 @@ export default function VenuePage() {
 
           <div className="venue-header-content">
             <h1 className="venue-name">{venue.name}</h1>
-            {canManage&&!editingProfile&&<button className="inline-edit-trigger" onClick={()=>{setProfileDraft({name:venue.name||'',description:venue.description||'',phone:venue.phone||'',website:venue.website||'',cover_photo_url:venue.cover_photo_url||''});setEditingProfile(true);setEditError('');}}>✏️ Edit Profile</button>}
+            {canManage&&!editingProfile&&<button className="inline-edit-trigger" onClick={()=>startEditing()}>✏️ Edit Profile</button>}
+            {canManage&&editingProfile&&<div className="inline-editor-toolbar"><strong>✏️ Editing this profile</strong><span>Changes appear here after saving</span><button onClick={()=>{setEditingProfile(false);setEditRequested(false);}}>Exit editing</button></div>}
             {venue.is_verified && <div className="venue-verified">✓ Verified Business</div>}
             {venue.is_private && <div className="venue-private-badge">🔒 Private Venue</div>}
             {rankings.localFavorite && <div className="venue-local-favorite-badge">🏆 Local Favorite</div>}
@@ -600,9 +617,14 @@ export default function VenuePage() {
             <h2>About</h2>
             {canManage&&editingProfile&&<div className="inline-edit-form">
               <h3>Edit what customers see</h3>
-              {['name','description','phone','website','cover_photo_url'].map(field=><label key={field}>{field.replaceAll('_',' ')}
+              {['name','description','phone','website','cover_photo_url','address'].map(field=><label key={field}>{field.replaceAll('_',' ')}
                 {field==='description'?<textarea value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>:<input value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>}
               </label>)}
+              <label>Primary category<select value={profileDraft.categories?.[0]||'restaurant'} onChange={e=>setProfileDraft(d=>({...d,categories:[e.target.value,...(d.categories||[]).filter(x=>x!==e.target.value)]}))}>
+                {[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['events','Events'],['sports','Sports'],['outdoors','Outdoors'],['activities','Activities']].map(([id,label])=><option key={id} value={id}>{label}</option>)}
+              </select></label>
+              <fieldset className="inline-category-fieldset"><legend>Additional categories</legend>{[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['events','Events'],['sports','Sports'],['outdoors','Outdoors'],['activities','Activities']].filter(([id])=>id!==profileDraft.categories?.[0]).map(([id,label])=><label key={id}><input type="checkbox" checked={(profileDraft.categories||[]).includes(id)} onChange={e=>setProfileDraft(d=>({...d,categories:e.target.checked?[...d.categories,id]:d.categories.filter(x=>x!==id)}))}/>{label}</label>)}</fieldset>
+              <label>Subcategories (comma separated)<input value={(profileDraft.subcategories||[]).join(', ')} onChange={e=>setProfileDraft(d=>({...d,subcategories:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)}))}/></label>
               {editError&&<p role="alert">{editError}</p>}
               <div className="inline-edit-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save profile</button><button onClick={()=>setEditingProfile(false)}>Cancel</button></div>
             </div>}
