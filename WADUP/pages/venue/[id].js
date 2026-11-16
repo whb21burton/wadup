@@ -99,6 +99,38 @@ export default function VenuePage() {
   const activityTypes=[['trivia','Trivia night'],['game_night','Game / bingo night'],['karaoke','Karaoke'],['live_music','Live music'],['special_event','Special event'],['happy_hour','Happy hour'],['food_special','Food / drink special'],['other','Other']];
   const blankActivity=()=>({title:'',kind:'trivia',recurrence:'weekly',weekdays:[],event_date:'',start_time:'',end_time:'',description:'',source_url:'',verified:false,is_active:true});
 
+
+  const [profileTab,setProfileTab]=useState('reviews');
+  const [calendarMonth,setCalendarMonth]=useState(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1);});
+  const [calendarDay,setCalendarDay]=useState(()=>new Date().getDate());
+  const calendarCells=useMemo(()=>{
+    const year=calendarMonth.getFullYear(),month=calendarMonth.getMonth();
+    const offset=new Date(year,month,1).getDay();
+    const days=new Date(year,month+1,0).getDate();
+    return [...Array(offset).fill(null),...Array.from({length:days},(_,i)=>i+1)];
+  },[calendarMonth]);
+  const calendarEntries=useMemo(()=>{
+    const year=calendarMonth.getFullYear(),month=calendarMonth.getMonth();
+    const days=new Date(year,month+1,0).getDate();
+    const entries=[];
+    for(let day=1;day<=days;day++){
+      const date=new Date(year,month,day);
+      const key=[year,String(month+1).padStart(2,'0'),String(day).padStart(2,'0')].join('-');
+      for(const item of activitySchedule){
+        if(item.is_active===false)continue;
+        if(item.recurrence==='weekly'?(item.weekdays||[]).map(Number).includes(date.getDay()):item.event_date?.slice(0,10)===key){
+          entries.push({day,key,title:item.title,kind:item.kind,start:item.start_time?.slice(0,5),end:item.end_time?.slice(0,5),description:item.description,id:'activity-'+item.id});
+        }
+      }
+      for(const ev of events){
+        if(ev.start_time?.slice(0,10)===key){
+          entries.push({day,key,title:ev.title,kind:ev.event_type,start:ev.start_time?.slice(11,16),end:ev.end_time?.slice(0,10)===key?ev.end_time?.slice(11,16):'',description:ev.description,id:'event-'+ev.id});
+        }
+      }
+    }
+    return entries.sort((a,b)=>a.day-b.day||(a.start||'').localeCompare(b.start||''));
+  },[calendarMonth,activitySchedule,events]);
+
   const [sortMode,  setSortMode]  = useState('recent');
   const [rankings,  setRankings]  = useState({ trending: null, bestRated: null, localFavorite: false });
 
@@ -485,6 +517,18 @@ export default function VenuePage() {
       .inline-edit-actions button+button{background:#263a48;color:white}
       .inline-days{display:flex;gap:10px;flex-wrap:wrap}.inline-days label,.inline-check{display:flex!important;align-items:center;gap:5px}
       .inline-time-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      .wu-profile-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}
+      .wu-profile-tabs button{border:1px solid #0a7084;background:white;color:#073242;padding:14px 8px;border-radius:12px;font-weight:800;cursor:pointer}
+      .wu-profile-tabs button[aria-selected=true]{background:#00c8e5;color:#04151d}
+      .wu-calendar-nav{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:12px 0}
+      .wu-calendar-nav button{border:1px solid #a6c9d0;background:white;border-radius:8px;padding:9px 13px;cursor:pointer}
+      .wu-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+      .wu-calendar-weekday{text-align:center;color:#65717b;font-size:12px;font-weight:700}
+      .wu-calendar-day{min-height:58px;border:1px solid #e2e6e9;border-radius:9px;background:white;text-align:left;padding:7px 4px;cursor:pointer;min-width:0}
+      .wu-calendar-day[aria-pressed=true]{background:#e0faff;border-color:#00b8d2}
+      .wu-calendar-dot{display:block;background:#00b8d2;border-radius:5px;height:5px;width:65%;margin:5px auto}
+      .wu-calendar-entry{padding:12px;border-bottom:1px solid #e5e5e5}
+      .wu-calendar-entry strong{display:block}.wu-calendar-entry small{color:#64727d}
       .venue-activity-schedule{margin:16px 0}.venue-activity-schedule h3{font-size:19px;margin:0 0 12px}
       .venue-activity-item{display:flex;align-items:flex-start;gap:12px;padding:15px 0;border-bottom:1px solid #ddd}
       .venue-activity-symbol{font-size:25px}.venue-activity-info{flex:1;min-width:0}.venue-activity-info div{color:#68717a;font-size:14px;margin-top:5px}.venue-activity-info p{margin:7px 0 0;font-size:14px}
@@ -662,6 +706,24 @@ export default function VenuePage() {
             )}
           </section>
 
+          <nav className="wu-profile-tabs" aria-label="Venue profile sections">
+            <button type="button" aria-selected={profileTab==='reviews'} onClick={()=>setProfileTab('reviews')}>⭐ Reviews &amp; Rankings</button>
+            <button type="button" aria-selected={profileTab==='schedule'} onClick={()=>setProfileTab('schedule')}>📅 Schedule</button>
+          </nav>
+          {profileTab==='schedule'&&<section className="venue-section">
+            <div className="wu-calendar-nav">
+              <button type="button" aria-label="Previous month" onClick={()=>{setCalendarMonth(d=>new Date(d.getFullYear(),d.getMonth()-1,1));setCalendarDay(1);}}>‹</button>
+              <h2>{calendarMonth.toLocaleDateString('en-US',{month:'long',year:'numeric'})}</h2>
+              <button type="button" aria-label="Next month" onClick={()=>{setCalendarMonth(d=>new Date(d.getFullYear(),d.getMonth()+1,1));setCalendarDay(1);}}>›</button>
+            </div>
+            <div className="wu-calendar-grid">
+              {scheduleDays.map((d,i)=><div className="wu-calendar-weekday" key={i}>{d}</div>)}
+              {calendarCells.map((day,i)=>day?<button type="button" key={i} className="wu-calendar-day" aria-pressed={calendarDay===day} onClick={()=>setCalendarDay(day)}><strong>{day}</strong>{calendarEntries.some(e=>e.day===day)&&<span className="wu-calendar-dot"/>}</button>:<div key={i}/>)}
+            </div>
+            <h3>{new Date(calendarMonth.getFullYear(),calendarMonth.getMonth(),calendarDay).toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</h3>
+            {calendarEntries.filter(e=>e.day===calendarDay).length===0?<p className="venue-empty-note">Nothing scheduled for this day.</p>:calendarEntries.filter(e=>e.day===calendarDay).map(e=><div className="wu-calendar-entry" key={e.id}><strong>{e.title}</strong><small>{e.kind?.replaceAll('_',' ')}{e.start?' · '+e.start:''}{e.end?' – '+e.end:''}</small>{e.description&&<p>{e.description}</p>}</div>)}
+          </section>}
+          {profileTab==='schedule'&&<>
           <section className="venue-section">
             <h2>What&apos;s Happening</h2>
             {canManage&&<button className="inline-edit-trigger" onClick={()=>{setEditingActivity(blankActivity());setEditError('');}}>+ Add activity or special</button>}
@@ -718,6 +780,8 @@ export default function VenuePage() {
             )}
           </section>
 
+          </>}
+          {profileTab==='reviews'&&<>
           <section className="venue-section">
             <div className="reviews-header">
               <h2>Reviews</h2>
@@ -814,6 +878,8 @@ export default function VenuePage() {
               </div>
             )}
           </section>
+
+          </>}
 
           {!venue.owner_id && (
             <section className="venue-section claim-section">
