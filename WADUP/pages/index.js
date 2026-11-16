@@ -278,13 +278,21 @@ export default function WadUp() {
   };
   const [feedRevision, setFeedRevision] = useState(0);
   const [feedNow, setFeedNow] = useState(() => Date.now());
-  const [openDropdown, setOpenDropdown] = useState(null); // which category's subcategory list is expanded
+  const [openDropdown, setOpenDropdown] = useState(null);
+  const subcategoryByChipRef = useRef({});
+  const openDropdownRef = useRef(null);
+  useEffect(() => { subcategoryByChipRef.current = subcategoryByChip; }, [subcategoryByChip]);
+  useEffect(() => { openDropdownRef.current = openDropdown; }, [openDropdown]); // which category's subcategory list is expanded
   const [trendingNow,    setTrendingNow]    = useState([]);
   const [topRanked,      setTopRanked]      = useState([]);
   const [sidebarLoading, setSidebarLoading] = useState(true);
   const [mapReady,       setMapReady]       = useState(false);
   const [mapLoadError, setMapLoadError] = useState('');
   const [showSplash,     setShowSplash]     = useState(true);
+  // A venue-profile return must never show the welcome screen again.
+  useEffect(() => {
+    try { if (window.sessionStorage.getItem('wadup_map_state')) setShowSplash(false); } catch (e) { /* storage unavailable */ }
+  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [wadupFeedExpanded, setWadupFeedExpanded] = useState(true);
   const [zoomClass,      setZoomClass]      = useState('zoom-near');
@@ -1681,6 +1689,9 @@ export default function WadUp() {
             activeDateRef.current = state.date;
             setActiveDate(state.date);
           }
+          if (state.subcategories && typeof state.subcategories === 'object') setSubcategoryByChip(state.subcategories);
+          if (state.dropdown) setOpenDropdown(state.dropdown);
+          setShowSplash(false);
           sessionStorage.removeItem('wadup_map_state');
         }
       } catch (e) { /* a corrupt/unreadable saved state just means no restore */ }
@@ -1702,6 +1713,8 @@ export default function WadUp() {
           zoom: m.getZoom(),
           chip: activeCategoryRef.current,
           date: activeDateRef.current,
+          subcategories: subcategoryByChipRef.current,
+          dropdown: openDropdownRef.current,
         };
         sessionStorage.setItem('wadup_map_state', JSON.stringify(state));
       };
