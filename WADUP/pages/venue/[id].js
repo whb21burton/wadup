@@ -598,6 +598,14 @@ export default function VenuePage() {
 
           <section className="venue-section">
             <h2>About</h2>
+            {canManage&&editingProfile&&<div className="inline-edit-form">
+              <h3>Edit what customers see</h3>
+              {['name','description','phone','website','cover_photo_url'].map(field=><label key={field}>{field.replaceAll('_',' ')}
+                {field==='description'?<textarea value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>:<input value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>}
+              </label>)}
+              {editError&&<p role="alert">{editError}</p>}
+              <div className="inline-edit-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save profile</button><button onClick={()=>setEditingProfile(false)}>Cancel</button></div>
+            </div>
             {venue.description && <p className="venue-description">{venue.description}</p>}
 
             {schedule.length > 0 && (
