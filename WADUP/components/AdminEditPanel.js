@@ -226,13 +226,32 @@ export default function AdminEditPanel({
 
   return (
     <>
+      <style jsx global>{`
+.wadup-venue-studio{box-sizing:border-box;background:#07111f!important;color:#e6f3f8!important}
+.wadup-venue-studio *{box-sizing:border-box}
+.wadup-venue-studio .edit-panel-body{display:block!important;max-width:none!important;width:100%!important;min-width:0!important}
+.wadup-venue-studio .edit-panel-cover{height:140px!important;margin:0 0 22px!important;border-radius:12px!important;display:flex;align-items:center;justify-content:center}
+.wadup-venue-studio .studio-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 22px;max-width:850px}
+.wadup-venue-studio .studio-field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.wadup-venue-studio .studio-full{grid-column:1/-1}
+.wadup-venue-studio .studio-field>label{display:block!important;margin:0!important;font-size:12px!important;font-weight:700!important;color:#a8c1d1!important;text-transform:uppercase}
+.wadup-venue-studio .studio-field>input,.wadup-venue-studio .studio-field>textarea{display:block!important;width:100%!important;max-width:100%!important;min-width:0!important;height:auto!important;min-height:44px!important;margin:0!important;padding:12px 14px!important;border:1px solid #315368!important;border-radius:9px!important;background:#111e2d!important;color:#eff9ff!important;font-size:14px!important}
+.wadup-venue-studio .studio-field>textarea{min-height:105px!important;resize:vertical!important;font-family:inherit!important}
+.wadup-venue-studio .studio-help{color:#93adbd;font-size:12px}
+.wadup-venue-studio .studio-footer{position:sticky;bottom:-24px;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0;background:#07111f;border-top:1px solid #214154;margin-top:24px}
+.wadup-venue-studio .studio-footer .edit-panel-save-btn{width:auto!important;min-width:180px!important;margin:0!important;padding:13px 20px!important;background:#00c6e8!important;color:#03111a!important;border-radius:9px!important}
+.wadup-venue-studio .admin-emoji-row{margin:0!important}
+.wadup-venue-studio .edit-panel-header{min-height:70px!important}
+.wadup-venue-studio select,.wadup-venue-studio input[type=date],.wadup-venue-studio input[type=time]{background:#132535;color:#f1faff;border:1px solid #315368;border-radius:8px;padding:10px}
+@media(max-width:700px){.wadup-venue-studio .studio-form-grid{grid-template-columns:1fr}.wadup-venue-studio .studio-footer{flex-direction:column;align-items:stretch}}
+`}</style>
       {/* Skipped entirely while relocating — this is a transparent,
           full-viewport, very-high-z-index click-catcher (click outside the
           panel to close it), which otherwise sits directly on top of the
           map and swallows the exact click "Click map to move" is waiting
           for before it ever reaches Google Maps' own click listener. */}
-      {!relocating && <div className="edit-panel-overlay" onClick={onClose} />}
-      <div className="edit-panel" onClick={(e) => e.stopPropagation()} style={{position:'fixed',left:pos?.left??'10vw',top:pos?.top??'7vh',right:'auto',bottom:'auto',width:'min(1080px,80vw)',height:'min(830px,86vh)',maxWidth:'95vw',maxHeight:'92vh',resize:'both',overflow:'hidden',display:'flex',flexDirection:'column',zIndex:10020,borderRadius:16}}>
+      {!relocating && <div className="edit-panel-overlay" aria-hidden="true" />}
+      <div className="edit-panel wadup-venue-studio" onClick={(e) => e.stopPropagation()} style={{position:'fixed',left:pos?.left??'5vw',top:pos?.top??'5vh',right:'auto',bottom:'auto',width:'min(1050px,90vw)',height:'min(800px,88vh)',maxWidth:'95vw',maxHeight:'92vh',resize:'both',overflow:'hidden',display:'flex',flexDirection:'column',zIndex:10020,borderRadius:16}}>
         <div className="edit-panel-header" style={{cursor:'move',userSelect:'none',flexShrink:0}} onMouseDown={e=>{if(e.button!==0||e.target.closest('button'))return;const rect=e.currentTarget.parentElement.getBoundingClientRect();drag.current={x:e.clientX,y:e.clientY,left:rect.left,top:rect.top};e.preventDefault();}}>
           <span>✏️ Venue Studio · {name}</span>
           <button className="edit-panel-close" onClick={onClose} aria-label="Close">✕</button>
@@ -243,15 +262,15 @@ export default function AdminEditPanel({
           <div style={{display:tab==='profile'?'block':'none'}}>
           <div
             className="edit-panel-cover"
-            style={venue.cover_photo_url ? { backgroundImage: `url(${venue.cover_photo_url})` } : undefined}
+            style={cover ? { backgroundImage: `url(${cover})` } : undefined}
           >
-            {!venue.cover_photo_url && <span>📸 No cover photo</span>}
+            {!cover && <span>📸 Cover photo preview</span>}
           </div>
 
-          <label>Name</label>
+          <div className="studio-form-grid"><div className="studio-field studio-full"><label>Name</label>
           <input value={name} onChange={(e) => setName(e.target.value)} />
 
-          <label>Emoji</label>
+          </div><div className="studio-field studio-full"><label>Map emoji</label>
           <div className="admin-emoji-row">
             <button type="button" className="admin-emoji-current" onClick={() => setPickerOpen(v => !v)}>
               {emoji || '📍'}
@@ -274,12 +293,12 @@ export default function AdminEditPanel({
             </div>
           )}
 
-          <label>Address</label><input value={address} onChange={e=>setAddress(e.target.value)}/>
-          <label>Phone</label><input value={phone} onChange={e=>setPhone(e.target.value)}/>
-          <label>Website</label><input value={website} onChange={e=>setWebsite(e.target.value)}/>
-          <label>Description</label><textarea rows={4} value={description} onChange={e=>setDescription(e.target.value)} style={{width:'100%'}}/>
-          <label>Cover photo URL</label><input value={cover} onChange={e=>setCover(e.target.value)}/>
-          </div><div style={{display:tab==='categories'?'block':'none'}}>
+          </div><div className="studio-field studio-full"><label>Street address</label><input value={address} onChange={e=>setAddress(e.target.value)}/>
+          </div><div className="studio-field"><label>Phone</label><input value={phone} onChange={e=>setPhone(e.target.value)}/>
+          </div><div className="studio-field"><label>Website</label><input value={website} onChange={e=>setWebsite(e.target.value)}/>
+          </div><div className="studio-field studio-full"><label>Description</label><textarea rows={4} value={description} onChange={e=>setDescription(e.target.value)} style={{width:'100%'}}/>
+          </div><div className="studio-field studio-full"><label>Cover photo URL</label><input value={cover} onChange={e=>setCover(e.target.value)}/>
+          </div></div></div><div style={{display:tab==='categories'?'block':'none'}}>
           <label>Primary category</label>
           <select value={categories[0]||''} onChange={e=>setCategories(prev=>[e.target.value,...prev.filter(x=>x!==e.target.value)])}>{PANEL_CATEGORIES.map(cat=><option key={cat.id} value={cat.id}>{cat.label}</option>)}</select>
           <label>Additional categories</label>
@@ -288,8 +307,8 @@ export default function AdminEditPanel({
               <label key={c.id} className="admin-checkbox-item">
                 <input
                   type="checkbox"
-                  checked={categories.includes(c.id)}
-                  onChange={() => setCategories(prev => toggleInArray(prev, c.id))}
+                  checked={categories.includes(c.id)} disabled={categories[0]===c.id}
+                  onChange={() => setCategories(prev => prev[0]===c.id?prev:toggleInArray(prev,c.id))}
                 />
                 {c.label}
               </label>
@@ -418,9 +437,9 @@ export default function AdminEditPanel({
           </div>}
           {error && <div className="admin-modal-error">⚠️ {error}</div>}
 
-          <button className="edit-panel-save-btn" onClick={save} disabled={saving || deleting || !name || !categories.length}>
-            {saving ? 'Saving…' : '💾 Save Changes'}
-          </button>
+          <div className="studio-footer"><span className="studio-help">Venue changes save separately from schedule entries.</span><button className="edit-panel-save-btn" onClick={save} disabled={saving || deleting || !name || !categories.length}>
+            {saving ? 'Saving…' : '💾 Save Venue'}
+          </button></div>
           {tab==='admin'&&<button className="edit-panel-delete-btn" onClick={del} disabled={saving || deleting}>
             {deleting ? 'Deleting…' : '🗑️ Delete Venue'}
           </button>}
