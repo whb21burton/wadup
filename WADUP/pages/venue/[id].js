@@ -177,7 +177,7 @@ export default function VenuePage() {
 
   const requireLogin = useCallback(() => setRightSidebarOpen(true), []);
   useEffect(()=>{if(router.isReady)setEditRequested(router.query.edit==='1');},[router.isReady,router.query.edit]);
-  const startEditing=useCallback((section='details')=>{
+  const startEditing=useCallback((section=null)=>{
     if(!venue)return;
     setProfileDraft({name:venue.name||'',description:venue.description||'',phone:venue.phone||'',website:venue.website||'',cover_photo_url:venue.cover_photo_url||'',address:venue.address||'',categories:venueCategories(venue),subcategories:Array.isArray(venue.subcategories)?venue.subcategories:(venue.subcategory?[venue.subcategory]:[])});
     setEditSection(section);setEditingProfile(true);setEditError('');
@@ -203,7 +203,9 @@ export default function VenuePage() {
   const saveInlineProfile=async()=>{
     setEditBusy(true);setEditError('');
     try{
-      const result=await sendEdit('/api/admin/venue-profile',{venueId:id,updates:profileDraft});
+      const fields=editSection==='identity'?['name']:editSection==='about'?['description','phone','website','cover_photo_url']:['address','categories','subcategories'];
+      const updates=Object.fromEntries(fields.map(field=>[field,profileDraft[field]]));
+      const result=await sendEdit('/api/admin/venue-profile',{venueId:id,updates});
       setVenue(result.venue);setEditingProfile(false);setEditSection(null);setEditRequested(false);
     }catch(e){setEditError(e.message);}finally{setEditBusy(false);}
   };
@@ -561,8 +563,8 @@ export default function VenuePage() {
           </div>
 
           <div className="venue-header-content">
-            <h1 className="venue-name">{venue.name}</h1>
-            {canManage&&editingProfile&&<div className="inline-editor-toolbar"><strong>✏️ Choose what to edit</strong><span>The public profile stays visible until you select a section.</span><button onClick={()=>setEditSection(editSection==='details'?null:'details')}>{editSection==='details'?'Hide business details':'Business details'}</button><button onClick={()=>setEditSection(editSection==='categories'?null:'categories')}>{editSection==='categories'?'Hide categories':'Categories & location'}</button><button onClick={()=>{setEditingProfile(false);setEditSection(null);}}>Done</button></div>}
+            <h1 className="venue-name" onClick={()=>{if(canManage&&editingProfile)setEditSection('identity');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined} title={canManage&&editingProfile?'Tap to edit venue name':undefined}>{venue.name}{canManage&&editingProfile?' ✎':''}</h1>
+            
             {venue.is_verified && <div className="venue-verified">✓ Verified Business</div>}
             {venue.is_private && <div className="venue-private-badge">🔒 Private Venue</div>}
             {rankings.localFavorite && <div className="venue-local-favorite-badge">🏆 Local Favorite</div>}
@@ -599,8 +601,8 @@ export default function VenuePage() {
               </div>
             )}
 
-            <div className="venue-location">📍 {venue.city}{venue.state ? `, ${venue.state}` : ''}</div>
-            <div className="venue-category-line">
+            <div className="venue-location" onClick={()=>{if(canManage&&editingProfile)setEditSection('categories');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>📍 {venue.city}{venue.state ? `, ${venue.state}` : ''}{canManage&&editingProfile?' ✎':''}</div>
+            <div className="venue-category-line" onClick={()=>{if(canManage&&editingProfile)setEditSection('categories');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>
               <div className="venue-category-badges">
                 {venueCategories(venue).map(c => (
                   <span key={c} className="venue-category-badge">{CATEGORY_LABELS[c] || c}</span>
@@ -652,14 +654,14 @@ export default function VenuePage() {
           )}
 
           <section className="venue-section">
-            <h2>About</h2>
+            <h2 onClick={()=>{if(canManage&&editingProfile)setEditSection('about');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>About {canManage&&editingProfile?'✎':''}</h2>
             {canManage&&editingProfile&&editSection&&<div className="inline-edit-form">
-              <h3>{editSection==='details'?'Business details':'Categories & location'}</h3>
-              {(editSection==='details'?['name','description','phone','website','cover_photo_url']:['address']).map(field=><label key={field}>{field.replaceAll('_',' ')}
+              <h3>{editSection==='identity'?'Venue name':editSection==='about'?'About & contact':'Categories & location'}</h3>
+              {(editSection==='identity'?['name']:editSection==='about'?['description','phone','website','cover_photo_url']:['address']).map(field=><label key={field}>{field.replaceAll('_',' ')}
                 {field==='description'?<textarea value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>:<input value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>}
               </label>)}
               {editSection==='categories'&&<><label>Primary category<select value={profileDraft.categories?.[0]||'restaurant'} onChange={e=>setProfileDraft(d=>({...d,categories:['restaurant','nightlife','activities'].includes(e.target.value)?[e.target.value,...(d.categories||[]).filter(x=>x!==e.target.value&&['restaurant','nightlife','activities'].includes(x))]:[e.target.value]}))}>
-                {[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['events','Events'],['sports','Sports'],['outdoors','Outdoors'],['activities','Activities']].map(([id,label])=><option key={id} value={id}>{label}</option>)}
+                {[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['activities','Activities']].map(([id,label])=><option key={id} value={id}>{label}</option>)}
               </select></label>
               <fieldset className="inline-category-fieldset"><legend>Additional categories</legend>{[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['activities','Activities']].filter(([id])=>id!==profileDraft.categories?.[0] && ['restaurant','nightlife','activities'].includes(profileDraft.categories?.[0])).map(([id,label])=><label key={id}><input type="checkbox" checked={(profileDraft.categories||[]).includes(id)} onChange={e=>setProfileDraft(d=>({...d,categories:e.target.checked?[...d.categories,id]:d.categories.filter(x=>x!==id)}))}/>{label}</label>)}</fieldset>
               <label>Subcategories (comma separated)<input value={(profileDraft.subcategories||[]).join(', ')} onChange={e=>setProfileDraft(d=>({...d,subcategories:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)}))}/></label></>}
