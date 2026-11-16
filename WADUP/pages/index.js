@@ -283,6 +283,7 @@ export default function WadUp() {
   const [topRanked,      setTopRanked]      = useState([]);
   const [sidebarLoading, setSidebarLoading] = useState(true);
   const [mapReady,       setMapReady]       = useState(false);
+  const [mapLoadError, setMapLoadError] = useState('');
   const [showSplash,     setShowSplash]     = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [wadupFeedExpanded, setWadupFeedExpanded] = useState(true);
@@ -1635,7 +1636,8 @@ export default function WadUp() {
     mapInitStarted.current = true;
 
     const initMap = () => {
-      if (!mapRef.current) return;
+      if (!mapRef.current || !window.google?.maps) return;
+      setMapLoadError('');
 
       const map = new window.google.maps.Map(mapRef.current, {
         center: { lat: userPos.lat, lng: userPos.lng },
@@ -1758,19 +1760,30 @@ export default function WadUp() {
       setTimeout(() => fetchTM(), 300);
     };
 
-    // Load Google Maps script
-    if (window.google?.maps) {
+    // Load Google Maps once; navigating back from a venue can leave an
+    // in-flight script in the document, so reuse it instead of injecting a
+    // second copy (which can invalidate the callback and break the map).
+    if (window.google?.maps?.Map) {
       initMap();
     } else {
       window.__wadupMapInit = initMap;
-      const script = document.createElement('script');
-      // loading=async is required alongside the callback= bootstrap, or the
-      // Maps JS API logs "Google Maps JavaScript API has been loaded
-      // directly without loading=async" on every single page view.
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&callback=__wadupMapInit&v=weekly&loading=async`;
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
+      window.gm_authFailure = () => {
+        setMapLoadError('Google Maps rejected this website or API key. Check the Maps JavaScript API referrer restrictions for ' + window.location.hostname + '.');
+        setShowSplash(false);
+      };
+      const existing = document.querySelector('script[data-wadup-maps="true"]');
+      if (!existing) {
+        const script = document.createElement('script');
+        script.dataset.wadupMaps = 'true';
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&callback=__wadupMapInit&v=weekly&loading=async`;
+        script.async = true;
+        script.defer = true;
+        script.onerror = () => {
+          setMapLoadError('Google Maps could not download. Check the network connection and reload.');
+          setShowSplash(false);
+        };
+        document.head.appendChild(script);
+      }
     }
 
     // Geolocation can resolve after the map has initialized. Update the
@@ -2403,7 +2416,10 @@ export default function WadUp() {
         <div className="map-frame">
           <div ref={mapRef} id="map" />
 
-          {!mapReady && !showSplash && (
+          {mapLoadError && <div role="alert" style={{position:'absolute',top:20,left:20,right:20,zIndex:20,padding:18,borderRadius:12,background:'#071522',color:'#fff',border:'1px solid #00c7e8',maxWidth:600,margin:'auto'}}>
+            <strong>Map unavailable</strong><p>{mapLoadError}</p><button type="button" onClick={()=>window.location.reload()} style={{padding:'9px 16px',background:'#00c7e8',border:0,borderRadius:8}}>Retry map</button>
+          </div>}
+          {!mapReady && !mapLoadError && !showSplash && (
             <div className="map-loading">
               <div className="cover-spin" />
             </div>
