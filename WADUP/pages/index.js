@@ -2458,6 +2458,7 @@ export default function WadUp() {
               onCancelRelocate={cancelRelocate}
               onClose={closeEditPanel}
               onSave={saveEditPanelVenue}
+              onScheduleRequest={(payload) => authedFetchIndex('/api/admin/venue-schedule', payload)}
               onDelete={deleteEditPanelVenue}
             />
           )}
