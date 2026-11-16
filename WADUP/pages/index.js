@@ -267,7 +267,7 @@ export default function WadUp() {
   const matchesSelectedVenue = (venue, date) => {
     const chip = activeCategoryRef.current;
     return chip === 'wadup'
-      ? venueEventsRef.current.some(e => e.venue_id === venue.id && (e.start_time || '').slice(0, 10) === date && (date !== localIsoDate() || !e.end_time || new Date(e.end_time).getTime() >= Date.now()))
+      ? venueEventsRef.current.some(e => e.venue_id === venue.id && (e.start_time || '').slice(0, 10) === date && !['happy_hour', 'specials'].includes(e.event_type) && (date !== localIsoDate() || !e.end_time || new Date(e.end_time.replace(' ', 'T')).getTime() >= Date.now()))
       : chip !== 'sports' && venueMatchesChip(chip, venue, activeSubcategoryRef.current[chip] || []) &&
         (chip !== 'events' || !!getVenueEventForDay(venue.id, date));
   };
@@ -588,7 +588,7 @@ export default function WadUp() {
       if (overlays.current[v.id]) overlays.current[v.id].setMap(null);
     });
 
-    ranked.forEach(v => dropPinForVenue(v, v._areaRank));
+    ranked.forEach(v => dropPinForVenue(v, chip === 'wadup' ? null : v._areaRank));
 
     // Keep every eligible restaurant visible as a tiny discovery dot at wide zooms.
     // Never suppress venues based on screen-space spacing or a per-zoom cap.
@@ -626,9 +626,11 @@ export default function WadUp() {
       combined = [...ranked.map(v => ({ ...v, _type: 'venue' })), ...tmInBounds]
         .map((item, i) => ({ ...item, _areaRank: i + 1 }));
     }
-    // A venue can match several categories, but appears only once by ID.
-    const seen = new Set();
-    setTopRanked(combined.filter(item => { const key = item._type + ':' + item.id; if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 10));
+    // The WADUP opening view has no ranking; legacy ranking state is only used by other features.
+    if (chip !== 'wadup') {
+      const seen = new Set();
+      setTopRanked(combined.filter(item => { const key = item._type + ':' + item.id; if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 10));
+    }
   }, []);
 
   useEffect(() => { updateAreaRanksRef.current = updateAreaRanks; }, [updateAreaRanks]);
@@ -813,7 +815,7 @@ export default function WadUp() {
     const cats = venueCategories(v);
     const isParkPin = cats.includes('outdoors') && /park/i.test(v.name || '');
     const isGolfPin = cats.includes('activities') && (/golf/i.test(v.name || '') || /golf/i.test(v.subcategory || ''));
-    const specialIcon = isParkPin ? '🌳' : isGolfPin ? '⛳' : null;
+    const specialIcon = activeCategoryRef.current === 'wadup' ? (EVENT_TYPE_ICON[getVenueEventForDay(v.id, activeDateRef.current)?.event_type] || '🎉') : isParkPin ? '🌳' : isGolfPin ? '⛳' : null;
     const tier = specialIcon ? null : getVenueTier(areaRank);
     const rankStyle = tier === 'top10' ? getRankStyle(areaRank) : null;
 
@@ -1411,7 +1413,7 @@ export default function WadUp() {
     setFeedRevision(v => v + 1);
 
     // Bulk-fetch venue_events for today through the end of the day-strip's
-    // 10-day range once (rather than one query per pin) — venueEventsRef
+    // 7-day range once (rather than one query per pin) — venueEventsRef
     // backs the Events chip's per-day pin gating (getVenueEventForDay) and
     // the live-note/event-badge rendering in dropVenuePin/dropBarPin;
     // eventVenueIdsTodayRef stays a plain today-only Set for the existing
@@ -1424,7 +1426,7 @@ export default function WadUp() {
     // tomorrow, dropping tonight's shows out of the window entirely.
     const now = new Date();
     const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
-    const rangeEnd = new Date(now); rangeEnd.setHours(23, 59, 59, 999); rangeEnd.setDate(rangeEnd.getDate() + 9);
+    const rangeEnd = new Date(now); rangeEnd.setHours(23, 59, 59, 999); rangeEnd.setDate(rangeEnd.getDate() + 6);
     const pad2 = (n) => String(n).padStart(2, '0');
     const asNaive = (d) => `${localIsoDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
     const { data: eventRows, error: eventsError } = await supabase
