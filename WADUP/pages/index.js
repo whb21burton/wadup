@@ -2021,11 +2021,12 @@ export default function WadUp() {
   );
 
   const renderDayStrip = (containerClass) => (
-    <div className={containerClass}>
+    <div className={containerClass} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4, width: '100%', padding: '10px 8px', boxSizing: 'border-box', overflow: 'visible' }}>
       {days.map(d => (
         <button
           key={d.iso}
           className={`day-btn${activeDate === d.iso ? ' active' : ''}`}
+          style={{ minWidth: 0, width: '100%', paddingLeft: 0, paddingRight: 0, boxSizing: 'border-box' }}
           onClick={() => onDayClick(d.iso)}
         >
           <span className="day-name">{d.label}</span>
@@ -2377,7 +2378,7 @@ export default function WadUp() {
           onTransitionEnd={(e) => { if (e.propertyName === 'width') nudgeMap(); }}
         >
           <div className="sidebar-header">
-            <div className="sidebar-logo">WadUp</div>
+            <div aria-hidden="true" />
             <button
               className="sidebar-toggle"
               onClick={() => setSidebarCollapsed(v => !v)}
@@ -2387,17 +2388,13 @@ export default function WadUp() {
             </button>
           </div>
 
-          <div className="sidebar-topbar">
-            {renderSearchTrigger('sidebar-search-trigger')}
-            <Link href="/discover" className="sidebar-discover-btn">🔥 Discover</Link>
-          </div>
-
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}>
+            {renderDayStrip('sidebar-days')}
             <button type="button" onClick={() => { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); setOpenDropdown(null); filterPins(); }}
-              style={{ width: '100%', textAlign: 'left', border: 0, background: activeChip === 'wadup' ? '#24252d' : 'transparent', color: '#fff', padding: '14px 18px', cursor: 'pointer', fontWeight: 800, fontSize: 20 }}>⚡ WADUP <span style={{ display: 'block', color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>What's happening around you</span></button>
-            {activeChip === 'wadup' && <>{renderDayStrip('sidebar-days')}{renderWadupFeed()}</>}
+              aria-label="WADUP happenings" aria-pressed={activeChip === 'wadup'}
+              style={{ display: 'block', width: '100%', textAlign: 'center', border: 0, background: 'radial-gradient(ellipse at 50% 100%, #055b70 0%, #00313e 42%, #00101b 80%)', padding: '15px 12px 18px', cursor: 'pointer', color: '#e9ffff', fontSize: 46, letterSpacing: 3, fontWeight: 1000, lineHeight: 1.2, textShadow: '0 0 6px #3ef5ff, 0 0 18px #00d9f5, 0 0 32px #00b7dc', fontFamily: 'Impact, Arial Narrow, sans-serif' }}>WADUP</button>
+            {activeChip === 'wadup' && renderWadupFeed()}
             {renderDesktopCategoryList()}
-            {activeChip !== 'wadup' && renderDayStrip('sidebar-days')}
           </div>
         </aside>
 
@@ -2422,10 +2419,9 @@ export default function WadUp() {
           {/* Mobile HUD */}
           <div className="hud">
 
-            {renderSearchTrigger('search-trigger')}
-            <button type="button" onClick={() => { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); filterPins(); }} style={{ background: activeChip === 'wadup' ? '#fffc00' : '#151b27', color: activeChip === 'wadup' ? '#000' : '#fff', border: 0, borderRadius: 14, padding: '9px 16px', fontWeight: 800, margin: '6px 10px' }}>⚡ WADUP</button>
-            {renderChips('chips')}
             {renderDayStrip('day-strip')}
+            <button type="button" onClick={() => { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); filterPins(); }} aria-label="WADUP happenings" style={{ display: 'block', width: '100%', background: 'radial-gradient(ellipse at 50% 100%, #055b70, #00101b 80%)', color: '#e9ffff', textShadow: '0 0 7px #3ef5ff, 0 0 22px #00c7f2', fontSize: 30, fontWeight: 1000, fontFamily: 'Impact, Arial Narrow, sans-serif', border: 0, padding: 8 }}>WADUP</button>
+            {renderChips('chips')}
 
             <div className={`trending-panel${sheetExpanded ? ' expanded' : ''}`}>
               <div
