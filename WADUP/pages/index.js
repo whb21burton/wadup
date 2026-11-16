@@ -2459,16 +2459,7 @@ export default function WadUp() {
               </div>
             </div>
 
-            <nav className="bottom-nav">
-              <div className="bottom-nav-item active" aria-current="page">
-                <span className="bottom-nav-icon">🗺️</span>
-                <span className="bottom-nav-label">Map</span>
-              </div>
-              <Link href="/discover" className="bottom-nav-item">
-                <span className="bottom-nav-icon">🔥</span>
-                <span className="bottom-nav-label">Discover</span>
-              </Link>
-            </nav>
+
           </div>
 
           {editPanelVenue && (
