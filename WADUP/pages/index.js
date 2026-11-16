@@ -939,9 +939,6 @@ export default function WadUp() {
     // (defined once at map init) is the bridge back into React state. Same
     // markup serves both the click-triggered InfoWindow and the desktop
     // hover popup, since both go through this same iwHtml/openPopup path.
-    const editBtnHtml = adminRoleRef.current
-      ? `<button onclick="window.__wadupEditVenue('${v.id}')" class="popup-edit-venue-btn">✏️ Edit Venue</button>`
-      : '';
 
     // Performer/event-time block, shown above the usual type/rating/address
     // lines whenever this pin only exists because of a venue_events row for
@@ -961,8 +958,7 @@ export default function WadUp() {
         ${ratingHtml}
         ${badgesHtml}
         <div class="popup-address">📍 ${escapeHtml(v.address)}</div>
-        <a class="popup-view-reviews" href="/venue/${encodeURIComponent(v.id)}">View Reviews</a>
-        ${editBtnHtml}
+        <a class="popup-view-reviews" href="/venue/${encodeURIComponent(v.id)}">👀 CHECK IT OUT</a>
       </div>`;
 
     const offsetPos = getOffsetPosition(v.lat, v.lng);
@@ -1151,9 +1147,6 @@ export default function WadUp() {
     const flameHtml = flameEmoji
       ? `<div class="popup-flame">${flameEmoji} ${flameLevel === 3 ? 'Packed!' : flameLevel === 2 ? 'Getting Busy' : 'Getting There'}</div>`
       : '';
-    const editBtnHtml = adminRoleRef.current
-      ? `<button onclick="window.__wadupEditVenue('${v.id}')" class="popup-edit-venue-btn">✏️ Edit Venue</button>`
-      : '';
 
     // Same performer/event-time block as dropVenuePin — see its comment.
     const eventPopupHtml = (eventsChipActive && todayEvent) ? `
@@ -1170,8 +1163,7 @@ export default function WadUp() {
         ${ratingHtml}
         ${flameHtml}
         <div class="popup-address">📍 ${escapeHtml(v.address)}</div>
-        <a class="popup-view-reviews" href="/venue/${encodeURIComponent(v.id)}">View Reviews</a>
-        ${editBtnHtml}
+        <a class="popup-view-reviews" href="/venue/${encodeURIComponent(v.id)}">👀 CHECK IT OUT</a>
       </div>`;
 
     const offsetPos = getOffsetPosition(v.lat, v.lng);
