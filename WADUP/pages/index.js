@@ -1744,7 +1744,7 @@ export default function WadUp() {
       // Re-rank only when the map settles. bounds_changed fires repeatedly
       // during pan/zoom and rebuilding every pin while tiles load can make
       // Google Maps feel slow or unresponsive.
-      map.addListener('idle', () => updateAreaRanks());
+      map.addListener('idle', () => { updateAreaRanks(); setFeedRevision(v => v + 1); });
 
       setMapReady(true);
 
