@@ -74,6 +74,7 @@ export const CATEGORY_CHIPS = [
     { id: 'Paddleboarding', label: '🏄 Paddleboarding' },
     { id: 'Rock Climbing', label: '🧗 Outdoor Climbing' },
   ]},
+  { id: 'must-see', label: '⭐ Must-See', subcategories: [] },
   { id: 'activities', label: '🎳 Activities', subcategories: [
     { id: 'Bowling', label: '🎳 Bowling' },
     { id: 'Golf', label: '⛳ Golf Courses' },
@@ -156,6 +157,7 @@ export const CATEGORY_LABELS = {
   sports: '🏟️ Sports',
   outdoors: '🌳 Outdoors',
   activities: '🎳 Activities',
+  'must-see': '⭐ Must-See',
 };
 
 // Shared by every admin-facing venue emoji picker (pages/admin/venues.js,
