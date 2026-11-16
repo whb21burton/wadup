@@ -1,0 +1,4 @@
+# Owner review requested for Wadup category definitions and matching rules.
+/WADUP/lib/data.js @whb21burton
+/WADUP/scripts/check-category-lock.cjs @whb21burton
+/.github/workflows/category-lock.yml @whb21burton
