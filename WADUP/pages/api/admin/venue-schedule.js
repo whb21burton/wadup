@@ -4,8 +4,8 @@ import { canAccessCity } from '../../../lib/admin';
 
 const KINDS = new Set(['trivia','game_night','karaoke','live_music','special_event','happy_hour','food_special','other']);
 const DAYS = new Set([0,1,2,3,4,5,6]);
-const TIME = /^([01]\\d|2[0-3]):[0-5]\\d$/;
-const DATE = /^\\d{4}-\\d{2}-\\d{2}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = value => typeof value === 'string' ? value.trim() : '';
 
