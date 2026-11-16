@@ -1615,8 +1615,8 @@ export default function WadUp() {
       // freshly-computed tier/rank — no need to drop this one pin directly.
       filterPinsRef.current?.();
     }
-    closeEditPanel();
-  }, [authedFetchIndex, editPanelVenue, flashMapSuccess, removePinFromMap, closeEditPanel]);
+    setEditPanelVenue(updated);
+  }, [authedFetchIndex, editPanelVenue, flashMapSuccess, removePinFromMap]);
 
   const deleteEditPanelVenue = useCallback(async () => {
     if (!editPanelVenue) return;
