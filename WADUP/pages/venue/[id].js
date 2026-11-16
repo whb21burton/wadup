@@ -85,6 +85,17 @@ export default function VenuePage() {
   const [reviews,   setReviews]   = useState([]);
   const [events,    setEvents]    = useState([]);
   const [schedule,  setSchedule]  = useState([]);
+  const [activitySchedule,setActivitySchedule]=useState([]);
+  const [editingProfile,setEditingProfile]=useState(false);
+  const [profileDraft,setProfileDraft]=useState({});
+  const [editingActivity,setEditingActivity]=useState(null);
+  const [editError,setEditError]=useState('');
+  const [editBusy,setEditBusy]=useState(false);
+  const [canManage,setCanManage]=useState(false);
+  const scheduleDays=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const activityTypes=[['trivia','Trivia night'],['game_night','Game / bingo night'],['karaoke','Karaoke'],['live_music','Live music'],['special_event','Special event'],['happy_hour','Happy hour'],['food_special','Food / drink special'],['other','Other']];
+  const blankActivity=()=>({title:'',kind:'trivia',recurrence:'weekly',weekdays:[],event_date:'',start_time:'',end_time:'',description:'',source_url:'',verified:false,is_active:true});
+
   const [sortMode,  setSortMode]  = useState('recent');
   const [rankings,  setRankings]  = useState({ trending: null, bestRated: null, localFavorite: false });
 
@@ -130,6 +141,37 @@ export default function VenuePage() {
   }, [session]);
 
   const requireLogin = useCallback(() => setRightSidebarOpen(true), []);
+  useEffect(()=>{
+    if(!id||!session?.access_token){setCanManage(false);return;}
+    fetch('/api/admin/venue-permissions?venueId='+encodeURIComponent(id),{headers:{Authorization:'Bearer '+session.access_token}})
+      .then(r=>r.ok?r.json():{canManage:false}).then(d=>setCanManage(!!d.canManage)).catch(()=>setCanManage(false));
+  },[id,session?.access_token]);
+  const reloadActivities=useCallback(async()=>{
+    if(!id)return;
+    try{const r=await fetch('/api/admin/venue-schedule?venueId='+encodeURIComponent(id));if(r.ok){const d=await r.json();setActivitySchedule(d.items||[]);}}catch(e){}
+  },[id]);
+  useEffect(()=>{reloadActivities();},[reloadActivities]);
+  const sendEdit=async(url,body)=>{
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!r.ok)throw Error(d.error||'Unable to save');
+    return d;
+  };
+  const saveInlineProfile=async()=>{
+    setEditBusy(true);setEditError('');
+    try{
+      const result=await sendEdit('/api/admin/venue-profile',{venueId:id,updates:profileDraft});
+      setVenue(result.venue);setEditingProfile(false);
+    }catch(e){setEditError(e.message);}finally{setEditBusy(false);}
+  };
+  const saveActivity=async(action,item)=>{
+    setEditBusy(true);setEditError('');
+    try{
+      await sendEdit('/api/admin/venue-schedule',{venueId:id,action,item});
+      setEditingActivity(null);await reloadActivities();
+    }catch(e){setEditError(e.message);}finally{setEditBusy(false);}
+  };
+
 
   // ── Fetch the venue + everything hanging off it ──
   const loadVenue = useCallback(async () => {
@@ -417,6 +459,22 @@ export default function VenuePage() {
         <meta name="description" content={venue.description || `${venue.name} on WadUp`} />
       </Head>
 
+      <style jsx global>{`
+      .inline-edit-trigger{background:#073c4d;color:#00d5ed;border:1px solid #00b7d1;border-radius:10px;padding:10px 14px;margin:10px 0;font-weight:700;cursor:pointer}
+      .inline-edit-form{display:grid;gap:14px;background:#071724;color:#f0faff;border:1px solid #13708a;border-radius:16px;padding:18px;margin:16px 0}
+      .inline-edit-form h3{margin:0}.inline-edit-form label{display:grid;gap:6px;font-size:13px;font-weight:700}
+      .inline-edit-form input:not([type=checkbox]),.inline-edit-form select,.inline-edit-form textarea{width:100%;min-width:0;background:#142536;color:white;border:1px solid #427083;border-radius:8px;padding:12px;font:inherit}
+      .inline-edit-form textarea{min-height:90px}
+      .inline-edit-actions{display:flex;gap:10px;flex-wrap:wrap}.inline-edit-actions button{background:#00bfdc;color:#06121b;border:0;border-radius:9px;padding:12px 18px;font-weight:800}
+      .inline-edit-actions button+button{background:#263a48;color:white}
+      .inline-days{display:flex;gap:10px;flex-wrap:wrap}.inline-days label,.inline-check{display:flex!important;align-items:center;gap:5px}
+      .inline-time-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      .venue-activity-schedule{margin:16px 0}.venue-activity-schedule h3{font-size:19px;margin:0 0 12px}
+      .venue-activity-item{display:flex;align-items:flex-start;gap:12px;padding:15px 0;border-bottom:1px solid #ddd}
+      .venue-activity-symbol{font-size:25px}.venue-activity-info{flex:1;min-width:0}.venue-activity-info div{color:#68717a;font-size:14px;margin-top:5px}.venue-activity-info p{margin:7px 0 0;font-size:14px}
+      .venue-activity-edit{display:flex;gap:6px;flex-wrap:wrap}.venue-activity-edit button{border:1px solid #007f9a;color:#007f9a;background:white;border-radius:8px;padding:7px}
+      @media(max-width:600px){.inline-edit-form{padding:14px}.venue-activity-item{flex-wrap:wrap}.venue-activity-edit{width:100%;padding-left:40px}}
+      `}</style>
       <div className="venue-page">
         <div className="venue-header">
           <div
@@ -444,6 +502,7 @@ export default function VenuePage() {
 
           <div className="venue-header-content">
             <h1 className="venue-name">{venue.name}</h1>
+            {canManage&&!editingProfile&&<button className="inline-edit-trigger" onClick={()=>{setProfileDraft({name:venue.name||'',description:venue.description||'',phone:venue.phone||'',website:venue.website||'',cover_photo_url:venue.cover_photo_url||''});setEditingProfile(true);setEditError('');}}>✏️ Edit Profile</button>}
             {venue.is_verified && <div className="venue-verified">✓ Verified Business</div>}
             {venue.is_private && <div className="venue-private-badge">🔒 Private Venue</div>}
             {rankings.localFavorite && <div className="venue-local-favorite-badge">🏆 Local Favorite</div>}
@@ -581,6 +640,31 @@ export default function VenuePage() {
 
           <section className="venue-section">
             <h2>What&apos;s Happening</h2>
+            {canManage&&<button className="inline-edit-trigger" onClick={()=>{setEditingActivity(blankActivity());setEditError('');}}>+ Add activity or special</button>}
+            {editingActivity&&canManage&&<div className="inline-edit-form">
+              <h3>{editingActivity.id?'Edit':'Add'} schedule item</h3>
+              <label>Activity name<input value={editingActivity.title} onChange={e=>setEditingActivity(d=>({...d,title:e.target.value}))}/></label>
+              <label>Type<select value={editingActivity.kind} onChange={e=>setEditingActivity(d=>({...d,kind:e.target.value}))}>{activityTypes.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+              <label>Frequency<select value={editingActivity.recurrence} onChange={e=>setEditingActivity(d=>({...d,recurrence:e.target.value}))}><option value="weekly">Every week</option><option value="one_time">One-time event</option></select></label>
+              {editingActivity.recurrence==='weekly'?<div className="inline-days">{scheduleDays.map((day,i)=><label key={day}><input type="checkbox" checked={editingActivity.weekdays.includes(i)} onChange={e=>setEditingActivity(d=>({...d,weekdays:e.target.checked?[...d.weekdays,i]:d.weekdays.filter(x=>x!==i)}))}/>{day}</label>)}</div>:<label>Event date<input type="date" value={editingActivity.event_date||''} onChange={e=>setEditingActivity(d=>({...d,event_date:e.target.value}))}/></label>}
+              <div className="inline-time-row"><label>Starts<input type="time" value={editingActivity.start_time||''} onChange={e=>setEditingActivity(d=>({...d,start_time:e.target.value}))}/></label><label>Ends<input type="time" value={editingActivity.end_time||''} onChange={e=>setEditingActivity(d=>({...d,end_time:e.target.value}))}/></label></div>
+              <label>Details<textarea value={editingActivity.description||''} onChange={e=>setEditingActivity(d=>({...d,description:e.target.value}))}/></label>
+              <label>Source URL<input value={editingActivity.source_url||''} onChange={e=>setEditingActivity(d=>({...d,source_url:e.target.value}))}/></label>
+              <label className="inline-check"><input type="checkbox" checked={!!editingActivity.verified} onChange={e=>setEditingActivity(d=>({...d,verified:e.target.checked}))}/>Verified against official source</label>
+              {editError&&<p role="alert">{editError}</p>}
+              <div className="inline-edit-actions"><button disabled={editBusy||!editingActivity.title.trim()} onClick={()=>saveActivity('save',editingActivity)}>Save schedule</button><button onClick={()=>setEditingActivity(null)}>Cancel</button></div>
+            </div>}
+            {activitySchedule.length>0&&<div className="venue-activity-schedule">
+              <h3>Weekly schedule & specials</h3>
+              {activitySchedule.map(item=><div className="venue-activity-item" key={item.id}>
+                <div className="venue-activity-symbol">{({trivia:'🧠',game_night:'🎲',karaoke:'🎤',live_music:'🎵',happy_hour:'🍹',food_special:'🍽️',special_event:'🎉'})[item.kind]||'📅'}</div>
+                <div className="venue-activity-info"><strong>{item.title}</strong>
+                  <div>{item.recurrence==='weekly'?(item.weekdays||[]).map(d=>scheduleDays[d]).join(' · '):item.event_date}{item.start_time?' · '+item.start_time.slice(0,5):''}{item.end_time?'–'+item.end_time.slice(0,5):''}</div>
+                  {item.description&&<p>{item.description}</p>}
+                </div>
+                {canManage&&<div className="venue-activity-edit"><button onClick={()=>{setEditingActivity({...item,verified:!!item.verified_at,start_time:item.start_time?.slice(0,5)||'',end_time:item.end_time?.slice(0,5)||''});setEditError('');}}>Edit</button><button onClick={()=>{if(window.confirm('Remove this schedule entry?'))saveActivity('delete',{id:item.id});}}>Remove</button></div>}
+              </div>)}
+            </div>}
             {events.length === 0 ? (
               <p className="venue-empty-note">No upcoming events posted yet.</p>
             ) : (
