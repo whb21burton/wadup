@@ -1562,10 +1562,10 @@ export default function WadUp() {
   }, []);
 
   const openEditPanel = useCallback((venue) => {
-    cancelRelocate();
-    setRelocateTarget(null);
-    setEditPanelVenue(venue);
-  }, [cancelRelocate]);
+    // Editing belongs on the real venue profile, not a map-covering modal.
+    if (!venue?.id) return;
+    window.location.assign('/venue/' + encodeURIComponent(venue.id) + '?edit=1');
+  }, []);
 
   const closeEditPanel = useCallback(() => {
     cancelRelocate();
