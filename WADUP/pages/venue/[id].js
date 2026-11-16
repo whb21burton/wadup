@@ -564,12 +564,8 @@ export default function VenuePage() {
               </div>
               {venue.subcategory && <span className="venue-subcategory-text"> · {venue.subcategory}</span>}
             </div>
-            {checkinCount > 0 && <div className="venue-checkin-count">🎉 {checkinCount.toLocaleString()} check-in{checkinCount === 1 ? '' : 's'}</div>}
 
             <div className="venue-actions">
-              <button className="venue-action-btn" onClick={checkIn}>
-                {checkedIn ? '✅ Checked in!' : '📍 Check In'}
-              </button>
               <button className="venue-action-btn venue-action-primary" onClick={() => setShowReviewModal(true)}>
                 ✍️ Review
               </button>
@@ -580,7 +576,6 @@ export default function VenuePage() {
                 {shareCopied ? 'Copied!' : '🔗 Share'}
               </button>
             </div>
-            {checkinError && <div className="venue-checkin-error">{checkinError}</div>}
           </div>
         </div>
 
