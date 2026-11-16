@@ -1,0 +1,22 @@
+name: Wadup opening layout lock
+on:
+  pull_request:
+    paths:
+      - 'WADUP/pages/index.js'
+      - 'WADUP/scripts/check-layout-lock.cjs'
+      - '.github/workflows/layout-lock.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'WADUP/pages/index.js'
+      - 'WADUP/scripts/check-layout-lock.cjs'
+      - '.github/workflows/layout-lock.yml'
+jobs:
+  layout-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node WADUP/scripts/check-layout-lock.cjs
