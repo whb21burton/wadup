@@ -116,11 +116,12 @@ const SUBCATEGORY_ALIASES = {
     'trampoline park','amusement park','indoor playground',
     'creative classes','attraction','go karts','go kart','go kart track',
     'climbing gym','climbing','indoor climbing','rock climbing gym',
-    'kayaking','kayak rentals','paddleboarding','paddleboard rentals',
     'skate park','skating rink','public basketball','public hockey',
     'museums','museum','laser tag','topgolf','virtual golf',
     'entertainment','things to do','indoor activities'
   ],
+  'kayaking': ['kayak','kayak rentals','kayak rental','canoe','canoe rentals','rafting','raft','raft rentals','whitewater rafting','rafting outfitter'],
+  'paddleboarding': ['paddleboard','paddleboard rental','paddleboard rentals','stand up paddleboarding','sup rental'],
   'climbing gym': ['climbing','indoor climbing','rock climbing gym'],
   'golf': ['golf course'],
   'pickleball': ['pickleball court','pickleball courts','pickleball facility','pickleball club'],
