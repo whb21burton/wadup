@@ -109,7 +109,7 @@ function escapeHtml(str) {
 function buildDays() {
   const days = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
   const today = new Date();
-  return Array.from({length:10}, (_,i) => {
+  return Array.from({length:7}, (_,i) => {
     const d = new Date(today); d.setDate(today.getDate() + i);
     return {
       label: days[d.getDay()],
@@ -249,14 +249,14 @@ export default function WadUp() {
   const pinRegistry   = useRef(new Map());  // id -> { id, type, marker, overlay, el, lat, lng, openPopup }
 
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
-  const [activeChip,     setActiveChip]     = useState('events');
+  const [activeChip,     setActiveChip]     = useState('wadup');
   const [hasMustSeeInView, setHasMustSeeInView] = useState(false);
   const [activeDate,     setActiveDate]     = useState(localIsoDate());
   // filterPins reads these refs, not the state above, so it always sees the
   // current value regardless of when its own closure was created — the
   // state setters below update the ref SYNCHRONOUSLY, in the same click
   // handler, rather than waiting a render cycle for a useEffect to catch up.
-  const activeCategoryRef = useRef('events');
+  const activeCategoryRef = useRef('wadup');
   const activeDateRef = useRef(localIsoDate());
   // Desktop sidebar's category dropdown — see onCategoryClick/onSubcategoryClick
   // and renderDesktopCategoryList. Same synchronous-ref pattern as
@@ -266,14 +266,18 @@ export default function WadUp() {
   const [subcategoryByChip, setSubcategoryByChip] = useState({});
   const matchesSelectedVenue = (venue, date) => {
     const chip = activeCategoryRef.current;
-    return chip !== 'sports' && venueMatchesChip(chip, venue, activeSubcategoryRef.current[chip] || []) &&
-      (chip !== 'events' || !!getVenueEventForDay(venue.id, date));
+    return chip === 'wadup'
+      ? venueEventsRef.current.some(e => e.venue_id === venue.id && (e.start_time || '').slice(0, 10) === date && (date !== localIsoDate() || !e.end_time || new Date(e.end_time).getTime() >= Date.now()))
+      : chip !== 'sports' && venueMatchesChip(chip, venue, activeSubcategoryRef.current[chip] || []) &&
+        (chip !== 'events' || !!getVenueEventForDay(venue.id, date));
   };
   const matchesSelectedTM = (ev, date) => {
     const chip = activeCategoryRef.current;
-    return ev.cat === chip && (chip !== 'sports' || tmMatchesSportFilter(ev, activeSubcategoryRef.current[chip] || [])) &&
+    return (chip === 'wadup' || (ev.cat === chip && (chip !== 'sports' || tmMatchesSportFilter(ev, activeSubcategoryRef.current[chip] || [])))) &&
       isTMEventVisibleForDay(ev, date);
   };
+  const [feedRevision, setFeedRevision] = useState(0);
+  const [feedNow, setFeedNow] = useState(() => Date.now());
   const [openDropdown, setOpenDropdown] = useState(null); // which category's subcategory list is expanded
   const [trendingNow,    setTrendingNow]    = useState([]);
   const [topRanked,      setTopRanked]      = useState([]);
@@ -509,7 +513,7 @@ export default function WadUp() {
   // sitting there minutes/hours after the thing they're advertising is over.
   useEffect(() => {
     const id = setInterval(() => {
-      if (activeCategoryRef.current === 'events') updateAreaRanksRef.current?.();
+      if (activeCategoryRef.current === 'events' || activeCategoryRef.current === 'wadup') { filterPinsRef.current?.(); setFeedNow(Date.now()); }
     }, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
@@ -559,14 +563,14 @@ export default function WadUp() {
     // "which event is worth seeing right now." Every other chip keeps the
     // existing rating-based sort.
     let ranked;
-    if (selected.length === 1 && selected[0] === 'events') {
+    if (selected.length === 1 && (selected[0] === 'events' || selected[0] === 'wadup')) {
       const withEvent = inViewport.map(v => {
         const todayEvent = getVenueEventForDay(v.id, dayIso);
         return { ...v, _todayEvent: todayEvent, _isLive: isEventLive(todayEvent) };
       });
       const live = withEvent.filter(v => v._isLive);
       const upcoming = withEvent.filter(v => !v._isLive)
-        .sort((a, b) => (a.event_rank ?? 999) - (b.event_rank ?? 999));
+        .sort((a, b) => selected[0] === 'wadup' ? String(a._todayEvent?.start_time || '').localeCompare(String(b._todayEvent?.start_time || '')) : (a.event_rank ?? 999) - (b.event_rank ?? 999));
       ranked = [...live, ...upcoming].map((v, i) => ({ ...v, _areaRank: i + 1 }));
     } else {
       ranked = inViewport
@@ -596,7 +600,7 @@ export default function WadUp() {
     // and only ever considered for the Events/Sports chips — same cat===chip
     // gate filterPins uses for TM pins, plus the same day+3hr-showable window
     // (isTMEventVisibleForDay) filterPins applies to actual pin visibility.
-    const tmInBounds = (selected.includes('events') || selected.includes('sports'))
+    const tmInBounds = (selected.includes('events') || selected.includes('sports') || selected.includes('wadup'))
       ? tmEventsRef.current
           .filter(ev => matchesSelectedTM(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
           .sort((a, b) => {
@@ -1376,6 +1380,7 @@ export default function WadUp() {
       });
 
       filterPins();
+      setFeedRevision(v => v + 1);
     } catch (e) {
       // Leave whatever was showing, but don't swallow this silently — an
       // empty Events chip with a clean console is indistinguishable from
@@ -1403,6 +1408,7 @@ export default function WadUp() {
     // entirely — WadUp is meant to surface local spots (see isChain in
     // lib/data.js).
     venuesRef.current = data.map(v => ({ ...v, live: true }));
+    setFeedRevision(v => v + 1);
 
     // Bulk-fetch venue_events for today through the end of the day-strip's
     // 10-day range once (rather than one query per pin) — venueEventsRef
@@ -1428,6 +1434,7 @@ export default function WadUp() {
       .lte('start_time', asNaive(rangeEnd));
     if (eventsError) console.error('venue_events load failed:', eventsError.message);
     venueEventsRef.current = eventRows || [];
+    setFeedRevision(v => v + 1);
 
     const todayIso = localIsoDate(now);
     eventVenueIdsTodayRef.current = new Set(
@@ -2027,6 +2034,67 @@ export default function WadUp() {
     </div>
   );
 
+  // WADUP is a chronological happenings feed, not a popularity ranking.
+  // A venue's ordinary listing never qualifies without a scheduled venue_events row.
+  const wadupItems = useMemo(() => {
+    const now = feedNow;
+    const today = localIsoDate(new Date(now));
+    const map = mapObj.current;
+    const bounds = map?.getBounds?.();
+    const inside = (lat, lng) => Number.isFinite(Number(lat)) && Number.isFinite(Number(lng)) &&
+      (!bounds || bounds.contains(new window.google.maps.LatLng(Number(lat), Number(lng))));
+    const items = [];
+    for (const ev of tmEventsRef.current) {
+      if (ev.dateStr !== activeDate || !inside(ev.lat, ev.lng)) continue;
+      const normalized = normalizeTimeStr(ev.timeStr);
+      const start = normalized ? new Date(activeDate + 'T' + normalized + ':00').getTime() : null;
+      const end = start == null ? null : start + 3 * 60 * 60 * 1000;
+      if (activeDate === today && end != null && end < now) continue;
+      items.push({ id: ev.id, name: ev.name, venue: ev.city || ev.address || 'Ticketmaster', lat: ev.lat, lng: ev.lng,
+        start, end, icon: ev.cat === 'sports' ? (ev.sportEmoji || '🏟️') : '🎟️', url: ev.url, live: start != null && end != null && start <= now && now <= end && activeDate === today });
+    }
+    for (const ev of venueEventsRef.current) {
+      if ((ev.start_time || '').slice(0, 10) !== activeDate) continue;
+      if (['happy_hour', 'specials'].includes(ev.event_type)) continue;
+      const venue = venuesRef.current.find(v => v.id === ev.venue_id);
+      if (!venue || venue.is_hidden || !venue.live || !inside(venue.lat, venue.lng)) continue;
+      const start = ev.start_time ? new Date(ev.start_time.replace(' ', 'T')).getTime() : null;
+      const end = ev.end_time ? new Date(ev.end_time.replace(' ', 'T')).getTime() : null;
+      if (activeDate === today && end != null && end < now) continue;
+      items.push({ id: 'venue_' + ev.venue_id + '_' + ev.start_time + '_' + ev.title,
+        name: ev.title || EVENT_TYPE_LABEL[ev.event_type] || 'Special Event', venue: venue.name,
+        lat: venue.lat, lng: venue.lng, start: Number.isFinite(start) ? start : null, end: Number.isFinite(end) ? end : null,
+        icon: EVENT_TYPE_ICON[ev.event_type] || '🎉', live: activeDate === today && Number.isFinite(start) && start <= now && Number.isFinite(end) && now <= end });
+    }
+    return items.sort((a, b) => Number(b.live) - Number(a.live) ||
+      (a.live && b.live ? (a.end ?? Infinity) - (b.end ?? Infinity) : (a.start ?? Infinity) - (b.start ?? Infinity)) ||
+      a.name.localeCompare(b.name));
+  }, [activeDate, feedRevision, feedNow, userPos, mapReady]);
+
+  const renderWadupFeed = () => (
+    <div className="wadup-feed" style={{ padding: '10px 16px 22px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <strong style={{ color: '#fff', fontSize: 15 }}>{activeDate === localIsoDate() ? 'HAPPENING TODAY' : 'HAPPENING ' + activeDate}</strong>
+        <span style={{ color: '#999', fontSize: 12 }}>{wadupItems.length} EVENTS</span>
+      </div>
+      {wadupItems.length === 0 && <div className="t-empty">No scheduled happenings in this area for this day.</div>}
+      {wadupItems.map(item => (
+        <button type="button" key={item.id} onClick={() => { flyTo(Number(item.lng), Number(item.lat)); }}
+          style={{ display: 'flex', width: '100%', gap: 12, alignItems: 'center', textAlign: 'left', padding: '12px 10px', marginBottom: 8, background: '#151b27', border: '1px solid #2b3444', borderRadius: 12, color: '#fff', cursor: 'pointer' }}>
+          <span style={{ fontSize: 25 }}>{item.icon}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <strong style={{ display: 'block', fontSize: 14 }}>{item.name}</strong>
+            <span style={{ display: 'block', fontSize: 12, color: '#aeb6c3', marginTop: 4 }}>
+              {item.venue}{item.start != null ? ' · ' + new Date(item.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ' · Time TBD'}
+            </span>
+            {item.live && <span style={{ display: 'inline-block', color: '#75e7a2', fontSize: 11, fontWeight: 700, marginTop: 4 }}>● LIVE NOW</span>}
+          </span>
+          <span style={{ color: '#b8c0cc' }}>›</span>
+        </button>
+      ))}
+    </div>
+  );
+
   const renderTrendingNowItems = () => (
     trendingNow.length === 0 ? (
       <div className="t-empty">{sidebarLoading ? 'Loading…' : 'Nothing trending right now'}</div>
@@ -2322,11 +2390,12 @@ export default function WadUp() {
             <Link href="/discover" className="sidebar-discover-btn">🔥 Discover</Link>
           </div>
 
-          {renderDesktopCategoryList()}
-          {renderDayStrip('sidebar-days')}
-
-          <div className="sidebar-trending">
-            {renderSidebarLists()}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}>
+            <button type="button" onClick={() => { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); setOpenDropdown(null); filterPins(); }}
+              style={{ width: '100%', textAlign: 'left', border: 0, background: activeChip === 'wadup' ? '#24252d' : 'transparent', color: '#fff', padding: '14px 18px', cursor: 'pointer', fontWeight: 800, fontSize: 20 }}>⚡ WADUP <span style={{ display: 'block', color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>What's happening around you</span></button>
+            {activeChip === 'wadup' && <>{renderDayStrip('sidebar-days')}{renderWadupFeed()}</>}
+            {renderDesktopCategoryList()}
+            {activeChip !== 'wadup' && renderDayStrip('sidebar-days')}
           </div>
         </aside>
 
@@ -2352,6 +2421,7 @@ export default function WadUp() {
           <div className="hud">
 
             {renderSearchTrigger('search-trigger')}
+            <button type="button" onClick={() => { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); filterPins(); }} style={{ background: activeChip === 'wadup' ? '#fffc00' : '#151b27', color: activeChip === 'wadup' ? '#000' : '#fff', border: 0, borderRadius: 14, padding: '9px 16px', fontWeight: 800, margin: '6px 10px' }}>⚡ WADUP</button>
             {renderChips('chips')}
             {renderDayStrip('day-strip')}
 
@@ -2365,7 +2435,7 @@ export default function WadUp() {
                 <div className="panel-handle" onClick={() => setSheetExpanded(v => !v)} />
               </div>
               <div className="trending-panel-scroll">
-                {renderSidebarLists()}
+                {activeChip === 'wadup' ? renderWadupFeed() : null}
               </div>
             </div>
 
