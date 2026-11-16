@@ -10,14 +10,28 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = value => typeof value === 'string' ? value.trim() : '';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  const auth = await requireAdmin(req);
-  if (!auth) return res.status(403).json({ error: 'Not authorized' });
-  const { venueId, action, item } = req.body || {};
+  if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  const { venueId, action, item } = req.method === 'GET' ? {venueId:req.query.venueId,action:'public'} : (req.body || {});
   if (!UUID.test(venueId || '')) return res.status(400).json({ error: 'Invalid venue' });
-  const { data: venue } = await supabaseAdmin.from('venues').select('id,city').eq('id', venueId).maybeSingle();
+  const { data: venue } = await supabaseAdmin.from('venues').select('id,city,owner_id,is_hidden').eq('id', venueId).maybeSingle();
   if (!venue) return res.status(404).json({ error: 'Venue not found' });
-  if (!canAccessCity(auth.adminRole, venue.city)) return res.status(403).json({ error: 'Not authorized for this city' });
+  if (action === 'public') {
+    if (venue.is_hidden) return res.status(404).json({error:'Venue not found'});
+    const {data,error} = await supabaseAdmin.from('venue_schedule_items')
+      .select('id,title,kind,recurrence,weekdays,event_date,start_time,end_time,description,source_url,verified_at')
+      .eq('venue_id',venueId).eq('is_active',true).order('created_at');
+    return error ? res.status(500).json({error:'Unable to load schedule'}) : res.json({items:data||[]});
+  }
+  const auth = await requireAdmin(req);
+  let authorized = !!auth && canAccessCity(auth.adminRole, venue.city);
+  if (!authorized) {
+    const token=(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
+    if(token) {
+      const {data:{user}}=await supabaseAdmin.auth.getUser(token);
+      authorized=!!user && venue.owner_id===user.id;
+    }
+  }
+  if (!authorized) return res.status(403).json({ error: 'Not authorized for this venue' });
 
   if (action === 'list') {
     const { data, error } = await supabaseAdmin.from('venue_schedule_items').select('*').eq('venue_id', venueId).order('created_at');
