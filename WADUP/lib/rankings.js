@@ -211,6 +211,10 @@ export function getVoteWeight(userProfile, adminRole) {
 // compute weights isn't something the reviewing user's own session is
 // allowed to do via RLS (those tables only expose a user's own row to them).
 export async function recalculateVenueRating(supabaseAdmin, venueId) {
+  const { data: ratingVenue } = await supabaseAdmin.from('venues').select('subcategories, subcategory').eq('id', venueId).single();
+  const assigned = Array.isArray(ratingVenue?.subcategories) && ratingVenue.subcategories.length
+    ? ratingVenue.subcategories : (ratingVenue?.subcategory ? [ratingVenue.subcategory] : []);
+  const active = new Map(assigned.map(s => [String(s).trim().toLowerCase(), String(s).trim()]));
   const { data: reviews } = await supabaseAdmin
     .from('reviews')
     .select('overall_rating, subcategory_ratings, user_id')
@@ -243,8 +247,10 @@ export async function recalculateVenueRating(supabaseAdmin, venueId) {
 
     if (review.subcategory_ratings) {
       Object.entries(review.subcategory_ratings).forEach(([subcat, rating]) => {
-        subcatSums[subcat] = (subcatSums[subcat] || 0) + rating * weight;
-        subcatWeights[subcat] = (subcatWeights[subcat] || 0) + weight;
+        const name = active.get(subcat.trim().toLowerCase());
+        if (!name || !Number.isFinite(Number(rating))) return;
+        subcatSums[name] = (subcatSums[name] || 0) + Number(rating) * weight;
+        subcatWeights[name] = (subcatWeights[name] || 0) + weight;
       });
     }
   }
