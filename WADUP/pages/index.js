@@ -53,6 +53,13 @@ function withTMAffiliateTracking(ticketUrl) {
   }
 }
 
+function restaurantFoodIcon(v) {
+  const subs = Array.isArray(v.subcategories) && v.subcategories.length ? v.subcategories : [v.subcategory].filter(Boolean);
+  const main = subs.find(x => ['Burgers','Wings','Pizza'].includes(x));
+  if (!main) return '🍔';
+  const icon = main === 'Pizza' ? '🍕' : main === 'Wings' ? '🍗' : '🍔';
+  return main !== 'Wings' && subs.includes('Wings') ? '🪽' + icon + '🪽' : icon;
+}
 const CATEGORY_ICONS = { events: '🎵', nightlife: '🍸', restaurant: '🍔', sports: '🏟️', outdoors: '🌳', activities: '🎳' };
 const ACTIVITY_ICONS = [
   [/bowling/i, '🎳'], [/pickleball/i, '🏓'], [/disc golf/i, '🥏'], [/golf/i, '⛳'],
@@ -906,7 +913,7 @@ export default function WadUp() {
       contentEl.className = 'wu-pin-discovery visible' + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
       contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
 
-      const chosenEmoji = ['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕'].includes(v.custom_emoji) ? v.custom_emoji : null;
+      const chosenEmoji = cats.includes('restaurant') ? restaurantFoodIcon(v) : (['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕'].includes(v.custom_emoji) ? v.custom_emoji : null);
       const dot = document.createElement(chosenEmoji ? 'span' : 'div');
       dot.className = chosenEmoji ? 'wu-bar-discovery-emoji' : 'wu-discovery-dot';
       if (chosenEmoji) {
@@ -943,6 +950,13 @@ export default function WadUp() {
         badgeEl.className = topBadge.id === 'live' ? 'wu-badge wu-badge-live' : 'wu-badge';
         badgeEl.textContent = topBadge.icon;
         pill.appendChild(badgeEl);
+      }
+
+      if (cats.includes('restaurant') && !eventsChipActive) {
+        const food = document.createElement('span');
+        food.textContent = restaurantFoodIcon(v);
+        food.style.cssText = 'font-size:15px;white-space:nowrap;line-height:1;';
+        pill.appendChild(food);
       }
 
       const textWrap = document.createElement('div');
