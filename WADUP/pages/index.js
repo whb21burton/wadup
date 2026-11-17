@@ -651,6 +651,12 @@ export default function WadUp() {
   function layoutMapLabels(map) {
     const registry = map.__wadupLabelOverlays;
     if (!registry) return;
+    // Keep labels at their natural positions at city/regional zoom.
+    // Only spread overlapping labels when zoomed into neighborhood/street level.
+    if ((map.getZoom() || 0) < 17) {
+      for (const o of registry) if (o.__labelEl) o.__labelEl.style.translate = 'none';
+      return;
+    }
     const items = [...registry].filter(o => o.getMap() === map && o.__labelEl?.getClientRects().length)
       .sort((a,b) => (b.__labelPriority || 0) - (a.__labelPriority || 0) || String(a.__labelId).localeCompare(String(b.__labelId)));
     const occupied = [];
