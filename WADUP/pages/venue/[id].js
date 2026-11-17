@@ -608,7 +608,17 @@ export default function VenuePage() {
               </div>
             )}
 
-            <div className="venue-location" onClick={()=>{if(canManage&&editingProfile)setEditSection('address');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>📍 {venue.city}{venue.state ? `, ${venue.state}` : ''}{canManage&&editingProfile?' ✎':''}</div>
+            <div className="venue-location" onClick={()=>{if(canManage&&editingProfile)setEditSection('address');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>
+              📍 {editSection==='address'&&canManage&&editingProfile?
+                <span onClick={e=>e.stopPropagation()} style={{display:'inline-flex',flexWrap:'wrap',gap:8,alignItems:'center'}}>
+                  <input aria-label="Street address" autoFocus value={profileDraft.address||''} onChange={e=>setProfileDraft(d=>({...d,address:e.target.value}))} style={{padding:'8px 10px',borderRadius:8,border:'1px solid #00c4df',minWidth:240}}/>
+                  <button type="button" disabled={editBusy||!profileDraft.address?.trim()} onClick={saveInlineProfile}>Save address</button>
+                  <button type="button" onClick={()=>setEditSection(null)}>Cancel</button>
+                  <button type="button" onClick={()=>router.push(`/venue/${id}/pin`)}>📍 Place pin on map</button>
+                  {editError&&<span role="alert">{editError}</span>}
+                </span>:
+                <>{venue.address ? `${venue.address} · ` : ''}{venue.city}{venue.state ? `, ${venue.state}` : ''}{canManage&&editingProfile?' ✎':''}</>}
+            </div>
             <div className="venue-category-line" onClick={()=>{if(canManage&&editingProfile)setEditSection('categories');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>
               <div className="venue-category-badges">
                 {venueCategories(venue).map(c => (
@@ -668,12 +678,6 @@ export default function VenuePage() {
               <label>Website<input value={profileDraft.website||''} onChange={e=>setProfileDraft(d=>({...d,website:e.target.value}))}/></label>
               <label>Cover photo URL<input value={profileDraft.cover_photo_url||''} onChange={e=>setProfileDraft(d=>({...d,cover_photo_url:e.target.value}))}/></label>
               <div className="wu-inline-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>{editError&&<p role="alert">{editError}</p>}
-            </div>}
-            {canManage&&editingProfile&&editSection==='address'&&<div className="wu-edit-inline">
-              <strong>Edit street address</strong>
-              <label>Street address<input value={profileDraft.address||''} onChange={e=>setProfileDraft(d=>({...d,address:e.target.value}))}/></label>
-              <div className="wu-inline-actions"><button disabled={editBusy||!profileDraft.address?.trim()} onClick={saveInlineProfile}>Save address</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>
-              {editError&&<p role="alert">{editError}</p>}
             </div>}
             {canManage&&editingProfile&&editSection==='categories'&&<div className="wu-edit-inline">
               <h3 style={{margin:'0 0 12px'}}>Help people find your place</h3>
