@@ -3,7 +3,7 @@ import {useRouter} from 'next/router';
 import Head from 'next/head';
 import {supabase} from '../../../lib/supabase';
 
-const GMAPS_KEY=process.env.NEXT_PUBLIC_GMAPS_KEY;
+const GMAPS_KEY=process.env.NEXT_PUBLIC_GMAPS_KEY || 'AIzaSyBoXf6UAa_SckH9gxfbiOK9OPpaySNH76w';
 export default function VenuePinPicker(){
   const router=useRouter();
   const {id}=router.query;
@@ -44,7 +44,7 @@ export default function VenuePinPicker(){
       setReady(true);
     };
     if(window.google?.maps){init();return()=>{cancelled=true;};}
-    if(!GMAPS_KEY){setError('Google Maps key is not configured.');return;}
+    if(!GMAPS_KEY){setError('Google Maps is unavailable.');return;}
     const script=document.createElement('script');
     script.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(GMAPS_KEY)+'&v=weekly&loading=async';
     script.async=true;
