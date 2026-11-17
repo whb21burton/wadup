@@ -1507,6 +1507,28 @@ export default function WadUp() {
     return data;
   }, [session]);
 
+  // A venue pin can be edited on another route. When the user returns via
+  // browser Back (including the back-forward cache), refresh venue coordinates
+  // from Supabase and redraw the existing map pins without reloading Google Maps.
+  useEffect(() => {
+    let lastRefresh = 0;
+    const refreshOnReturn = () => {
+      if (document.visibilityState === 'hidden' || !mapObj.current) return;
+      const now = Date.now();
+      if (now - lastRefresh < 1500) return;
+      lastRefresh = now;
+      loadVenuesFromSupabase();
+    };
+    window.addEventListener('pageshow', refreshOnReturn);
+    window.addEventListener('focus', refreshOnReturn);
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    return () => {
+      window.removeEventListener('pageshow', refreshOnReturn);
+      window.removeEventListener('focus', refreshOnReturn);
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+    };
+  }, [loadVenuesFromSupabase]);
+
   // loadVenuesFromSupabase's own query only ever returns is_hidden=false
   // venues, so a venue this admin just hid can't come back from a re-fetch —
   // it has to be pulled off the map directly instead.
