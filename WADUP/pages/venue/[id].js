@@ -8,6 +8,16 @@ import { getBestRated } from '../../lib/rankings';
 import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
 
+const RESTAURANT_ICON_CHOICES = ['Burgers', 'Wings', 'Pizza'];
+const categorySubs = (venue, cat) => (Array.isArray(venue.subcategories) && venue.subcategories.length ? venue.subcategories : [venue.subcategory].filter(Boolean)).filter(sub => CATEGORY_CHIPS.some(ch => ch.id === (cat === 'nightlife' ? 'bars' : cat) && ch.subcategories.some(x => x.id === sub)));
+const foodEmoji = (venue) => {
+  const subs = categorySubs(venue, 'restaurant');
+  const main = subs.find(s => RESTAURANT_ICON_CHOICES.includes(s));
+  if (!main) return '🍔';
+  const base = main === 'Pizza' ? '🍕' : main === 'Wings' ? '🍗' : '🍔';
+  return main !== 'Wings' && subs.includes('Wings') ? '🪽' + base + '🪽' : base;
+};
+
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const EVENT_TYPE_ICONS = {
@@ -618,12 +628,14 @@ export default function VenuePage() {
                 <>{venue.address ? `${venue.address} · ` : ''}{venue.city}{venue.state ? `, ${venue.state}` : ''}{canManage&&editingProfile?' ✎':''}</>}
             </div>
             <div className="venue-category-line" onClick={()=>{if(canManage&&editingProfile)setEditSection('categories');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>
-              <div className="venue-category-badges">
-                {venueCategories(venue).map(c => (
-                  <span key={c} className="venue-category-badge">{CATEGORY_LABELS[c] || c}</span>
+              <div style={{display:'flex',flexDirection:'column',gap:6,width:'100%'}}>
+                {venueCategories(venue).map((c,i) => (
+                  <div key={c} style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                    <span className="venue-category-badge">{c==='restaurant'?foodEmoji(venue):CATEGORY_LABELS[c]?.split(' ')[0]} {c==='restaurant'?'Restaurants':(CATEGORY_LABELS[c]||c).replace(/^[^a-zA-Z]+/,'')}</span>
+                    <span className="venue-subcategory-text">{categorySubs(venue,c).join(' · ') || (i===0?'':'')}</span>
+                  </div>
                 ))}
               </div>
-              {venue.subcategory && <span className="venue-subcategory-text"> · {venue.subcategory}</span>}
             </div>
 
             <div className="venue-actions">
@@ -693,6 +705,13 @@ export default function VenuePage() {
                   {CATEGORY_CHIPS.filter(ch=>ch.id===(profileDraft.categories?.[0]==='nightlife'?'bars':profileDraft.categories?.[0])).flatMap(ch=>ch.subcategories).map(sub=><label key={sub.id} style={{display:'flex',alignItems:'center',gap:7,padding:'10px 12px',border:'1px solid #b9e7ef',borderRadius:10,cursor:'pointer',background:(profileDraft.subcategories||[]).includes(sub.id)?'#e5faff':'#fff'}}><input type={profileDraft.categories?.[0]==='nightlife'?'radio':'checkbox'} name={profileDraft.categories?.[0]==='nightlife'?'primaryBarType':undefined} checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:d.categories?.[0]==='nightlife'?[sub.id]:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(x=>x!==sub.id)}))}/>{sub.label}</label>)}
                 </div>
               </>}
+              {classificationStep===2&&profileDraft.categories?.[0]==='restaurant'&&['Burgers','Wings','Pizza'].filter(x=>(profileDraft.subcategories||[]).includes(x)).length>0&&<div style={{marginTop:18,padding:14,background:'#eefaff',borderRadius:10}}>
+                <strong>Which food type should represent this place on the map?</strong>
+                <p style={{color:'#536575',margin:'8px 0'}}>Choose the main icon. Wings are added to the burger or pizza icon when selected too.</p>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                  {RESTAURANT_ICON_CHOICES.filter(x=>(profileDraft.subcategories||[]).includes(x)).map(choice=><button type="button" key={choice} style={{padding:'10px 14px',borderRadius:10,border:'1px solid #9adce9',background:profileDraft.subcategories?.find(x=>RESTAURANT_ICON_CHOICES.includes(x))===choice?'#a8f2ff':'#fff'}} onClick={()=>setProfileDraft(d=>({...d,subcategories:[choice,...(d.subcategories||[]).filter(x=>x!==choice)]}))}>{choice==='Burgers'?'🍔':choice==='Wings'?'🍗':'🍕'} {choice}</button>)}
+                </div>
+              </div>}
               {classificationStep===3&&<>
                 <strong>3. Does it also fit another category?</strong>
                 <p style={{color:'#536575'}}>Optional. Choose one secondary category, or none.</p>
