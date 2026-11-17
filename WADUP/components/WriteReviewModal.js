@@ -1,21 +1,11 @@
 import { useState } from 'react';
 import { venueCategories } from '../lib/data';
 
-// There's no per-venue "does it actually serve burgers" flag in the schema —
-// these presets show for every restaurant/nightlife venue regardless, as
-// optional fields a reviewer can just skip. custom_subcategories (set by an
-// admin per venue — see pages/admin/venues.js) is the real per-venue
-// mechanism and is appended on top, deduped against the presets.
-const RESTAURANT_SUBCATS = ['Burgers', 'Pizza', 'Wings', 'Mexican', 'Italian', 'Asian', 'BBQ', 'Seafood'];
-const NIGHTLIFE_SUBCATS  = ['Sports Bar', 'Speakeasy', 'Dance'];
-
+// Rating choices come exclusively from this venue's assigned subcategories.
 function subcatOptionsFor(venue) {
-  const cats = venueCategories(venue);
-  const opts = [];
-  if (cats.includes('restaurant')) opts.push(...RESTAURANT_SUBCATS);
-  if (cats.includes('nightlife'))  opts.push(...NIGHTLIFE_SUBCATS);
-  (venue.custom_subcategories || []).forEach(s => { if (!opts.includes(s)) opts.push(s); });
-  return opts;
+  const assigned = Array.isArray(venue.subcategories) && venue.subcategories.length
+    ? venue.subcategories : (venue.subcategory ? [venue.subcategory] : []);
+  return [...new Set(assigned.map(s => String(s || '').trim()).filter(Boolean))];
 }
 
 export default function WriteReviewModal({ open, onClose, venue, session, onSubmitted, onRequireLogin }) {
