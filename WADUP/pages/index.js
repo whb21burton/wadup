@@ -1614,6 +1614,43 @@ export default function WadUp() {
     } catch (e) { setPinError(e.message); setPinBusy(false); }
   };
 
+  // Hide near-identical records at the same physical site on the public map.
+  // This is display-only: never delete a venue, its reviews or its owner data.
+  function dedupeNearbyVenues(rows) {
+    const normalized = name => String(name || '').toLowerCase()
+      .replace(/&/g, ' and ').replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\\b(restaurant|restaurants|bar|grill|the|at|and|location)\\b/g, ' ')
+      .replace(/\\s+/g, ' ').trim();
+    const distanceM = (a, b) => {
+      const rad = Math.PI / 180;
+      const dLat = (Number(a.lat) - Number(b.lat)) * rad;
+      const dLng = (Number(a.lng) - Number(b.lng)) * rad;
+      const x = dLng * Math.cos((Number(a.lat) + Number(b.lat)) * rad / 2);
+      return 6371000 * Math.hypot(dLat, x);
+    };
+    const retained = [];
+    for (const venue of rows) {
+      if (!Number.isFinite(Number(venue.lat)) || !Number.isFinite(Number(venue.lng))) {
+        retained.push(venue); continue;
+      }
+      const name = normalized(venue.name);
+      const duplicate = retained.find(other => {
+        if (!other.lat || !other.lng || distanceM(venue, other) > 65) return false;
+        const existing = normalized(other.name);
+        if (!name || !existing) return false;
+        if (name === existing) return true;
+        const shorter = name.length < existing.length ? name : existing;
+        const longer = name.length < existing.length ? existing : name;
+        // Permit abbreviated Google names (e.g. "Community Pie Ham...")
+        // only if the common prefix is substantial; avoid unrelated neighbors.
+        return shorter.length >= 12 && longer.startsWith(shorter) &&
+          (shorter.length / longer.length >= 0.6);
+      });
+      if (!duplicate) retained.push(venue);
+    }
+    return retained;
+  }
+
   // ── Load real Chattanooga venues from Supabase (Google Places-sourced) ──
   const loadVenuesFromSupabase = useCallback(async () => {
     const { data, error } = await supabase
@@ -1632,7 +1669,7 @@ export default function WadUp() {
     // call site. National/regional chains are excluded from the public map
     // entirely — WadUp is meant to surface local spots (see isChain in
     // lib/data.js).
-    venuesRef.current = data.map(v => ({ ...v, live: true }));
+    venuesRef.current = dedupeNearbyVenues(data.map(v => ({ ...v, live: true })));
     setFeedRevision(v => v + 1);
 
     // Bulk-fetch venue_events for today through the end of the day-strip's
