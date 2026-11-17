@@ -1617,34 +1617,47 @@ export default function WadUp() {
   // Hide near-identical records at the same physical site on the public map.
   // This is display-only: never delete a venue, its reviews or its owner data.
   function dedupeNearbyVenues(rows) {
-    const normalized = name => String(name || '').toLowerCase()
+    const normalized = value => String(value || '').toLowerCase()
       .replace(/&/g, ' and ').replace(/[^a-z0-9 ]/g, ' ')
-      .replace(/\\b(restaurant|restaurants|bar|grill|the|at|and|location)\\b/g, ' ')
+      .replace(/\\b(restaurant|restaurants|the|at|location)\\b/g, ' ')
+      .replace(/\\s+/g, ' ').trim();
+    const normalizedAddress = value => normalized(value)
+      .replace(/\\b(place|pl|boulevard|blvd|street|st|road|rd|drive|dr|avenue|ave)\\b/g, ' ')
       .replace(/\\s+/g, ' ').trim();
     const distanceM = (a, b) => {
       const rad = Math.PI / 180;
       const dLat = (Number(a.lat) - Number(b.lat)) * rad;
       const dLng = (Number(a.lng) - Number(b.lng)) * rad;
-      const x = dLng * Math.cos((Number(a.lat) + Number(b.lat)) * rad / 2);
-      return 6371000 * Math.hypot(dLat, x);
+      return 6371000 * Math.hypot(dLat, dLng * Math.cos((Number(a.lat) + Number(b.lat)) * rad / 2));
     };
+    // Prefer a real Google Place identity over a manually imported alias.
+    const preferred = [...rows].sort((a, b) =>
+      Number(Boolean(b.google_place_id)) - Number(Boolean(a.google_place_id)) ||
+      Number(Boolean(b.google_rating)) - Number(Boolean(a.google_rating)) ||
+      Number(b.review_count || 0) - Number(a.review_count || 0));
     const retained = [];
-    for (const venue of rows) {
+    for (const venue of preferred) {
       if (!Number.isFinite(Number(venue.lat)) || !Number.isFinite(Number(venue.lng))) {
         retained.push(venue); continue;
       }
       const name = normalized(venue.name);
-      const duplicate = retained.find(other => {
-        if (!other.lat || !other.lng || distanceM(venue, other) > 65) return false;
+      const duplicate = retained.some(other => {
+        if (!Number.isFinite(Number(other.lat)) || !Number.isFinite(Number(other.lng)) ||
+            distanceM(venue, other) > 80) return false;
+        if (venue.google_place_id && other.google_place_id &&
+            venue.google_place_id === other.google_place_id) return true;
         const existing = normalized(other.name);
         if (!name || !existing) return false;
-        if (name === existing) return true;
-        const shorter = name.length < existing.length ? name : existing;
-        const longer = name.length < existing.length ? existing : name;
-        // Permit abbreviated Google names (e.g. "Community Pie Ham...")
-        // only if the common prefix is substantial; avoid unrelated neighbors.
-        return shorter.length >= 12 && longer.startsWith(shorter) &&
-          (shorter.length / longer.length >= 0.6);
+        const [shorter, longer] = name.length <= existing.length ? [name, existing] : [existing, name];
+        const similarName = name === existing ||
+          (shorter.length >= 9 && shorter.split(' ').length >= 2 &&
+            longer.startsWith(shorter + ' '));
+        if (!similarName) return false;
+        const addr = normalizedAddress(venue.address);
+        const otherAddr = normalizedAddress(other.address);
+        // Same address or extremely close position + strong name match.
+        return (addr && otherAddr && addr === otherAddr) ||
+          distanceM(venue, other) <= 35;
       });
       if (!duplicate) retained.push(venue);
     }
