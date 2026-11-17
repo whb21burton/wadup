@@ -1,7 +1,7 @@
 // pages/api/reviews/submit.js — POST { venue_id, overall_rating, subcategory_ratings, content }
 // Replaces the old direct client-side `supabase.from('reviews').insert(...)`
 // call (components/WriteReviewModal.js used to do this itself) so the
-// check-in gate and the weighted-rating recalculation can both happen
+// category validation and the weighted-rating recalculation can both happen
 // server-side, atomically with the write, rather than trusting the client.
 import { supabaseAdmin } from '../supabase-admin';
 import { recalculateVenueRating } from '../../../lib/rankings';
@@ -26,23 +26,23 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'overall_rating must be a number between 1 and 10' });
   }
 
+  const { data: reviewVenue, error: venueError } = await supabaseAdmin.from('venues')
+    .select('subcategories, subcategory, is_hidden').eq('id', venueId).single();
+  if (venueError || !reviewVenue || reviewVenue.is_hidden) return res.status(404).json({ error: 'Venue not found' });
+  const assigned = Array.isArray(reviewVenue.subcategories) && reviewVenue.subcategories.length
+    ? reviewVenue.subcategories : (reviewVenue.subcategory ? [reviewVenue.subcategory] : []);
+  const allowed = new Map(assigned.map(s => [String(s).trim().toLowerCase(), String(s).trim()]));
   let cleanSubcatRatings = {};
+  if (subcategory_ratings && (typeof subcategory_ratings !== 'object' || Array.isArray(subcategory_ratings))) return res.status(400).json({ error: 'Invalid subcategory ratings' });
   if (subcategory_ratings && typeof subcategory_ratings === 'object') {
     for (const [subcat, val] of Object.entries(subcategory_ratings)) {
       const n = Number(val);
-      if (typeof subcat === 'string' && subcat.trim() && Number.isFinite(n) && n >= 1 && n <= 10) {
-        cleanSubcatRatings[subcat.trim()] = n;
-      }
+      const canonical = allowed.get(subcat.trim().toLowerCase());
+      if (!canonical) return res.status(400).json({ error: 'This subcategory is not assigned to the venue: ' + subcat });
+      if (!Number.isFinite(n) || n < 1 || n > 10) return res.status(400).json({ error: 'Invalid rating for ' + subcat });
+      cleanSubcatRatings[canonical] = n;
     }
   }
-
-  // Checked-in is required, same rule the old vote system enforced —
-  // checkins restricts SELECT to the acting user's own rows, which is
-  // exactly what's needed here ("have I checked in", not "who has").
-  const { data: checkin, error: checkinError } = await supabaseAdmin
-    .from('checkins').select('id').eq('user_id', user.id).eq('venue_id', venueId).limit(1);
-  if (checkinError) return res.status(500).json({ error: 'Failed to verify check-in', detail: checkinError.message });
-  if (!checkin?.length) return res.status(403).json({ error: 'Check in first to leave a rating' });
 
   // One review per user per venue (reviews_user_id_venue_id_key) — upsert so
   // resubmitting edits the existing review instead of erroring.
