@@ -183,7 +183,7 @@ function buildDays() {
 // fallback this reads from.
 function venueEmoji(v) {
   const primary = venueCategories(v)[0];
-  return v.custom_emoji || (primary === 'activities' ? activityIcon(v) : primary === 'outdoors' ? outdoorIcon(v) : CATEGORY_ICONS[primary]) || '📍';
+  return venueCategories(v).includes('restaurant') ? restaurantFoodIcon(v) : v.custom_emoji || (primary === 'activities' ? activityIcon(v) : primary === 'outdoors' ? outdoorIcon(v) : CATEGORY_ICONS[primary]) || '📍';
 }
 
 // ── Two-tier pin system ── the rating used to ORDER pins/sidebar items falls
@@ -876,7 +876,7 @@ export default function WadUp() {
   // status + a compact beer-icon pin outside the top ranks — everything else
   // keeps the standard rank pill/discovery dot (dropVenuePin).
   function dropPinForVenue(v, areaRank) {
-    if (venueCategories(v).includes('nightlife')) {
+    if (venueCategories(v).includes('nightlife') && !venueCategories(v).includes('restaurant')) {
       dropBarPinRef.current?.(v, areaRank);
     } else {
       dropVenuePinRef.current?.(v, areaRank);
