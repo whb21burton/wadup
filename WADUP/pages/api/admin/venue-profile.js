@@ -13,7 +13,7 @@ export default async function handler(req,res){
   if(userError||!user)return res.status(401).json({error:'Invalid session'});
   const {venueId,updates}=req.body||{};
   if(typeof venueId!=='string'||!updates||typeof updates!=='object'||Array.isArray(updates))return res.status(400).json({error:'Invalid request'});
-  const {data:venue}=await supabaseAdmin.from('venues').select('id,city,owner_id,name,address,category,categories,subcategory,subcategories').eq('id',venueId).maybeSingle();
+  const {data:venue}=await supabaseAdmin.from('venues').select('id,city,owner_id,name,address,lat,lng,category,categories,subcategory,subcategories').eq('id',venueId).maybeSingle();
   if(!venue)return res.status(404).json({error:'Venue not found'});
   const admin=await requireAdmin(req);
   if(venue.owner_id!==user.id&&!(admin&&canAccessCity(admin.adminRole,venue.city)))return res.status(403).json({error:'Not authorized'});
@@ -22,6 +22,13 @@ export default async function handler(req,res){
     const value=updates[field];
     if(typeof value!=='string'||value.length>4000)return res.status(400).json({error:'Invalid '+field});
     safe[field]=value.trim();
+  }
+  const hasLat=Object.prototype.hasOwnProperty.call(updates,'lat'),hasLng=Object.prototype.hasOwnProperty.call(updates,'lng');
+  if(hasLat!==hasLng)return res.status(400).json({error:'Provide both latitude and longitude'});
+  if(hasLat){
+    const {lat,lng}=updates;
+    if(typeof lat!=='number'||typeof lng!=='number'||!Number.isFinite(lat)||!Number.isFinite(lng)||lat < -90||lat > 90||lng < -180||lng > 180)return res.status(400).json({error:'Invalid map pin coordinates'});
+    safe.lat=lat;safe.lng=lng;
   }
   if(updates.categories!==undefined){
     if(!Array.isArray(updates.categories)||!updates.categories.length||updates.categories.length>6||!updates.categories.every(x=>CATEGORIES.has(x))||new Set(updates.categories).size!==updates.categories.length)return res.status(400).json({error:'Choose a valid primary and optional secondary categories'});
@@ -38,7 +45,7 @@ export default async function handler(req,res){
   if(!Object.keys(safe).length)return res.status(400).json({error:'No changes'});
   if(safe.name!==undefined&&!safe.name)return res.status(400).json({error:'Venue name is required'});
   for(const field of ['website','cover_photo_url'])if(safe[field]&&!/^https?:\/\//i.test(safe[field]))return res.status(400).json({error:'Use a full https:// URL'});
-  const identityFields=['name','address','category','categories','subcategory','subcategories'];
+  const identityFields=['name','address','lat','lng','category','categories','subcategory','subcategories'];
   const identityChanged=identityFields.some(field=>Object.prototype.hasOwnProperty.call(safe,field)&&JSON.stringify(safe[field])!==JSON.stringify(venue[field]));
   if(identityChanged){
     const since=new Date();since.setUTCFullYear(since.getUTCFullYear()-1);
