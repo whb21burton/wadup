@@ -782,6 +782,28 @@ export default function WadUp() {
     return overlay;
   }
 
+  // The emoji is the exact-position marker, independent of collision-managed name labels.
+  function makeFixedVenueEmoji(pos, icon, map, onClick) {
+    const shell = document.createElement('div');
+    shell.style.cssText = 'position:absolute;z-index:900;cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center;width:32px;height:32px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));';
+    const glyph = foodIconElement(icon);
+    glyph.style.fontSize = '24px';
+    shell.appendChild(glyph);
+    shell.addEventListener('click', e => { e.stopPropagation(); onClick(); });
+    const fixed = new window.google.maps.OverlayView();
+    fixed.onAdd = function () { this.getPanes().overlayMouseTarget.appendChild(shell); };
+    fixed.draw = function () {
+      const pt = this.getProjection()?.fromLatLngToDivPixel(pos);
+      if (!pt) return;
+      shell.style.left = pt.x + 'px';
+      shell.style.top = pt.y + 'px';
+      shell.style.transform = 'translate(-50%, -50%)';
+    };
+    fixed.onRemove = function () { shell.remove(); };
+    fixed.setMap(map);
+    return fixed;
+  }
+
   // ── Nudge a new pin's position apart from any already-dropped pin sitting
   // at (or within ~20m of) the same spot, so pins never render exactly
   // stacked on top of each other. Checks BOTH venue/bar pins (mapMarkers)
@@ -1000,11 +1022,7 @@ export default function WadUp() {
         pill.appendChild(badgeEl);
       }
 
-      if (cats.includes('restaurant') && !eventsChipActive) {
-        const food = foodIconElement(restaurantFoodIcon(v));
-        food.style.fontSize = '18px';
-        pill.appendChild(food);
-      }
+      // Food icon is a fixed geographic pin, never part of the name/rank pill.
 
       const textWrap = document.createElement('div');
       textWrap.className = 'wu-pill-text';
@@ -1106,7 +1124,12 @@ export default function WadUp() {
     });
 
     mapMarkers.current[v.id] = { marker };
-    overlays.current[v.id]   = overlay;
+    if (tier === 'top10' && cats.includes('restaurant') && !eventsChipActive) {
+      const fixedEmoji = makeFixedVenueEmoji(pos, restaurantFoodIcon(v), map, () => handlePinInteraction(v.id));
+      overlays.current[v.id] = { setMap(nextMap) { overlay.setMap(nextMap); fixedEmoji.setMap(nextMap); } };
+    } else {
+      overlays.current[v.id] = overlay;
+    }
 
     const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
@@ -1208,7 +1231,7 @@ export default function WadUp() {
 
       const nameSpan = document.createElement('span');
       nameSpan.className = 'wu-name';
-      nameSpan.textContent = `${venueMapEmoji(v, '🍺')} ${rankStyle.prefix} ${v.name}`;
+      nameSpan.textContent = `${rankStyle.prefix} ${v.name}`;
       nameSpan.style.color = rankStyle.color;
       textWrap.appendChild(nameSpan);
 
@@ -1314,7 +1337,12 @@ export default function WadUp() {
     });
 
     mapMarkers.current[v.id] = { marker };
-    overlays.current[v.id]   = overlay;
+    if (showName && !eventsChipActive) {
+      const fixedEmoji = makeFixedVenueEmoji(pos, venueMapEmoji(v, '🍺'), map, () => handlePinInteraction(v.id));
+      overlays.current[v.id] = { setMap(nextMap) { overlay.setMap(nextMap); fixedEmoji.setMap(nextMap); } };
+    } else {
+      overlays.current[v.id] = overlay;
+    }
 
     const entry = { id: v.id, type: 'venue', tier: showName ? 'top10' : 'discovery', rank: areaRank, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
