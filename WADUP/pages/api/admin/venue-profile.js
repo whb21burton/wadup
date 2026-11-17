@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../supabase-admin';
 import { requireAdmin } from './_authAdmin';
 import { canAccessCity } from '../../../lib/admin';
+import { CATEGORY_CHIPS } from '../../../lib/data';
 
 const FIELDS=['name','description','phone','website','cover_photo_url','address'];
 const CATEGORIES=new Set(['restaurant','nightlife','events','sports','outdoors','activities']);
@@ -28,6 +29,10 @@ export default async function handler(req,res){
   }
   if(updates.subcategories!==undefined){
     if(!Array.isArray(updates.subcategories)||updates.subcategories.length>12||!updates.subcategories.every(x=>typeof x==='string'&&x.trim()&&x.length<=60))return res.status(400).json({error:'Invalid subcategories'});
+    const selectedCategories=safe.categories||venue.categories?.length&&venue.categories||[venue.category].filter(Boolean);
+    const allowed=new Set(CATEGORY_CHIPS.filter(ch=>selectedCategories.includes(ch.id==='bars'?'nightlife':ch.id)).flatMap(ch=>ch.subcategories.map(s=>s.id)));
+    if(!updates.subcategories.every(s=>allowed.has(s)))return res.status(400).json({error:'Select only subcategories available under your chosen categories'});
+    if(new Set(updates.subcategories).size!==updates.subcategories.length)return res.status(400).json({error:'Duplicate subcategories'});
     safe.subcategories=updates.subcategories.map(x=>x.trim());safe.subcategory=safe.subcategories[0]||null;
   }
   if(!Object.keys(safe).length)return res.status(400).json({error:'No changes'});
