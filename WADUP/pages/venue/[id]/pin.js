@@ -33,43 +33,33 @@ export default function VenuePinPicker(){
   useEffect(()=>{
     if(!authorized||!venue||!mapNode.current||!position||mapInstance.current)return;
     let cancelled=false;
-    const init=async()=>{
+    const init=()=>{
       if(cancelled||!mapNode.current||mapInstance.current)return;
+      if(typeof window.google?.maps?.Map!=='function'){
+        setError('Google Maps could not initialize. Check the Maps JavaScript API and allowed website domains.');
+        return;
+      }
       try{
-        // loading=async does not guarantee Map is ready when the script onload fires.
-        // importLibrary waits for the actual maps constructor.
-        const maps=window.google?.maps;
-        if(!maps)throw new Error('Google Maps did not initialize.');
-        const mapLibrary=typeof maps.importLibrary==='function'
-          ? await maps.importLibrary('maps')
-          : maps;
-        const MapClass=mapLibrary.Map||maps.Map;
-        if(typeof MapClass!=='function')throw new Error('Google Maps is not ready.');
-        if(cancelled||!mapNode.current||mapInstance.current)return;
-        const map=new MapClass(mapNode.current,{center:position,zoom:17,gestureHandling:'greedy',mapTypeControl:true,streetViewControl:false});
+        const map=new window.google.maps.Map(mapNode.current,{center:position,zoom:17,gestureHandling:'greedy',mapTypeControl:true,streetViewControl:false});
         mapInstance.current=map;
-        const markerLibrary=typeof maps.importLibrary==='function'
-          ? await maps.importLibrary('marker')
-          : maps;
-        if(cancelled)return;
-        const MarkerClass=markerLibrary.Marker||maps.Marker;
-        if(typeof MarkerClass!=='function')throw new Error('Map marker could not load.');
-        marker.current=new MarkerClass({position,map,draggable:true,title:'Drag or click to move the venue pin'});
+        marker.current=new window.google.maps.Marker({position,map,draggable:true,title:'Drag or click to move the venue pin'});
         const choose=point=>{if(point)setPosition({lat:point.lat(),lng:point.lng()});};
         map.addListener('click',e=>choose(e.latLng));
         marker.current.addListener('dragend',e=>choose(e.latLng));
-        setReady(true);
-      }catch(e){if(!cancelled){mapInstance.current=null;setError(e.message||'Could not load Google Maps.');}}
+        setError('');setReady(true);
+      }catch(e){setError(e.message||'Could not initialize Google Maps.');}
     };
-    if(window.google?.maps){init();return()=>{cancelled=true;};}
+    if(typeof window.google?.maps?.Map==='function'){init();return()=>{cancelled=true;};}
     if(!GMAPS_KEY){setError('Google Maps is unavailable.');return;}
+    const callbackName='__wadupPinMapInit';
+    window[callbackName]=init;
+    window.gm_authFailure=()=>{if(!cancelled)setError('Google Maps rejected this domain or API key. Check website restrictions.');};
     const script=document.createElement('script');
-    script.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(GMAPS_KEY)+'&v=weekly&loading=async';
-    script.async=true;
-    script.onload=init;
-    script.onerror=()=>{if(!cancelled)setError('Could not load Google Maps.');};
+    script.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(GMAPS_KEY)+'&callback='+callbackName+'&v=weekly&loading=async';
+    script.async=true;script.defer=true;
+    script.onerror=()=>{if(!cancelled)setError('Could not download Google Maps.');};
     document.head.appendChild(script);
-    return()=>{cancelled=true;};
+    return()=>{cancelled=true;if(window[callbackName]===init)delete window[callbackName];};
   },[authorized,venue]);
   useEffect(()=>{if(position&&marker.current)marker.current.setPosition(position);},[position]);
   const save=async()=>{
