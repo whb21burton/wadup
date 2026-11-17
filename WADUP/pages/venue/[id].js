@@ -452,11 +452,9 @@ export default function VenuePage() {
   // at all — e.g. a shared link straight to this page, where history.back()
   // would otherwise leave the button doing nothing).
   const goBack = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      window.history.back();
-    } else {
-      router.push('/');
-    }
+    // Back always means return to the discovery map, never a prior
+    // pin-placement or edit route lingering in browser history.
+    router.push('/');
   };
 
   const share = async () => {
