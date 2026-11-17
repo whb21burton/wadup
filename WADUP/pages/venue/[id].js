@@ -94,6 +94,7 @@ export default function VenuePage() {
   const [canManage,setCanManage]=useState(false);
   const [editRequested,setEditRequested]=useState(false);
   const [editSection,setEditSection]=useState(null);
+  const [classificationStep,setClassificationStep]=useState(1);
   const [scheduleLoading,setScheduleLoading]=useState(false);
   const scheduleDays=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const activityTypes=[['trivia','Trivia night'],['game_night','Game / bingo night'],['karaoke','Karaoke'],['live_music','Live music'],['special_event','Special event'],['happy_hour','Happy hour'],['food_special','Food / drink special'],['other','Other']];
@@ -180,7 +181,7 @@ export default function VenuePage() {
   const startEditing=useCallback((section=null)=>{
     if(!venue)return;
     setProfileDraft({name:venue.name||'',description:venue.description||'',phone:venue.phone||'',website:venue.website||'',cover_photo_url:venue.cover_photo_url||'',address:venue.address||'',categories:venueCategories(venue),subcategories:Array.isArray(venue.subcategories)?venue.subcategories:(venue.subcategory?[venue.subcategory]:[])});
-    setEditSection(section);setEditingProfile(true);setEditError('');
+    setEditSection(section);setClassificationStep(1);setEditingProfile(true);setEditError('');
   },[venue]);
   // The edit URL grants access to the pencil control; it never opens a full form automatically.
   useEffect(()=>{
@@ -203,7 +204,7 @@ export default function VenuePage() {
   const saveInlineProfile=async()=>{
     setEditBusy(true);setEditError('');
     try{
-      const fields=editSection==='identity'?['name']:editSection==='about'?['description','phone','website','cover_photo_url']:['address','categories','subcategories'];
+      const fields=editSection==='identity'?['name']:editSection==='about'?['description','phone','website','cover_photo_url']:editSection==='address'?['address']:['categories','subcategories'];
       const updates=Object.fromEntries(fields.map(field=>[field,profileDraft[field]]));
       const result=await sendEdit('/api/admin/venue-profile',{venueId:id,updates});
       setVenue(result.venue);setEditingProfile(false);setEditSection(null);setEditRequested(false);
@@ -607,7 +608,7 @@ export default function VenuePage() {
               </div>
             )}
 
-            <div className="venue-location" onClick={()=>{if(canManage&&editingProfile)setEditSection('categories');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>📍 {venue.city}{venue.state ? `, ${venue.state}` : ''}{canManage&&editingProfile?' ✎':''}</div>
+            <div className="venue-location" onClick={()=>{if(canManage&&editingProfile)setEditSection('address');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>📍 {venue.city}{venue.state ? `, ${venue.state}` : ''}{canManage&&editingProfile?' ✎':''}</div>
             <div className="venue-category-line" onClick={()=>{if(canManage&&editingProfile)setEditSection('categories');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>
               <div className="venue-category-badges">
                 {venueCategories(venue).map(c => (
@@ -668,13 +669,46 @@ export default function VenuePage() {
               <label>Cover photo URL<input value={profileDraft.cover_photo_url||''} onChange={e=>setProfileDraft(d=>({...d,cover_photo_url:e.target.value}))}/></label>
               <div className="wu-inline-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>{editError&&<p role="alert">{editError}</p>}
             </div>}
-            {canManage&&editingProfile&&editSection==='categories'&&<div className="wu-edit-inline">
+            {canManage&&editingProfile&&editSection==='address'&&<div className="wu-edit-inline">
+              <strong>Edit street address</strong>
               <label>Street address<input value={profileDraft.address||''} onChange={e=>setProfileDraft(d=>({...d,address:e.target.value}))}/></label>
-              <strong>Categories</strong>
-              <div className="wu-option-grid">{[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['activities','Activities']].map(([key,label])=><label key={key}><input type="checkbox" checked={(profileDraft.categories||[]).includes(key)} onChange={e=>setProfileDraft(d=>({...d,categories:e.target.checked?[...(d.categories||[]),key]:(d.categories||[]).filter(v=>v!==key),subcategories:[]}))}/>{label}</label>)}</div>
-              <strong>Subcategories</strong>
-              <div className="wu-option-grid">{CATEGORY_CHIPS.filter(chip=>(profileDraft.categories||[]).includes(chip.id==='bars'?'nightlife':chip.id)).flatMap(chip=>chip.subcategories).map(sub=><label key={sub.id}><input type="checkbox" checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(v=>v!==sub.id)}))}/>{sub.label}</label>)}</div>
-              <div className="wu-inline-actions"><button disabled={editBusy||!(profileDraft.categories||[]).length} onClick={saveInlineProfile}>Save</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>{editError&&<p role="alert">{editError}</p>}
+              <div className="wu-inline-actions"><button disabled={editBusy||!profileDraft.address?.trim()} onClick={saveInlineProfile}>Save address</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>
+              {editError&&<p role="alert">{editError}</p>}
+            </div>}
+            {canManage&&editingProfile&&editSection==='categories'&&<div className="wu-edit-inline">
+              <h3 style={{margin:'0 0 12px'}}>Help people find your place</h3>
+              <p style={{margin:'0 0 16px',color:'#536575'}}>Step {classificationStep} of 3 · Choose the labels that best describe your business.</p>
+              {classificationStep===1&&<>
+                <strong>1. What is this business primarily?</strong>
+                <div className="wu-option-grid" style={{marginTop:12}}>
+                  {[['restaurant','🍔 Restaurants'],['nightlife','🍸 Bars & Nightlife'],['activities','🎳 Activities']].map(([key,label])=><label key={key} style={{cursor:'pointer'}}><input type="radio" name="primaryVenueCategory" checked={profileDraft.categories?.[0]===key} onChange={()=>setProfileDraft(d=>({ ...d,categories:[key,...(d.categories||[]).filter(v=>v!==key)],subcategories:(d.subcategories||[]).filter(s=>CATEGORY_CHIPS.some(ch=>ch.id===(key==='nightlife'?'bars':key)&&ch.subcategories.some(sub=>sub.id===s))||(d.categories||[]).filter(v=>v!==key).some(cat=>CATEGORY_CHIPS.some(ch=>ch.id===(cat==='nightlife'?'bars':cat)&&ch.subcategories.some(sub=>sub.id===s)))) }))}/>{label}</label>)}
+                </div>
+              </>}
+              {classificationStep===2&&<>
+                <strong>2. Does it also fit another category?</strong>
+                <p style={{color:'#536575'}}>Optional — your place can appear under more than one category.</p>
+                <div className="wu-option-grid">
+                  {[['restaurant','🍔 Restaurants'],['nightlife','🍸 Bars & Nightlife'],['activities','🎳 Activities']].filter(([key])=>key!==profileDraft.categories?.[0]).map(([key,label])=><label key={key}><input type="checkbox" checked={(profileDraft.categories||[]).includes(key)} onChange={e=>setProfileDraft(d=>({...d,categories:e.target.checked?[...(d.categories||[]),key]:(d.categories||[]).filter(v=>v!==key),subcategories:(d.subcategories||[]).filter(s=>e.target.checked||!CATEGORY_CHIPS.some(ch=>ch.id===(key==='nightlife'?'bars':key)&&ch.subcategories.some(sub=>sub.id===s)))}))}/>{label}</label>)}
+                </div>
+              </>}
+              {classificationStep===3&&<>
+                <strong>3. Select the subcategories that apply</strong>
+                {CATEGORY_CHIPS.filter(ch=>(profileDraft.categories||[]).includes(ch.id==='bars'?'nightlife':ch.id)).map(ch=><div key={ch.id} style={{marginTop:16}}>
+                  <strong>{ch.label}</strong>
+                  <div className="wu-option-grid" style={{marginTop:8}}>{ch.subcategories.map(sub=><label key={sub.id}><input type="checkbox" checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(v=>v!==sub.id)}))}/>{sub.label}</label>)}</div>
+                </div>)}
+              </>}
+              <div style={{margin:'18px 0',padding:14,background:'#eefaff',border:'1px solid #a9e9f1',borderRadius:12}}>
+                <strong>PROFILE CLASSIFICATION PREVIEW</strong>
+                <div style={{marginTop:8}}>{(profileDraft.categories||[]).map((cat,i)=><span key={cat} style={{display:'inline-block',margin:'4px 8px 4px 0'}}>{CATEGORY_LABELS[cat]||cat}{i===0?' · Primary':''}</span>)}</div>
+                <div style={{marginTop:6}}>{(profileDraft.subcategories||[]).join(' · ')||'Choose subcategories in step 3'}</div>
+              </div>
+              <div className="wu-inline-actions">
+                {classificationStep>1&&<button type="button" onClick={()=>setClassificationStep(n=>n-1)}>Back</button>}
+                {classificationStep<3?<button type="button" disabled={!(profileDraft.categories||[]).length} onClick={()=>setClassificationStep(n=>n+1)}>Next</button>:<button disabled={editBusy||!(profileDraft.categories||[]).length} onClick={saveInlineProfile}>Save classification</button>}
+                <button type="button" onClick={()=>setEditSection(null)}>Cancel</button>
+              </div>
+              {editError&&<p role="alert">{editError}</p>}
             </div>}
             {venue.description && <p className="venue-description">{venue.description}</p>}
 
