@@ -645,28 +645,78 @@ export default function WadUp() {
 
   useEffect(() => { updateAreaRanksRef.current = updateAreaRanks; }, [updateAreaRanks]);
 
-  // ── WuOverlay class factory ── anchor 'bottom' = pin (tail points at the
-  // coordinate); anchor 'center' = bubble centered directly on the coordinate;
-  // anchor 'top' = the coordinate sits at el's top edge (discovery pins, so
-  // the dot itself — el's first child — lands exactly on the venue's spot).
+  // Stagger *labels* in screen pixels while keeping every marker and pin tail
+  // anchored to the venue's actual saved latitude/longitude.
+  // Each map owns its own label layout; nothing is written to the database.
+  function layoutMapLabels(map) {
+    const registry = map.__wadupLabelOverlays;
+    if (!registry) return;
+    const items = [...registry].filter(o => o.getMap() === map && o.__labelEl?.getClientRects().length)
+      .sort((a,b) => (b.__labelPriority || 0) - (a.__labelPriority || 0) || String(a.__labelId).localeCompare(String(b.__labelId)));
+    const occupied = [];
+    const candidates = [0,-24,24,-48,48,-72,72,-96,96];
+    for (const o of items) {
+      const label = o.__labelEl;
+      label.style.translate = 'none';
+      const r = label.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      let best = { x:0, y:0, score:Infinity };
+      for (const y of candidates) {
+        for (const x of [0,-32,32,-64,64]) {
+          const rect = {left:r.left+x-4,right:r.right+x+4,top:r.top+y-3,bottom:r.bottom+y+3};
+          let overlaps = 0;
+          for (const q of occupied) {
+            const w = Math.max(0,Math.min(rect.right,q.right)-Math.max(rect.left,q.left));
+            const h = Math.max(0,Math.min(rect.bottom,q.bottom)-Math.max(rect.top,q.top));
+            overlaps += w*h;
+          }
+          const score = overlaps*100 + Math.abs(y)*2 + Math.abs(x)*3;
+          if (score < best.score) best={x,y,score};
+          if (overlaps === 0 && x === 0 && y === 0) break;
+        }
+        if (best.score === 0) break;
+      }
+      label.style.translate = best.x+'px '+best.y+'px';
+      occupied.push({left:r.left+best.x-4,right:r.right+best.x+4,top:r.top+best.y-3,bottom:r.bottom+best.y+3});
+    }
+  }
+  function queueMapLabelLayout(map) {
+    if (map.__wadupLabelFrame) return;
+    map.__wadupLabelFrame = requestAnimationFrame(() => {
+      map.__wadupLabelFrame = null;
+      layoutMapLabels(map);
+    });
+  }
+
+  // Overlay position is always the real venue coordinate. Only the name/pill
+  // moves when nearby labels would otherwise overlap.
   function makeOverlay(pos, el, map, anchor = 'bottom') {
     const base = anchor === 'center' ? 'translate(-50%, -50%)' : anchor === 'top' ? 'translate(-50%, 0)' : 'translate(-50%, -100%)';
     const overlay = new window.google.maps.OverlayView();
+    overlay.__labelEl = el.querySelector('.wu-pill') || el.querySelector('.wu-discovery-label');
+    overlay.__labelPriority = el.querySelector('.wu-pill') ? Number(el.style.zIndex || 0) : 0;
+    overlay.__labelId = el.textContent || '';
     overlay.onAdd = function() {
       this.getPanes().overlayMouseTarget.appendChild(el);
+      if (!map.__wadupLabelOverlays) map.__wadupLabelOverlays = new Set();
+      map.__wadupLabelOverlays.add(this);
+      queueMapLabelLayout(map);
     };
     overlay.draw = function() {
       const proj = this.getProjection();
       if (!proj) return;
       const pt = proj.fromLatLngToDivPixel(pos);
       if (!pt) return;
-      el.style.position  = 'absolute';
-      el.style.left      = pt.x + 'px';
-      el.style.top       = pt.y + 'px';
+      el.style.position = 'absolute';
+      el.style.left = pt.x + 'px';
+      el.style.top = pt.y + 'px';
       el.style.transform = base;
+      queueMapLabelLayout(map);
     };
     overlay.onRemove = function() {
+      map.__wadupLabelOverlays?.delete(this);
       if (el.parentNode) el.parentNode.removeChild(el);
+      queueMapLabelLayout(map);
     };
     overlay.setMap(map);
     return overlay;
