@@ -31,7 +31,7 @@ export default async function handler(req,res){
     safe.lat=lat;safe.lng=lng;
   }
   if(updates.categories!==undefined){
-    if(!Array.isArray(updates.categories)||!updates.categories.length||updates.categories.length>6||!updates.categories.every(x=>CATEGORIES.has(x))||new Set(updates.categories).size!==updates.categories.length)return res.status(400).json({error:'Choose a valid primary and optional secondary categories'});
+    if(!Array.isArray(updates.categories)||!updates.categories.length||updates.categories.length>2||!updates.categories.every(x=>['restaurant','nightlife','activities'].includes(x))||new Set(updates.categories).size!==updates.categories.length)return res.status(400).json({error:'Choose a valid primary and optional secondary categories'});
     safe.categories=updates.categories;safe.category=updates.categories[0];
   }
   if(updates.subcategories!==undefined){
@@ -40,6 +40,10 @@ export default async function handler(req,res){
     const allowed=new Set(CATEGORY_CHIPS.filter(ch=>selectedCategories.includes(ch.id==='bars'?'nightlife':ch.id)).flatMap(ch=>ch.subcategories.map(s=>s.id)));
     if(!updates.subcategories.every(s=>allowed.has(s)))return res.status(400).json({error:'Select only subcategories available under your chosen categories'});
     if(new Set(updates.subcategories).size!==updates.subcategories.length)return res.status(400).json({error:'Duplicate subcategories'});
+    const barTypes=new Set(CATEGORY_CHIPS.find(ch=>ch.id==='bars').subcategories.map(s=>s.id));
+    const barCount=updates.subcategories.filter(s=>barTypes.has(s)).length;
+    if(barCount>1)return res.status(400).json({error:'Choose only one Bars & Nightlife subcategory'});
+    if(selectedCategories.includes('nightlife')&&barCount!==1)return res.status(400).json({error:'Choose one Bars & Nightlife subcategory'});
     safe.subcategories=updates.subcategories.map(x=>x.trim());safe.subcategory=safe.subcategories[0]||null;
   }
   if(!Object.keys(safe).length)return res.status(400).json({error:'No changes'});
