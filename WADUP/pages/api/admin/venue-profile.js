@@ -45,19 +45,7 @@ export default async function handler(req,res){
   if(!Object.keys(safe).length)return res.status(400).json({error:'No changes'});
   if(safe.name!==undefined&&!safe.name)return res.status(400).json({error:'Venue name is required'});
   for(const field of ['website','cover_photo_url'])if(safe[field]&&!/^https?:\/\//i.test(safe[field]))return res.status(400).json({error:'Use a full https:// URL'});
-  const identityFields=['name','address','lat','lng','category','categories','subcategory','subcategories'];
-  const identityChanged=identityFields.some(field=>Object.prototype.hasOwnProperty.call(safe,field)&&JSON.stringify(safe[field])!==JSON.stringify(venue[field]));
-  if(identityChanged){
-    const since=new Date();since.setUTCFullYear(since.getUTCFullYear()-1);
-    const {count,error:countError}=await supabaseAdmin.from('venue_identity_edits').select('id',{count:'exact',head:true}).eq('venue_id',venueId).gte('changed_at',since.toISOString());
-    if(countError)return res.status(500).json({error:'Unable to verify venue edit allowance'});
-    if(count>=2)return res.status(409).json({error:'Venue name, address and categories may only be changed twice in a rolling 12-month period. Your two changes have already been used.'});
-  }
   const {data,error}=await supabaseAdmin.from('venues').update(safe).eq('id',venueId).select().single();
   if(error)return res.status(500).json({error:'Unable to save venue'});
-  if(identityChanged){
-    const {error:logError}=await supabaseAdmin.from('venue_identity_edits').insert({venue_id:venueId,editor_id:user.id});
-    if(logError)return res.status(500).json({error:'Venue saved, but edit history could not be recorded. Contact support before editing again.'});
-  }
   return res.json({venue:data});
 }
