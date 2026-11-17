@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
-import { CATEGORY_LABELS, venueCategories, formatTime } from '../../lib/data';
+import { CATEGORY_LABELS, CATEGORY_CHIPS, venueCategories, formatTime } from '../../lib/data';
 import { getBestRated } from '../../lib/rankings';
 import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
@@ -505,6 +505,12 @@ export default function VenuePage() {
       </Head>
 
       <style jsx global>{`
+      .wu-inline-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}.wu-inline-name input{font:inherit;font-size:24px;font-weight:800;min-width:180px;flex:1}
+      .wu-inline-name input,.wu-edit-inline input:not([type=checkbox]),.wu-edit-inline textarea{background:#fff;color:#101820;border:2px solid #00bcd5;border-radius:8px;padding:9px;width:100%}
+      .wu-inline-name button,.wu-inline-actions button{background:#00bed9;border:0;border-radius:8px;padding:9px 15px;font-weight:800;cursor:pointer}
+      .wu-edit-inline{display:grid;gap:10px;margin:12px 0;padding:8px 0}.wu-edit-inline label{display:grid;gap:5px}.wu-edit-inline textarea{min-height:80px}
+      .wu-option-grid{display:flex;flex-wrap:wrap;gap:7px}.wu-option-grid label{display:flex;align-items:center;gap:5px;background:#eef9fb;border:1px solid #c4e8ec;padding:8px;border-radius:9px;cursor:pointer}.wu-option-grid input{accent-color:#00acc8}
+      .wu-inline-actions{display:flex;gap:8px}
       .inline-editor-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#083342;color:#e9ffff;border:1px solid #00b6d0;border-radius:10px;padding:12px;margin:14px 0}
       .inline-editor-toolbar span{font-size:12px;opacity:.8;flex:1}
       .inline-editor-toolbar button{background:#1b5260;color:white;border:1px solid #46a3b7;border-radius:7px;padding:8px}
@@ -563,7 +569,7 @@ export default function VenuePage() {
           </div>
 
           <div className="venue-header-content">
-            <h1 className="venue-name" onClick={()=>{if(canManage&&editingProfile)setEditSection('identity');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined} title={canManage&&editingProfile?'Tap to edit venue name':undefined}>{venue.name}{canManage&&editingProfile?' ✎':''}</h1>
+            {canManage&&editingProfile&&editSection==='identity'?<div className="wu-inline-name"><input aria-label="Venue name" autoFocus value={profileDraft.name||''} onChange={e=>setProfileDraft(d=>({...d,name:e.target.value}))}/><button disabled={editBusy} onClick={saveInlineProfile}>Save</button><button onClick={()=>setEditSection(null)}>Cancel</button>{editError&&<span role="alert">{editError}</span>}</div>:<h1 className="venue-name" onClick={()=>{if(canManage&&editingProfile)setEditSection('identity');}} style={canManage&&editingProfile?{cursor:'text',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>{venue.name}{canManage&&editingProfile?' ✎':''}</h1>}
             
             {venue.is_verified && <div className="venue-verified">✓ Verified Business</div>}
             {venue.is_private && <div className="venue-private-badge">🔒 Private Venue</div>}
@@ -655,18 +661,20 @@ export default function VenuePage() {
 
           <section className="venue-section">
             <h2 onClick={()=>{if(canManage&&editingProfile)setEditSection('about');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>About {canManage&&editingProfile?'✎':''}</h2>
-            {canManage&&editingProfile&&editSection&&<div className="inline-edit-form">
-              <h3>{editSection==='identity'?'Venue name':editSection==='about'?'About & contact':'Categories & location'}</h3>
-              {(editSection==='identity'?['name']:editSection==='about'?['description','phone','website','cover_photo_url']:['address']).map(field=><label key={field}>{field.replaceAll('_',' ')}
-                {field==='description'?<textarea value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>:<input value={profileDraft[field]||''} onChange={e=>setProfileDraft(d=>({...d,[field]:e.target.value}))}/>}
-              </label>)}
-              {editSection==='categories'&&<><label>Primary category<select value={profileDraft.categories?.[0]||'restaurant'} onChange={e=>setProfileDraft(d=>({...d,categories:['restaurant','nightlife','activities'].includes(e.target.value)?[e.target.value,...(d.categories||[]).filter(x=>x!==e.target.value&&['restaurant','nightlife','activities'].includes(x))]:[e.target.value]}))}>
-                {[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['activities','Activities']].map(([id,label])=><option key={id} value={id}>{label}</option>)}
-              </select></label>
-              <fieldset className="inline-category-fieldset"><legend>Additional categories</legend>{[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['activities','Activities']].filter(([id])=>id!==profileDraft.categories?.[0] && ['restaurant','nightlife','activities'].includes(profileDraft.categories?.[0])).map(([id,label])=><label key={id}><input type="checkbox" checked={(profileDraft.categories||[]).includes(id)} onChange={e=>setProfileDraft(d=>({...d,categories:e.target.checked?[...d.categories,id]:d.categories.filter(x=>x!==id)}))}/>{label}</label>)}</fieldset>
-              <label>Subcategories (comma separated)<input value={(profileDraft.subcategories||[]).join(', ')} onChange={e=>setProfileDraft(d=>({...d,subcategories:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)}))}/></label></>}
-              {editError&&<p role="alert">{editError}</p>}
-              <div className="inline-edit-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save profile</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>
+            {canManage&&editingProfile&&editSection==='about'&&<div className="wu-edit-inline">
+              <label>Description<textarea value={profileDraft.description||''} onChange={e=>setProfileDraft(d=>({...d,description:e.target.value}))}/></label>
+              <label>Phone<input value={profileDraft.phone||''} onChange={e=>setProfileDraft(d=>({...d,phone:e.target.value}))}/></label>
+              <label>Website<input value={profileDraft.website||''} onChange={e=>setProfileDraft(d=>({...d,website:e.target.value}))}/></label>
+              <label>Cover photo URL<input value={profileDraft.cover_photo_url||''} onChange={e=>setProfileDraft(d=>({...d,cover_photo_url:e.target.value}))}/></label>
+              <div className="wu-inline-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>{editError&&<p role="alert">{editError}</p>}
+            </div>}
+            {canManage&&editingProfile&&editSection==='categories'&&<div className="wu-edit-inline">
+              <label>Street address<input value={profileDraft.address||''} onChange={e=>setProfileDraft(d=>({...d,address:e.target.value}))}/></label>
+              <strong>Categories</strong>
+              <div className="wu-option-grid">{[['restaurant','Restaurants'],['nightlife','Bars & Nightlife'],['activities','Activities']].map(([key,label])=><label key={key}><input type="checkbox" checked={(profileDraft.categories||[]).includes(key)} onChange={e=>setProfileDraft(d=>({...d,categories:e.target.checked?[...(d.categories||[]),key]:(d.categories||[]).filter(v=>v!==key),subcategories:[]}))}/>{label}</label>)}</div>
+              <strong>Subcategories</strong>
+              <div className="wu-option-grid">{CATEGORY_CHIPS.filter(chip=>(profileDraft.categories||[]).includes(chip.id==='bars'?'nightlife':chip.id)).flatMap(chip=>chip.subcategories).map(sub=><label key={sub.id}><input type="checkbox" checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(v=>v!==sub.id)}))}/>{sub.label}</label>)}</div>
+              <div className="wu-inline-actions"><button disabled={editBusy||!(profileDraft.categories||[]).length} onClick={saveInlineProfile}>Save</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>{editError&&<p role="alert">{editError}</p>}
             </div>}
             {venue.description && <p className="venue-description">{venue.description}</p>}
 
