@@ -614,7 +614,7 @@ export default function VenuePage() {
                   <input aria-label="Street address" autoFocus value={profileDraft.address||''} onChange={e=>setProfileDraft(d=>({...d,address:e.target.value}))} style={{padding:'8px 10px',borderRadius:8,border:'1px solid #00c4df',minWidth:240}}/>
                   <button type="button" disabled={editBusy||!profileDraft.address?.trim()} onClick={saveInlineProfile}>Save address</button>
                   <button type="button" onClick={()=>setEditSection(null)}>Cancel</button>
-                  <button type="button" onClick={()=>router.push(`/venue/${id}/pin`)}>📍 Place pin on map</button>
+                  <button type="button" onClick={()=>router.push(`/?placePin=${encodeURIComponent(id)}`)}>📍 Place pin on map</button>
                   {editError&&<span role="alert">{editError}</span>}
                 </span>:
                 <>{venue.address ? `${venue.address} · ` : ''}{venue.city}{venue.state ? `, ${venue.state}` : ''}{canManage&&editingProfile?' ✎':''}</>}
