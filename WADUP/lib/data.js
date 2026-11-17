@@ -44,6 +44,7 @@ export const CATEGORY_CHIPS = [
     { id: 'Seafood', label: 'Seafood' },
     { id: 'Steakhouse', label: 'Steakhouse' },
     { id: 'Burgers', label: 'Burgers' },
+    { id: 'Wings', label: 'Wings' },
     { id: 'Pizza', label: 'Pizza' },
     { id: 'Breakfast', label: 'Breakfast' },
     { id: 'Southern', label: 'Southern' },
