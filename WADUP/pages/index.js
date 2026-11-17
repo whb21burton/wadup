@@ -1465,7 +1465,7 @@ export default function WadUp() {
         throw Error('The saved coordinates did not match your selected pin.');
       }
       // The main map and venue profile now read the same persisted venue row.
-      window.location.assign('/venue/' + encodeURIComponent(pinEdit.id) + '?edit=1&pinSaved=1');
+      window.location.replace('/venue/' + encodeURIComponent(pinEdit.id) + '?pinSaved=1');
     } catch (e) { setPinError(e.message); setPinBusy(false); }
   };
 
