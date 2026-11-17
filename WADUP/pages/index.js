@@ -57,10 +57,10 @@ function restaurantFoodIcon(v) {
   // Only the primary category controls the map icon; a secondary bar tag
   // must never turn a restaurant into a beer / cocktail marker.
   const cats = venueCategories(v);
-  if (cats[0] !== 'restaurant') return null;
+  if (!cats.includes('restaurant')) return null;
   const subs = Array.isArray(v.subcategories) && v.subcategories.length ? v.subcategories : [v.subcategory].filter(Boolean);
   const food = subs.map(x => String(x).toLowerCase());
-  const first = food[0] || '';
+  const first = food.find(x => /burger|wings?|pizza|mexican|taco|steak|seafood|lobster|bbq|barbecue|sushi|japanese|italian|greek|breakfast|brunch/.test(x)) || '';
   const has = re => food.some(x => re.test(x));
   const name = String(v.name || '').toLowerCase();
   const wings = has(/wings?/);
@@ -72,7 +72,7 @@ function restaurantFoodIcon(v) {
   if (/steak/.test(first)) return '🥩';
   if (/seafood|lobster/.test(first)) return '🦞';
   if (/bbq|barbecue/.test(first)) return '🍖';
-  if (/sushi|japanese/.test(first)) return '🍣';
+  if (/sushi|japanese|hibachi/.test(first)) return '🥢';
   if (/italian|greek/.test(first)) return '🍝';
   if (/breakfast|brunch/.test(first)) return '🍳';
   if (has(/burger/)) return wings ? 'winged-burger' : '🍔';
@@ -81,6 +81,9 @@ function restaurantFoodIcon(v) {
   if (has(/mexican|taco|tex.mex/)) return '🌮';
   if (has(/steak/)) return '🥩';
   if (has(/seafood|lobster/)) return '🦞';
+  if (has(/sushi|japanese|hibachi/)) return '🥢';
+  if (/blue moose/.test(name)) return wings ? 'winged-burger' : '🍔';
+  if (/fuji|japanese|hibachi|sushi/.test(name)) return '🥢';
   if (/lobster|seafood|crab/.test(name)) return '🦞';
   if (/steakhouse|steak/.test(name)) return '🥩';
   if (/mexican|taco|taqueria/.test(name)) return '🌮';
@@ -957,7 +960,7 @@ export default function WadUp() {
       contentEl.className = 'wu-pin-discovery visible' + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
       contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
 
-      const chosenEmoji = cats[0] === 'restaurant' ? restaurantFoodIcon(v) : (['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕'].includes(v.custom_emoji) ? v.custom_emoji : null);
+      const chosenEmoji = cats.includes('restaurant') ? restaurantFoodIcon(v) : (['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕'].includes(v.custom_emoji) ? v.custom_emoji : null);
       const dot = document.createElement(chosenEmoji ? 'span' : 'div');
       dot.className = chosenEmoji ? 'wu-bar-discovery-emoji' : 'wu-discovery-dot';
       if (chosenEmoji) {
@@ -990,14 +993,14 @@ export default function WadUp() {
           badgeEl.textContent = getEventIcon(todayEvent.event_type);
         }
         pill.appendChild(badgeEl);
-      } else if (topBadge && cats[0] !== 'restaurant') {
+      } else if (topBadge && !cats.includes('restaurant')) {
         const badgeEl = document.createElement('span');
         badgeEl.className = topBadge.id === 'live' ? 'wu-badge wu-badge-live' : 'wu-badge';
         badgeEl.textContent = topBadge.icon;
         pill.appendChild(badgeEl);
       }
 
-      if (cats[0] === 'restaurant' && !eventsChipActive) {
+      if (cats.includes('restaurant') && !eventsChipActive) {
         const food = foodIconElement(restaurantFoodIcon(v));
         food.style.fontSize = '18px';
         pill.appendChild(food);
