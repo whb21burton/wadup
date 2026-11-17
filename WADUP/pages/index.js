@@ -1393,6 +1393,82 @@ export default function WadUp() {
     }
   }, [dropTMPin, filterPins]);
 
+  // Pin placement reuses the SAME map as discovery. No second map page,
+  // separate Google Maps instance, or duplicated Maps script is necessary.
+  const [pinEdit, setPinEdit] = useState(null);
+  const [pinPosition, setPinPosition] = useState(null);
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinError, setPinError] = useState('');
+  const pinMarkerRef = useRef(null);
+  useEffect(() => {
+    if (!mapReady || !mapObj.current) return;
+    const venueId = new URLSearchParams(window.location.search).get('placePin');
+    if (!venueId) return;
+    let cancelled = false;
+    let clickListener;
+    const map = mapObj.current;
+    (async () => {
+      try {
+        const { data: { session: authSession } } = await supabase.auth.getSession();
+        if (!authSession) throw Error('Sign in to place this venue pin.');
+        const permissionResponse = await fetch('/api/admin/venue-permissions?venueId=' + encodeURIComponent(venueId), { headers: { Authorization: 'Bearer ' + authSession.access_token } });
+        const permissions = permissionResponse.ok ? await permissionResponse.json() : {};
+        if (!permissions.canManage) throw Error('You do not have permission to move this venue pin.');
+        const { data: venue, error: venueError } = await supabase.from('venues').select('id,name,lat,lng').eq('id', venueId).single();
+        if (venueError || !venue) throw Error('Venue not found.');
+        if (cancelled) return;
+        const lat = Number(venue.lat), lng = Number(venue.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw Error('Venue has no valid coordinates.');
+        const point = { lat, lng };
+        setPinEdit(venue);
+        setPinPosition(point);
+        setPinError('');
+        setShowSplash(false);
+        map.panTo(point);
+        map.setZoom(17);
+        pinMarkerRef.current = new window.google.maps.Marker({ map, position: point, draggable: true, zIndex: 10000, title: 'Drag or click to place this venue' });
+        clickListener = map.addListener('click', e => {
+          if (!e.latLng) return;
+          const next = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+          setPinPosition(next);
+          pinMarkerRef.current?.setPosition(next);
+        });
+        pinMarkerRef.current.addListener('dragend', e => {
+          if (e.latLng) setPinPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+        });
+        map.setOptions({ draggableCursor: 'crosshair' });
+      } catch (e) { if (!cancelled) { setPinError(e.message); setShowSplash(false); } }
+    })();
+    return () => {
+      cancelled = true;
+      clickListener?.remove();
+      pinMarkerRef.current?.setMap(null);
+      pinMarkerRef.current = null;
+      map.setOptions({ draggableCursor: null });
+    };
+  }, [mapReady]);
+  const saveMapPin = async () => {
+    if (!pinEdit || !pinPosition || pinBusy) return;
+    setPinBusy(true); setPinError('');
+    try {
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      if (!authSession) throw Error('Your session expired. Please sign in again.');
+      const response = await fetch('/api/admin/venue-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authSession.access_token },
+        body: JSON.stringify({ venueId: pinEdit.id, updates: { lat: pinPosition.lat, lng: pinPosition.lng } }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error || 'Could not save pin.');
+      const saved = result.venue;
+      if (Math.abs(Number(saved?.lat) - pinPosition.lat) > 0.0000001 || Math.abs(Number(saved?.lng) - pinPosition.lng) > 0.0000001) {
+        throw Error('The saved coordinates did not match your selected pin.');
+      }
+      // The main map and venue profile now read the same persisted venue row.
+      window.location.assign('/venue/' + encodeURIComponent(pinEdit.id) + '?edit=1&pinSaved=1');
+    } catch (e) { setPinError(e.message); setPinBusy(false); }
+  };
+
   // ── Load real Chattanooga venues from Supabase (Google Places-sourced) ──
   const loadVenuesFromSupabase = useCallback(async () => {
     const { data, error } = await supabase
@@ -2442,6 +2518,12 @@ export default function WadUp() {
         {/* Map stage — full screen on desktop, phone mockup on mobile */}
         <div className="map-frame">
           <div ref={mapRef} id="map" />
+          {(pinEdit || pinError && new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').has('placePin')) && (
+            <div style={{position:'absolute',top:12,left:12,right:12,zIndex:100,padding:14,borderRadius:12,background:'#061420',color:'#fff',display:'flex',flexWrap:'wrap',alignItems:'center',justifyContent:'space-between',gap:12,boxShadow:'0 4px 20px #0008'}}>
+              <div><strong>📍 Place pin · {pinEdit?.name || 'WADUP'}</strong><div style={{fontSize:12,marginTop:5}}>Click anywhere on this map or drag the red pin. Save when it's in the right place.</div>{pinPosition && <div style={{fontSize:11,marginTop:4}}>{pinPosition.lat.toFixed(6)}, {pinPosition.lng.toFixed(6)}</div>}{pinError && <div role="alert" style={{color:'#ff9aa8',marginTop:5}}>{pinError}</div>}</div>
+              <div style={{display:'flex',gap:8}}><button type="button" onClick={()=>window.location.assign('/venue/' + encodeURIComponent(pinEdit?.id || new URLSearchParams(window.location.search).get('placePin')) + '?edit=1')} style={{padding:'10px 14px',borderRadius:8}}>Cancel</button><button type="button" disabled={!pinEdit || !pinPosition || pinBusy} onClick={saveMapPin} style={{padding:'10px 14px',borderRadius:8,background:'#fff500',color:'#111',fontWeight:800}}>{pinBusy ? 'Saving…' : 'Save pin location'}</button></div>
+            </div>
+          )}
 
           {mapLoadError && <div role="alert" style={{position:'absolute',top:20,left:20,right:20,zIndex:20,padding:18,borderRadius:12,background:'#071522',color:'#fff',border:'1px solid #00c7e8',maxWidth:600,margin:'auto'}}>
             <strong>Map unavailable</strong><p>{mapLoadError}</p><button type="button" onClick={()=>window.location.reload()} style={{padding:'9px 16px',background:'#00c7e8',border:0,borderRadius:8}}>Retry map</button>
