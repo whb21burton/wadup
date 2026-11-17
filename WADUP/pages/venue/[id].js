@@ -679,35 +679,40 @@ export default function VenuePage() {
             </div>}
             {canManage&&editingProfile&&editSection==='categories'&&<div className="wu-edit-inline">
               <h3 style={{margin:'0 0 12px'}}>Help people find your place</h3>
-              <p style={{margin:'0 0 16px',color:'#536575'}}>Step {classificationStep} of 3 · Choose the labels that best describe your business.</p>
+              <p style={{margin:'0 0 16px',color:'#536575'}}>Step {classificationStep} of 3</p>
               {classificationStep===1&&<>
                 <strong>1. What is this business primarily?</strong>
-                <div className="wu-option-grid" style={{marginTop:12}}>
-                  {[['restaurant','🍔 Restaurants'],['nightlife','🍸 Bars & Nightlife'],['activities','🎳 Activities']].map(([key,label])=><label key={key} style={{cursor:'pointer'}}><input type="radio" name="primaryVenueCategory" checked={profileDraft.categories?.[0]===key} onChange={()=>setProfileDraft(d=>({ ...d,categories:[key,...(d.categories||[]).filter(v=>v!==key)],subcategories:(d.subcategories||[]).filter(s=>CATEGORY_CHIPS.some(ch=>ch.id===(key==='nightlife'?'bars':key)&&ch.subcategories.some(sub=>sub.id===s))||(d.categories||[]).filter(v=>v!==key).some(cat=>CATEGORY_CHIPS.some(ch=>ch.id===(cat==='nightlife'?'bars':cat)&&ch.subcategories.some(sub=>sub.id===s)))) }))}/>{label}</label>)}
+                <div style={{display:'grid',gap:8,marginTop:12}}>
+                  {[['restaurant','🍔 Restaurants'],['nightlife','🍸 Bars & Nightlife'],['activities','🎳 Activities']].map(([key,label])=><label key={key} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',border:'1px solid #b9e7ef',borderRadius:12,cursor:'pointer',background:profileDraft.categories?.[0]===key?'#e5faff':'#fff'}}><input type="radio" name="primaryVenueCategory" checked={profileDraft.categories?.[0]===key} onChange={()=>setProfileDraft(d=>({...d,categories:[key],subcategories:(d.subcategories||[]).filter(sub=>CATEGORY_CHIPS.some(ch=>ch.id===(key==='nightlife'?'bars':key)&&ch.subcategories.some(x=>x.id===sub))).filter((sub,i,all)=>key!=='nightlife'||i===0)}))}/><span>{label}</span></label>)}
                 </div>
               </>}
               {classificationStep===2&&<>
-                <strong>2. Does it also fit another category?</strong>
-                <p style={{color:'#536575'}}>Optional — your place can appear under more than one category.</p>
-                <div className="wu-option-grid">
-                  {[['restaurant','🍔 Restaurants'],['nightlife','🍸 Bars & Nightlife'],['activities','🎳 Activities']].filter(([key])=>key!==profileDraft.categories?.[0]).map(([key,label])=><label key={key}><input type="checkbox" checked={(profileDraft.categories||[]).includes(key)} onChange={e=>setProfileDraft(d=>({...d,categories:e.target.checked?[...(d.categories||[]),key]:(d.categories||[]).filter(v=>v!==key),subcategories:(d.subcategories||[]).filter(s=>e.target.checked||!CATEGORY_CHIPS.some(ch=>ch.id===(key==='nightlife'?'bars':key)&&ch.subcategories.some(sub=>sub.id===s)))}))}/>{label}</label>)}
+                <strong>2. What kind of {profileDraft.categories?.[0]==='restaurant'?'restaurant':profileDraft.categories?.[0]==='nightlife'?'bar':'activity'} is it?</strong>
+                <p style={{color:'#536575'}}>{profileDraft.categories?.[0]==='nightlife'?'Choose one bar type.':'Select all that apply.'}</p>
+                <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:12}}>
+                  {CATEGORY_CHIPS.filter(ch=>ch.id===(profileDraft.categories?.[0]==='nightlife'?'bars':profileDraft.categories?.[0])).flatMap(ch=>ch.subcategories).map(sub=><label key={sub.id} style={{display:'flex',alignItems:'center',gap:7,padding:'10px 12px',border:'1px solid #b9e7ef',borderRadius:10,cursor:'pointer',background:(profileDraft.subcategories||[]).includes(sub.id)?'#e5faff':'#fff'}}><input type={profileDraft.categories?.[0]==='nightlife'?'radio':'checkbox'} name={profileDraft.categories?.[0]==='nightlife'?'primaryBarType':undefined} checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:d.categories?.[0]==='nightlife'?[sub.id]:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(x=>x!==sub.id)}))}/>{sub.label}</label>)}
                 </div>
               </>}
               {classificationStep===3&&<>
-                <strong>3. Select the subcategories that apply</strong>
-                {CATEGORY_CHIPS.filter(ch=>(profileDraft.categories||[]).includes(ch.id==='bars'?'nightlife':ch.id)).map(ch=><div key={ch.id} style={{marginTop:16}}>
-                  <strong>{ch.label}</strong>
-                  <div className="wu-option-grid" style={{marginTop:8}}>{ch.subcategories.map(sub=><label key={sub.id}><input type="checkbox" checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(v=>v!==sub.id)}))}/>{sub.label}</label>)}</div>
-                </div>)}
+                <strong>3. Does it also fit another category?</strong>
+                <p style={{color:'#536575'}}>Optional. Choose one secondary category, or none.</p>
+                <div style={{display:'grid',gap:8,marginTop:12}}>
+                  {[['','No secondary category'],...([['restaurant','🍔 Restaurants'],['nightlife','🍸 Bars & Nightlife'],['activities','🎳 Activities']].filter(([key])=>key!==profileDraft.categories?.[0]))].map(([key,label])=><label key={key} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',border:'1px solid #b9e7ef',borderRadius:10,cursor:'pointer',background:(profileDraft.categories?.[1]||'')===key?'#e5faff':'#fff'}}><input type="radio" name="secondaryVenueCategory" checked={(profileDraft.categories?.[1]||'')===key} onChange={()=>setProfileDraft(d=>({...d,categories:key?[d.categories[0],key]:[d.categories[0]],subcategories:(d.subcategories||[]).filter(sub=>CATEGORY_CHIPS.some(ch=>[d.categories[0],key].filter(Boolean).includes(ch.id==='bars'?'nightlife':ch.id)&&ch.subcategories.some(x=>x.id===sub)))}))}/>{label}</label>)}
+                </div>
+                {profileDraft.categories?.[1]&&<div style={{marginTop:18}}>
+                  <strong>{profileDraft.categories[1]==='nightlife'?'Choose one bar type':'Choose the subcategories that apply'}</strong>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:10}}>
+                    {CATEGORY_CHIPS.filter(ch=>ch.id===(profileDraft.categories[1]==='nightlife'?'bars':profileDraft.categories[1])).flatMap(ch=>ch.subcategories).map(sub=><label key={sub.id} style={{display:'flex',alignItems:'center',gap:7,padding:'10px 12px',border:'1px solid #b9e7ef',borderRadius:10,cursor:'pointer',background:(profileDraft.subcategories||[]).includes(sub.id)?'#e5faff':'#fff'}}><input type={profileDraft.categories[1]==='nightlife'?'radio':'checkbox'} name={profileDraft.categories[1]==='nightlife'?'secondaryBarType':undefined} checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:d.categories[1]==='nightlife'?[...(d.subcategories||[]).filter(x=>!CATEGORY_CHIPS.find(ch=>ch.id==='bars').subcategories.some(b=>b.id===x)),sub.id]:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(x=>x!==sub.id)}))}/>{sub.label}</label>)}
+                  </div>
+                </div>}
+                <div style={{margin:'18px 0',padding:14,background:'#eefaff',border:'1px solid #a9e9f1',borderRadius:12}}>
+                  <strong>PROFILE CLASSIFICATION PREVIEW</strong>
+                  {(profileDraft.categories||[]).map((cat,i)=><div key={cat} style={{marginTop:10}}><strong>{CATEGORY_LABELS[cat]||cat}{i===0?' · Primary':' · Secondary'}</strong><div>{(profileDraft.subcategories||[]).filter(sub=>CATEGORY_CHIPS.some(ch=>ch.id===(cat==='nightlife'?'bars':cat)&&ch.subcategories.some(x=>x.id===sub))).join(' · ')||'No type selected'}</div></div>)}
+                </div>
               </>}
-              <div style={{margin:'18px 0',padding:14,background:'#eefaff',border:'1px solid #a9e9f1',borderRadius:12}}>
-                <strong>PROFILE CLASSIFICATION PREVIEW</strong>
-                <div style={{marginTop:8}}>{(profileDraft.categories||[]).map((cat,i)=><span key={cat} style={{display:'inline-block',margin:'4px 8px 4px 0'}}>{CATEGORY_LABELS[cat]||cat}{i===0?' · Primary':''}</span>)}</div>
-                <div style={{marginTop:6}}>{(profileDraft.subcategories||[]).join(' · ')||'Choose subcategories in step 3'}</div>
-              </div>
-              <div className="wu-inline-actions">
+              <div className="wu-inline-actions" style={{marginTop:20}}>
                 {classificationStep>1&&<button type="button" onClick={()=>setClassificationStep(n=>n-1)}>Back</button>}
-                {classificationStep<3?<button type="button" disabled={!(profileDraft.categories||[]).length} onClick={()=>setClassificationStep(n=>n+1)}>Next</button>:<button disabled={editBusy||!(profileDraft.categories||[]).length} onClick={saveInlineProfile}>Save classification</button>}
+                {classificationStep<3?<button type="button" disabled={!(profileDraft.categories||[]).length||(classificationStep===2&&profileDraft.categories[0]==='nightlife'&&!(profileDraft.subcategories||[]).some(s=>CATEGORY_CHIPS.find(ch=>ch.id==='bars').subcategories.some(b=>b.id===s)))} onClick={()=>setClassificationStep(n=>n+1)}>Next</button>:<button disabled={editBusy||!(profileDraft.categories||[]).length||((profileDraft.categories||[]).includes('nightlife')&&!(profileDraft.subcategories||[]).some(s=>CATEGORY_CHIPS.find(ch=>ch.id==='bars').subcategories.some(b=>b.id===s)))} onClick={saveInlineProfile}>Save classification</button>}
                 <button type="button" onClick={()=>setEditSection(null)}>Cancel</button>
               </div>
               {editError&&<p role="alert">{editError}</p>}
