@@ -26,9 +26,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'overall_rating must be a number between 1 and 10' });
   }
 
-  const { data: reviewVenue, error: venueError } = await supabaseAdmin.from('venues')
+  const { data: reviewVenue, error: reviewVenueError } = await supabaseAdmin.from('venues')
     .select('subcategories, subcategory, is_hidden').eq('id', venueId).single();
-  if (venueError || !reviewVenue || reviewVenue.is_hidden) return res.status(404).json({ error: 'Venue not found' });
+  if (reviewVenueError || !reviewVenue || reviewVenue.is_hidden) return res.status(404).json({ error: 'Venue not found' });
   const assigned = Array.isArray(reviewVenue.subcategories) && reviewVenue.subcategories.length
     ? reviewVenue.subcategories : (reviewVenue.subcategory ? [reviewVenue.subcategory] : []);
   const allowed = new Map(assigned.map(s => [String(s).trim().toLowerCase(), String(s).trim()]));
