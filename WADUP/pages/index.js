@@ -774,7 +774,7 @@ export default function WadUp() {
       el.style.position = 'absolute';
       el.style.left = pt.x + 'px';
       el.style.top = pt.y + 'px';
-      el.style.transform = base + (overlay.__fixedEmojiLabel ? ' translateY(-27px)' : '');
+      el.style.transform = base + (overlay.__fixedEmojiLabel ? ' translateY(-18px)' : '');
       queueMapLabelLayout(map);
     };
     overlay.onRemove = function() {
