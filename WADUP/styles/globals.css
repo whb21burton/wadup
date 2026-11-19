@@ -1001,22 +1001,26 @@ html, body {
 }
 /* Hover enlargement belongs to the outer wrapper so label and emoji grow together. */
 
-/* Raise and enlarge the WHOLE map pin, never the label separately.
-   Scale composes with the Google overlay's positioning transform. */
+/* Enlarge the entire pin assembly, including its attached emoji and label.
+   Google Maps positions the wrapper with an inline transform, so use the
+   independent scale property rather than overriding that transform. */
 .wu-pin-wrapper {
-  transition: scale 160ms ease, filter 160ms ease;
+  scale: 1;
+  transition: scale 180ms ease-out, filter 180ms ease-out;
   transform-origin: center bottom;
+}
+.wu-pin-wrapper.wu-pin-selected {
+  scale: 1.04;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.24));
 }
 @media (hover: hover) {
   .wu-pin-wrapper:hover,
-  .wu-pin-wrapper:focus-within {
-    scale: 1.09;
-    filter: drop-shadow(0 3px 5px rgba(0,0,0,.3));
+  .wu-pin-wrapper:focus-within,
+  .wu-pin-wrapper.wu-pin-selected:hover,
+  .wu-pin-wrapper.wu-pin-selected:focus-within {
+    scale: 1.16;
+    filter: drop-shadow(0 4px 7px rgba(0,0,0,.35));
   }
-}
-.wu-pin-wrapper.wu-pin-selected {
-  scale: 1.09;
-  filter: drop-shadow(0 3px 5px rgba(0,0,0,.3));
 }
 /* The label and attached emoji share the same wrapper, so do not
    enlarge the label again independently on hover. */
