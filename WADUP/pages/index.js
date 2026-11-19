@@ -791,7 +791,7 @@ export default function WadUp() {
       el.style.position = 'absolute';
       el.style.left = pt.x + 'px';
       el.style.top = pt.y + 'px';
-      el.style.transform = base + (overlay.__fixedEmojiLabel ? ' translateY(16px)' : '');
+      el.style.transform = base;
       queueMapLabelLayout(map);
     };
     overlay.onRemove = function() {
@@ -1159,6 +1159,7 @@ export default function WadUp() {
     // Ranked labels and emoji now share one continuous hitbox and stacking context.
     const emojiShell = overlay.__attachedEmojiShell;
     const baseLabelZ = el.style.zIndex;
+    const baseIsolation = el.style.isolation;
     let hoverRelease;
     const activateHover = () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
@@ -1167,6 +1168,7 @@ export default function WadUp() {
       // z-index alone is not reliable across Google Maps OverlayView siblings.
       if (el.parentNode) el.parentNode.appendChild(el);
       el.style.zIndex = '2147483000';
+      el.style.isolation = 'isolate';
       el.style.scale = '1.12';
       if (emojiShell) emojiShell.style.filter = 'drop-shadow(0 2px 5px rgba(0,0,0,.45))';
     };
@@ -1174,6 +1176,7 @@ export default function WadUp() {
       clearTimeout(hoverRelease);
       hoverRelease = setTimeout(() => {
         el.style.zIndex = baseLabelZ;
+        el.style.isolation = baseIsolation;
         el.style.scale = '';
         if (emojiShell) {
           emojiShell.style.filter = '';
