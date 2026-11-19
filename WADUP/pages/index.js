@@ -700,66 +700,91 @@ export default function WadUp() {
 
   useEffect(() => { updateAreaRanksRef.current = updateAreaRanks; }, [updateAreaRanks]);
 
-  // Stagger *labels* in screen pixels while keeping every marker and pin tail
-  // anchored to the venue's actual saved latitude/longitude.
-  // Each map owns its own label layout; nothing is written to the database.
+  // ── Map pin layout ──
+  // Every pin is ONE OverlayView whose container (.wu-pin-wrapper) is the
+  // only element this code positions:
+  //   • left/top + transform  → geographic anchor (makeOverlay.draw)
+  //   • translate             → close-zoom stagger (layoutMapLabels)
+  //   • --wu-z                → resting stacking order (set by each drop*Pin)
+  // The inner .wu-pin owns hover scale/shadow, and hover stacking is pure
+  // CSS on the wrapper (see .wu-pin-wrapper:hover in globals.css). Nothing
+  // here touches hover, and nothing moves part of a pin on its own.
+  // Street level and closer. Below this, overlapping pins simply stack (the
+  // higher rank on top) and hover brings any one of them forward.
+  const STAGGER_MIN_ZOOM = 17;
+  // Candidate screen offsets, nearest first. A pin only leaves [0,0] when
+  // something actually covers its emoji or name there.
+  const STAGGER_OFFSETS = [[0, 0]];
+  for (const dy of [0, -28, 28, -56, 56]) for (const dx of [0, -40, 40, -80, 80, -120, 120]) if (dx || dy) STAGGER_OFFSETS.push([dx, dy]);
+  STAGGER_OFFSETS.sort((a, b) => Math.hypot(...a) - Math.hypot(...b));
+  // Height of the emoji box at the bottom of an emoji-anchored pin; the
+  // emoji's centre (16px up from the bottom) sits on the venue coordinate.
+  const PIN_EMOJI_BOX = 32;
+  const OVERLAY_ANCHORS = {
+    bottom: 'translate(-50%, -100%)',
+    top:    'translate(-50%, 0)',
+    center: 'translate(-50%, -50%)',
+    emoji:  `translate(-50%, calc(-100% + ${PIN_EMOJI_BOX / 2}px))`,
+  };
+
+  // A pin's footprint at its anchor, in map-pane pixels: its name bubble,
+  // plus its emoji for emoji-anchored pins. offsetWidth/Height ignore CSS
+  // transforms, so a hovered (scaled) pin never changes the layout.
+  function measurePin(o) {
+    const pill = o.__el.querySelector('.wu-pill');
+    const h = o.__el.offsetHeight;
+    if (!o.__pt || !pill || !h) return null;
+    const emoji = o.__el.classList.contains('wu-has-emoji');
+    const bottom = o.__pt.y + (emoji ? PIN_EMOJI_BOX / 2 : 0);
+    const w = pill.offsetWidth, top = bottom - h;
+    return {
+      x: o.__pt.x,
+      bubble: { l: -w / 2, r: w / 2, t: top - o.__pt.y, b: top + pill.offsetHeight - o.__pt.y },
+      emoji: emoji ? { l: -PIN_EMOJI_BOX / 2, r: PIN_EMOJI_BOX / 2, t: -PIN_EMOJI_BOX / 2, b: PIN_EMOJI_BOX / 2 } : null,
+      y: o.__pt.y,
+    };
+  }
+  const shiftBox = (b, x, y) => b && { l: b.l + x, r: b.r + x, t: b.t + y, b: b.b + y };
+  const overlapArea = (a, b) => (a && b)
+    ? Math.max(0, Math.min(a.r, b.r) - Math.max(a.l, b.l)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.t, b.t))
+    : 0;
+
+  // Spread name-bearing pins that would cover each other's emoji or name,
+  // only at street-level zoom and only as whole units (one translate on the
+  // overlay container). Pins are placed in a stable order (venue id, not the
+  // viewport-relative rank, which changes on every pan) and each takes the
+  // nearest offset with the least coverage, so the result is deterministic.
+  // Saved coordinates are never touched.
   function layoutMapLabels(map) {
-    const registry = map.__wadupLabelOverlays;
-    if (!registry) return;
-    // At very close zoom, spread overlapping ranked restaurant emoji+label pairs together.
-    const rankedPairs = [...(pinRegistry.current?.values() || [])].filter(e => e.overlay?.__attachedEmojiShell && e.overlay?.getMap?.() === map);
-    const closeZoom = (map.getZoom() || 0) >= 19;
+    const units = [...(map.__wadupLabelOverlays || [])]
+      .filter(o => o.__staggerKey != null)
+      .sort((a, b) => String(a.__staggerKey).localeCompare(String(b.__staggerKey)));
+    const stagger = (map.getZoom() || 0) >= STAGGER_MIN_ZOOM;
+    // Read every footprint before writing any translate (one layout pass).
+    const sizes = stagger ? units.map(measurePin) : [];
     const placed = [];
-    for (const entry of rankedPairs.sort((a,b)=>(a.rank||99)-(b.rank||99))) {
-      const proj = entry.overlay.getProjection?.();
-      const point = proj?.fromLatLngToDivPixel(new window.google.maps.LatLng(entry.lat,entry.lng));
-      if (!point) continue;
-      let dx=0,dy=0;
-      if (closeZoom) {
-        const offsets=[[0,0],[-32,0],[32,0],[0,-34],[0,34],[-32,-34],[32,-34],[-32,34],[32,34],[-64,0],[64,0]];
-        const choice = offsets.find(([x,y])=>placed.every(p=>Math.hypot(point.x+x-p.x,point.y+y-p.y)>=38)) || offsets[offsets.length-1];
-        [dx,dy]=choice;
-      }
-      placed.push({x:point.x+dx,y:point.y+dy});
-      entry.el.style.translate = `${dx}px ${dy}px`;
-    }
-    // Ranked restaurant labels stay anchored above their exact emoji positions.
-    // Never collision-shift the bubble without its pointer.
-    for (const o of registry) if (o.__fixedEmojiLabel && o.__labelEl) o.__labelEl.style.translate = 'none';
-    // Keep labels at their natural positions at city/regional zoom.
-    // Only spread overlapping labels when zoomed into neighborhood/street level.
-    if ((map.getZoom() || 0) < 17) {
-      for (const o of registry) if (o.__labelEl) o.__labelEl.style.translate = 'none';
-      return;
-    }
-    const items = [...registry].filter(o => !o.__fixedEmojiLabel && o.getMap() === map && o.__labelEl?.getClientRects().length)
-      .sort((a,b) => (b.__labelPriority || 0) - (a.__labelPriority || 0) || String(a.__labelId).localeCompare(String(b.__labelId)));
-    const occupied = [];
-    const candidates = [0,-24,24,-48,48,-72,72,-96,96];
-    for (const o of items) {
-      const label = o.__labelEl;
-      label.style.translate = 'none';
-      const r = label.getBoundingClientRect();
-      if (!r.width || !r.height) continue;
-      let best = { x:0, y:0, score:Infinity };
-      for (const y of candidates) {
-        for (const x of [0,-32,32,-64,64]) {
-          const rect = {left:r.left+x-4,right:r.right+x+4,top:r.top+y-3,bottom:r.bottom+y+3};
-          let overlaps = 0;
-          for (const q of occupied) {
-            const w = Math.max(0,Math.min(rect.right,q.right)-Math.max(rect.left,q.left));
-            const h = Math.max(0,Math.min(rect.bottom,q.bottom)-Math.max(rect.top,q.top));
-            overlaps += w*h;
+    units.forEach((o, i) => {
+      let dx = 0, dy = 0;
+      const m = sizes[i];
+      if (m) {
+        let best = Infinity;
+        for (const [ox, oy] of STAGGER_OFFSETS) {
+          const x = m.x + ox, y = m.y + oy;
+          const bubble = shiftBox(m.bubble, x, y), emoji = shiftBox(m.emoji, x, y);
+          let covered = 0;
+          for (const p of placed) {
+            // A hidden emoji or a hidden name is worse than overlapping bubbles.
+            covered += 4 * (overlapArea(emoji, p.bubble) + overlapArea(emoji, p.emoji) + overlapArea(bubble, p.emoji))
+                     + overlapArea(bubble, p.bubble);
           }
-          const score = overlaps*100 + Math.abs(y)*2 + Math.abs(x)*3;
-          if (score < best.score) best={x,y,score};
-          if (overlaps === 0 && x === 0 && y === 0) break;
+          const cost = covered * 10 + Math.hypot(ox, oy);
+          if (cost < best) { best = cost; dx = ox; dy = oy; }
+          if (covered === 0) break; // offsets are nearest-first
         }
-        if (best.score === 0) break;
+        placed.push({ bubble: shiftBox(m.bubble, m.x + dx, m.y + dy), emoji: shiftBox(m.emoji, m.x + dx, m.y + dy) });
       }
-      label.style.translate = best.x+'px '+best.y+'px';
-      occupied.push({left:r.left+best.x-4,right:r.right+best.x+4,top:r.top+best.y-3,bottom:r.bottom+best.y+3});
-    }
+      o.__el.style.translate = dx || dy ? `${dx}px ${dy}px` : '';
+    });
   }
   function queueMapLabelLayout(map) {
     if (map.__wadupLabelFrame) return;
@@ -769,61 +794,47 @@ export default function WadUp() {
     });
   }
 
-  // Overlay position is always the real venue coordinate. Only the name/pill
-  // moves when nearby labels would otherwise overlap.
-  function makeOverlay(pos, el, map, anchor = 'bottom') {
-    const base = anchor === 'center' ? 'translate(-50%, -50%)' : anchor === 'top' ? 'translate(-50%, 0)' : 'translate(-50%, -100%)';
+  // One overlay per pin, always positioned at the real venue coordinate.
+  // `staggerKey` opts a name-bearing pin into layoutMapLabels.
+  function makeOverlay(pos, el, map, anchor = 'bottom', staggerKey = null) {
     const overlay = new window.google.maps.OverlayView();
-    overlay.__labelEl = el.querySelector('.wu-pill') || el.querySelector('.wu-discovery-label');
-    overlay.__labelPriority = el.querySelector('.wu-pill') ? Number(el.style.zIndex || 0) : 0;
-    overlay.__labelId = el.textContent || '';
+    overlay.__el = el;
+    overlay.__staggerKey = staggerKey;
     overlay.onAdd = function() {
       this.getPanes().overlayMouseTarget.appendChild(el);
       if (!map.__wadupLabelOverlays) map.__wadupLabelOverlays = new Set();
       map.__wadupLabelOverlays.add(this);
-      queueMapLabelLayout(map);
     };
     overlay.draw = function() {
-      const proj = this.getProjection();
-      if (!proj) return;
-      const pt = proj.fromLatLngToDivPixel(pos);
+      const pt = this.getProjection()?.fromLatLngToDivPixel(pos);
       if (!pt) return;
-      el.style.position = 'absolute';
+      this.__pt = pt;
       el.style.left = pt.x + 'px';
       el.style.top = pt.y + 'px';
-      el.style.transform = base;
-      queueMapLabelLayout(map);
+      el.style.transform = OVERLAY_ANCHORS[anchor];
+      if (staggerKey != null) queueMapLabelLayout(map);
     };
     overlay.onRemove = function() {
       map.__wadupLabelOverlays?.delete(this);
-      if (el.parentNode) el.parentNode.removeChild(el);
-      queueMapLabelLayout(map);
+      el.remove();
+      if (staggerKey != null) queueMapLabelLayout(map);
     };
     overlay.setMap(map);
     return overlay;
   }
 
-  // The emoji is the exact-position marker, independent of collision-managed name labels.
-  function makeFixedVenueEmoji(pos, icon, map, onClick) {
-    const shell = document.createElement('div');
-    shell.style.cssText = 'position:absolute;z-index:900;cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center;width:32px;height:32px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));';
-    const glyph = foodIconElement(icon);
-    glyph.style.fontSize = '24px';
-    shell.appendChild(glyph);
-    shell.addEventListener('click', e => { e.stopPropagation(); onClick(); });
-    const fixed = new window.google.maps.OverlayView();
-    fixed.onAdd = function () { this.getPanes().overlayMouseTarget.appendChild(shell); };
-    fixed.draw = function () {
-      const pt = this.getProjection()?.fromLatLngToDivPixel(pos);
-      if (!pt) return;
-      shell.style.left = pt.x + 'px';
-      shell.style.top = pt.y + 'px';
-      shell.style.transform = 'translate(-50%, -50%)';
-    };
-    fixed.onRemove = function () { shell.remove(); };
-    fixed.__emojiShell = shell;
-    fixed.setMap(map);
-    return fixed;
+  // Pointer + emoji for a ranked pin, as one 32px-wide column. Keeping them
+  // in a single box gives the pin a continuous hover/click area from the
+  // name bubble down to the emoji (no gap to fall through), while the
+  // transparent space beside the pointer stays click-through to the map.
+  function makePinStem(tail, icon) {
+    const stem = document.createElement('div');
+    stem.className = 'wu-pin-stem';
+    const emoji = document.createElement('div');
+    emoji.className = 'wu-pin-emoji-marker';
+    emoji.appendChild(foodIconElement(icon));
+    stem.append(tail, emoji);
+    return stem;
   }
 
   // ── Nudge a new pin's position apart from any already-dropped pin sitting
@@ -982,12 +993,13 @@ export default function WadUp() {
     const specialIcon = activeCategoryRef.current === 'wadup' ? (EVENT_TYPE_ICON[getVenueEventForDay(v.id, activeDateRef.current)?.event_type] || '🎉') : isParkPin ? '🌳' : isGolfPin ? '⛳' : null;
     const tier = specialIcon ? null : getVenueTier(areaRank);
     const rankStyle = tier === 'top10' ? getRankStyle(areaRank) : null;
+    // Ranked restaurants are one pin: name bubble → pointer → food emoji,
+    // with the emoji's centre on the venue coordinate.
+    const withEmoji = tier === 'top10' && cats.includes('restaurant') && !eventsChipActive;
 
-    // contentEl is the visual bubble — it gets the hover-scale transform via
-    // CSS. el (below) is a plain positioning shell makeOverlay moves around
-    // with an inline transform of its own; putting both transforms on the
-    // SAME element would mean the CSS :hover one just clobbers the JS
-    // positioning one instead of composing with it.
+    // contentEl (.wu-pin) is the interactive pin — CSS scales it on hover.
+    // el (below) is the overlay container makeOverlay positions; keeping the
+    // two transforms on separate elements lets them compose.
     const contentEl = document.createElement('div');
     if (v.is_private) contentEl.style.opacity = '0.5';
 
@@ -1039,8 +1051,6 @@ export default function WadUp() {
         pill.appendChild(badgeEl);
       }
 
-      // Food icon is a fixed geographic pin, never part of the name/rank pill.
-
       const textWrap = document.createElement('div');
       textWrap.className = 'wu-pill-text';
 
@@ -1064,21 +1074,20 @@ export default function WadUp() {
       tail.className = 'wu-tail';
       tail.style.borderTopColor = rankStyle.bg;
 
-      contentEl.appendChild(pill);
-      contentEl.appendChild(tail);
+      contentEl.append(pill, withEmoji ? makePinStem(tail, restaurantFoodIcon(v)) : tail);
     }
 
     // Ranked pill bubbles need to consistently paint in front of the small
     // beer-icon bar pins they otherwise visually compete with (see
     // dropBarPin) — #1 gets the highest baseline, #10 the lowest, and
     // anything not a ranked pill (discovery dots, park/golf emoji) keeps no
-    // explicit baseline at all, same as before this fix.
+    // explicit baseline at all. Hover lifts any pin above all of these via CSS.
     const baseZIndex = tier === 'top10' ? 1000 + (10 - Math.min(areaRank || 10, 10)) : null;
 
     const el = document.createElement('div');
-    el.className = 'wu-pin-wrapper';
+    el.className = withEmoji ? 'wu-pin-wrapper wu-has-emoji' : 'wu-pin-wrapper';
     if (tier === 'discovery' && cats.includes('restaurant')) el.title = v.name;
-    if (baseZIndex != null) el.style.zIndex = String(baseZIndex);
+    if (baseZIndex != null) el.style.setProperty('--wu-z', baseZIndex);
     el.appendChild(contentEl);
 
     const ratingHtml = hasRating
@@ -1118,15 +1127,15 @@ export default function WadUp() {
     const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
     const marker = new window.google.maps.Marker({
       position: pos, map,
+      // Invisible InfoWindow anchor only. Non-clickable, or Google adds a
+      // 17px transparent hit target at the venue coordinate, above every
+      // overlay, that swallows hover/clicks on the pin drawn there.
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
+      clickable: false,
       zIndex: baseZIndex ?? (tier === 'discovery' ? 1 : (topBadge ? 15 : 10)),
     });
-    const overlayAnchor = specialIcon ? 'center' : tier === 'discovery' ? 'top' : 'bottom';
-    const overlay = makeOverlay(pos, el, map, overlayAnchor);
-    if (tier === 'top10' && cats.includes('restaurant') && !eventsChipActive) {
-      overlay.__fixedEmojiLabel = true;
-      el.classList.add('wu-ranked-emoji-label');
-    }
+    const overlayAnchor = specialIcon ? 'center' : tier === 'discovery' ? 'top' : withEmoji ? 'emoji' : 'bottom';
+    const overlay = makeOverlay(pos, el, map, overlayAnchor, tier === 'top10' ? v.id : null);
 
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
@@ -1138,62 +1147,10 @@ export default function WadUp() {
       handlePinInteraction(v.id);
     });
     mapMarkers.current[v.id] = { marker };
-    if (tier === 'top10' && cats.includes('restaurant') && !eventsChipActive) {
-      // One DOM/Maps overlay for the entire ranked pin: bubble, pointer, and emoji.
-      // The emoji is a child of the same wrapper, not a separate OverlayView.
-      const emojiShell = document.createElement('div');
-      emojiShell.className = 'wu-ranked-attached-emoji';
-      emojiShell.style.cssText = 'position:relative;align-self:center;margin-top:3px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;pointer-events:auto;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));';
-      el.style.display = 'flex';
-      el.style.flexDirection = 'column';
-      el.style.alignItems = 'center';
-      el.style.transformOrigin = 'center bottom';
-      const glyph = foodIconElement(restaurantFoodIcon(v));
-      glyph.style.fontSize = '24px';
-      emojiShell.appendChild(glyph);
-      el.appendChild(emojiShell);
-      overlay.__attachedEmojiShell = emojiShell;
-    }
     overlays.current[v.id] = overlay;
 
-    // Ranked labels and emoji now share one continuous hitbox and stacking context.
-    const emojiShell = overlay.__attachedEmojiShell;
-    const baseLabelZ = el.style.zIndex;
-    const baseIsolation = el.style.isolation;
-    let hoverRelease;
-    const activateHover = () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      clearTimeout(hoverRelease);
-      // Both overlays share a Maps pane: move them to the end of its DOM stacking order.
-      // z-index alone is not reliable across Google Maps OverlayView siblings.
-      if (el.parentNode) el.parentNode.appendChild(el);
-      el.style.zIndex = '2147483000';
-      el.style.isolation = 'isolate';
-      el.style.scale = '1.12';
-      if (emojiShell) emojiShell.style.filter = 'drop-shadow(0 2px 5px rgba(0,0,0,.45))';
-    };
-    const deactivateHover = () => {
-      clearTimeout(hoverRelease);
-      hoverRelease = setTimeout(() => {
-        el.style.zIndex = baseLabelZ;
-        el.style.isolation = baseIsolation;
-        el.style.scale = '';
-        if (emojiShell) {
-          emojiShell.style.filter = '';
-        }
-      }, 90);
-    };
-    for (const node of [el]) {
-      node.style.transition = 'scale 140ms ease, filter 140ms ease';
-      node.addEventListener('mouseenter', activateHover);
-      node.addEventListener('mouseleave', deactivateHover);
-      node.addEventListener('focusin', activateHover);
-      node.addEventListener('focusout', deactivateHover);
-    }
-
-    const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, fixedEmoji: overlay.__fixedEmoji || null, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
+    const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
-    queueMapLabelLayout(map);
   }, [zoomClass]);
 
   useEffect(() => { dropVenuePinRef.current = dropVenuePin; }, [dropVenuePin]);
@@ -1255,10 +1212,11 @@ export default function WadUp() {
     const dayIsoForPin = activeDateRef.current || todayIsoStr();
     const todayEvent = eventsChipActive ? getVenueEventForDay(v.id, dayIsoForPin) : null;
     const isLiveEvent = isEventLive(todayEvent);
+    // Ranked bars are the same single pin as ranked restaurants.
+    const withEmoji = showName && !eventsChipActive;
 
-    // contentEl gets the hover-scale CSS transform; el (below) is a plain
-    // positioning shell makeOverlay moves with its own inline transform —
-    // see dropVenuePin's identical split for why these can't be one element.
+    // contentEl is the interactive pin, el the overlay container — see
+    // dropVenuePin for why these are separate elements.
     const contentEl = document.createElement('div');
     if (v.is_private) contentEl.style.opacity = '0.5';
 
@@ -1311,8 +1269,7 @@ export default function WadUp() {
       tail.className = 'wu-tail';
       tail.style.borderTopColor = rankStyle.bg;
 
-      contentEl.appendChild(pill);
-      contentEl.appendChild(tail);
+      contentEl.append(pill, withEmoji ? makePinStem(tail, venueMapEmoji(v, '🍺')) : tail);
     } else {
       // Same discovery tier, zoom scaling and label rules as restaurants;
       // the only visual difference is an emoji instead of a blue dot.
@@ -1333,9 +1290,9 @@ export default function WadUp() {
     const baseZIndex = showName ? 1000 + (10 - Math.min(rank || 10, 10)) : 1;
 
     const el = document.createElement('div');
-    el.className = 'wu-pin-wrapper';
+    el.className = withEmoji ? 'wu-pin-wrapper wu-has-emoji' : 'wu-pin-wrapper';
     if (!showName) el.title = v.name;
-    el.style.zIndex = String(baseZIndex);
+    el.style.setProperty('--wu-z', baseZIndex);
     el.appendChild(contentEl);
 
     const rating = effectiveRating(v);
@@ -1370,10 +1327,14 @@ export default function WadUp() {
     const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
     const marker = new window.google.maps.Marker({
       position: pos, map,
+      // Invisible InfoWindow anchor only. Non-clickable, or Google adds a
+      // 17px transparent hit target at the venue coordinate, above every
+      // overlay, that swallows hover/clicks on the pin drawn there.
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
+      clickable: false,
       zIndex: baseZIndex,
     });
-    const overlay = makeOverlay(pos, el, map, showName ? 'bottom' : 'top');
+    const overlay = makeOverlay(pos, el, map, withEmoji ? 'emoji' : showName ? 'bottom' : 'top', showName ? v.id : null);
 
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
@@ -1384,25 +1345,9 @@ export default function WadUp() {
       e.stopPropagation();
       handlePinInteraction(v.id);
     });
-    el.addEventListener('mouseenter', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      el.style.zIndex = '9999';
-      // Only reveal a non-ranked beer label on hover; permanent labels
-      // overlap heavily in dense downtown nightlife clusters.
-
-    });
-    el.addEventListener('mouseleave', () => {
-      el.style.zIndex = String(baseZIndex);
-
-    });
 
     mapMarkers.current[v.id] = { marker };
-    if (showName && !eventsChipActive) {
-      const fixedEmoji = makeFixedVenueEmoji(pos, venueMapEmoji(v, '🍺'), map, () => handlePinInteraction(v.id));
-      overlays.current[v.id] = { setMap(nextMap) { overlay.setMap(nextMap); fixedEmoji.setMap(nextMap); } };
-    } else {
-      overlays.current[v.id] = overlay;
-    }
+    overlays.current[v.id] = overlay;
 
     const entry = { id: v.id, type: 'venue', tier: showName ? 'top10' : 'discovery', rank: areaRank, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
@@ -1431,9 +1376,8 @@ export default function WadUp() {
     const isSports = ev.cat === 'sports';
     const icon = isSports ? (ev.sportEmoji || '🏟️') : '🎟️';
 
-    // contentEl gets the hover-scale CSS transform; el (below) is a plain
-    // positioning shell makeOverlay moves with its own inline transform —
-    // see dropVenuePin's identical split for why these can't be one element.
+    // contentEl is the interactive pin, el the overlay container — see
+    // dropVenuePin for why these are separate elements.
     const contentEl = document.createElement('div');
     contentEl.className = `wu-pin ${zoomClass}`;
 
@@ -1490,11 +1434,15 @@ export default function WadUp() {
     const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
     const marker = new window.google.maps.Marker({
       position: pos, map,
+      // Invisible InfoWindow anchor only. Non-clickable, or Google adds a
+      // 17px transparent hit target at the venue coordinate, above every
+      // overlay, that swallows hover/clicks on the pin drawn there.
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
+      clickable: false,
       zIndex: 5,
     });
 
-    const overlay = makeOverlay(pos, el, map);
+    const overlay = makeOverlay(pos, el, map, 'bottom', ev.id);
 
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
@@ -1504,13 +1452,6 @@ export default function WadUp() {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       handlePinInteraction(ev.id);
-    });
-    el.addEventListener('mouseenter', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      el.style.zIndex = '9999';
-    });
-    el.addEventListener('mouseleave', () => {
-      el.style.zIndex = '';
     });
 
     tmMarkers.current[ev.id] = { marker, overlay };
