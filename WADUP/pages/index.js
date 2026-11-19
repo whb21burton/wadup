@@ -1138,14 +1138,6 @@ export default function WadUp() {
       e.stopPropagation();
       handlePinInteraction(v.id);
     });
-    el.addEventListener('mouseenter', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      el.style.zIndex = '9999';
-    });
-    el.addEventListener('mouseleave', () => {
-      el.style.zIndex = baseZIndex != null ? String(baseZIndex) : '';
-    });
-
     mapMarkers.current[v.id] = { marker };
     if (tier === 'top10' && cats.includes('restaurant') && !eventsChipActive) {
       const fixedEmoji = makeFixedVenueEmoji(pos, restaurantFoodIcon(v), map, () => handlePinInteraction(v.id));
@@ -1153,6 +1145,41 @@ export default function WadUp() {
       overlay.__fixedEmoji = fixedEmoji;
     } else {
       overlays.current[v.id] = overlay;
+    }
+
+    // Hover is a single interaction across the label and the separate emoji overlay.
+    // Raise both above neighboring venues, and enlarge both without shifting their anchor.
+    const emojiShell = overlay.__fixedEmoji?.__emojiShell;
+    const baseLabelZ = el.style.zIndex;
+    const baseEmojiZ = emojiShell?.style.zIndex;
+    let hoverRelease;
+    const activateHover = () => {
+      if (!window.matchMedia('(hover: hover)').matches) return;
+      clearTimeout(hoverRelease);
+      el.style.zIndex = '2147483000';
+      el.style.scale = '1.12';
+      if (emojiShell) {
+        emojiShell.style.zIndex = '2147483000';
+        emojiShell.style.scale = '1.2';
+      }
+    };
+    const deactivateHover = () => {
+      clearTimeout(hoverRelease);
+      hoverRelease = setTimeout(() => {
+        el.style.zIndex = baseLabelZ;
+        el.style.scale = '';
+        if (emojiShell) {
+          emojiShell.style.zIndex = baseEmojiZ || '';
+          emojiShell.style.scale = '';
+        }
+      }, 90);
+    };
+    for (const node of [el, emojiShell].filter(Boolean)) {
+      node.style.transition = 'scale 140ms ease, filter 140ms ease';
+      node.addEventListener('mouseenter', activateHover);
+      node.addEventListener('mouseleave', deactivateHover);
+      node.addEventListener('focusin', activateHover);
+      node.addEventListener('focusout', deactivateHover);
     }
 
     const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, fixedEmoji: overlay.__fixedEmoji || null, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
