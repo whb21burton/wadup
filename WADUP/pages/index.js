@@ -707,7 +707,7 @@ export default function WadUp() {
     const registry = map.__wadupLabelOverlays;
     if (!registry) return;
     // At very close zoom, spread overlapping ranked restaurant emoji+label pairs together.
-    const rankedPairs = [...(pinRegistry.current?.values() || [])].filter(e => e.fixedEmoji?.__emojiShell && e.overlay?.getMap?.() === map);
+    const rankedPairs = [...(pinRegistry.current?.values() || [])].filter(e => e.overlay?.__attachedEmojiShell && e.overlay?.getMap?.() === map);
     const closeZoom = (map.getZoom() || 0) >= 19;
     const placed = [];
     for (const entry of rankedPairs.sort((a,b)=>(a.rank||99)-(b.rank||99))) {
@@ -722,7 +722,6 @@ export default function WadUp() {
       }
       placed.push({x:point.x+dx,y:point.y+dy});
       entry.el.style.translate = `${dx}px ${dy}px`;
-      entry.fixedEmoji.__emojiShell.style.translate = `${dx}px ${dy}px`;
     }
     // Ranked restaurant labels stay anchored above their exact emoji positions.
     // Never collision-shift the bubble without its pointer.
@@ -1140,18 +1139,23 @@ export default function WadUp() {
     });
     mapMarkers.current[v.id] = { marker };
     if (tier === 'top10' && cats.includes('restaurant') && !eventsChipActive) {
-      const fixedEmoji = makeFixedVenueEmoji(pos, restaurantFoodIcon(v), map, () => handlePinInteraction(v.id));
-      overlays.current[v.id] = { setMap(nextMap) { overlay.setMap(nextMap); fixedEmoji.setMap(nextMap); } };
-      overlay.__fixedEmoji = fixedEmoji;
-    } else {
-      overlays.current[v.id] = overlay;
+      // One DOM/Maps overlay for the entire ranked pin: bubble, pointer, and emoji.
+      // The emoji is a child of the same wrapper, not a separate OverlayView.
+      const emojiShell = document.createElement('div');
+      emojiShell.className = 'wu-ranked-attached-emoji';
+      emojiShell.style.cssText = 'position:absolute;left:50%;bottom:-34px;transform:translateX(-50%);width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;pointer-events:auto;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));';
+      const glyph = foodIconElement(restaurantFoodIcon(v));
+      glyph.style.fontSize = '24px';
+      emojiShell.appendChild(glyph);
+      el.appendChild(emojiShell);
+      overlay.__attachedEmojiShell = emojiShell;
     }
+    overlays.current[v.id] = overlay;
 
     // Hover is a single interaction across the label and the separate emoji overlay.
     // Raise both above neighboring venues, and enlarge both without shifting their anchor.
-    const emojiShell = overlay.__fixedEmoji?.__emojiShell;
+    const emojiShell = overlay.__attachedEmojiShell;
     const baseLabelZ = el.style.zIndex;
-    const baseEmojiZ = emojiShell?.style.zIndex;
     let hoverRelease;
     const activateHover = () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
@@ -1159,13 +1163,9 @@ export default function WadUp() {
       // Both overlays share a Maps pane: move them to the end of its DOM stacking order.
       // z-index alone is not reliable across Google Maps OverlayView siblings.
       if (el.parentNode) el.parentNode.appendChild(el);
-      if (emojiShell?.parentNode) emojiShell.parentNode.appendChild(emojiShell);
       el.style.zIndex = '2147483000';
       el.style.scale = '1.12';
-      if (emojiShell) {
-        emojiShell.style.zIndex = '2147483000';
-        emojiShell.style.scale = '1.2';
-      }
+      if (emojiShell) emojiShell.style.scale = '1.08';
     };
     const deactivateHover = () => {
       clearTimeout(hoverRelease);
@@ -1173,12 +1173,11 @@ export default function WadUp() {
         el.style.zIndex = baseLabelZ;
         el.style.scale = '';
         if (emojiShell) {
-          emojiShell.style.zIndex = baseEmojiZ || '';
           emojiShell.style.scale = '';
         }
       }, 90);
     };
-    for (const node of [el, emojiShell].filter(Boolean)) {
+    for (const node of [el]) {
       node.style.transition = 'scale 140ms ease, filter 140ms ease';
       node.addEventListener('mouseenter', activateHover);
       node.addEventListener('mouseleave', deactivateHover);
