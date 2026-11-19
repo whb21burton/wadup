@@ -1178,6 +1178,19 @@ export default function WadUp() {
     }
     overlays.current[v.id] = overlay;
 
+    // Scale a shared INNER visual group, never the Google Maps positioning
+    // wrapper. This also includes the restaurant emoji appended above.
+    const hoverVisual = document.createElement('div');
+    hoverVisual.className = 'wu-hover-visual';
+    hoverVisual.style.cssText = 'display:flex;flex-direction:column;align-items:center;transform:scale(1);transform-origin:center bottom;transition:transform 180ms ease-out;';
+    while (el.firstChild) hoverVisual.appendChild(el.firstChild);
+    el.appendChild(hoverVisual);
+    const setHoverScale = (hovered) => {
+      hoverVisual.style.transform = hovered ? 'scale(1.18)' : 'scale(1)';
+    };
+    el.addEventListener('pointerenter', () => setHoverScale(true));
+    el.addEventListener('pointerleave', () => setHoverScale(false));
+
     // Every pin is one interactive overlay. Hovering its label OR emoji
     // raises the entire wrapper; clicking keeps it in front until another
     // pin is selected. Do not change its map position or split its children.
