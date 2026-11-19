@@ -1119,6 +1119,7 @@ export default function WadUp() {
     const marker = new window.google.maps.Marker({
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
+      clickable: false,
       zIndex: baseZIndex ?? (tier === 'discovery' ? 1 : (topBadge ? 15 : 10)),
     });
     const overlayAnchor = specialIcon ? 'center' : tier === 'discovery' ? 'top' : 'bottom';
@@ -1156,39 +1157,24 @@ export default function WadUp() {
     }
     overlays.current[v.id] = overlay;
 
-    // Ranked labels and emoji now share one continuous hitbox and stacking context.
-    const emojiShell = overlay.__attachedEmojiShell;
-    const baseLabelZ = el.style.zIndex;
-    const baseIsolation = el.style.isolation;
-    let hoverRelease;
-    const activateHover = () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      clearTimeout(hoverRelease);
-      // Both overlays share a Maps pane: move them to the end of its DOM stacking order.
-      // z-index alone is not reliable across Google Maps OverlayView siblings.
-      if (el.parentNode) el.parentNode.appendChild(el);
-      el.style.zIndex = '2147483000';
-      el.style.isolation = 'isolate';
-      el.style.scale = '1.12';
-      if (emojiShell) emojiShell.style.filter = 'drop-shadow(0 2px 5px rgba(0,0,0,.45))';
-    };
-    const deactivateHover = () => {
-      clearTimeout(hoverRelease);
-      hoverRelease = setTimeout(() => {
-        el.style.zIndex = baseLabelZ;
-        el.style.isolation = baseIsolation;
-        el.style.scale = '';
-        if (emojiShell) {
-          emojiShell.style.filter = '';
-        }
-      }, 90);
-    };
-    for (const node of [el]) {
-      node.style.transition = 'scale 140ms ease, filter 140ms ease';
-      node.addEventListener('mouseenter', activateHover);
-      node.addEventListener('mouseleave', deactivateHover);
-      node.addEventListener('focusin', activateHover);
-      node.addEventListener('focusout', deactivateHover);
+    // A ranked restaurant's label, pointer and food emoji are ONE overlay.
+    // Raise the outer overlay (not just .wu-pin) so hovering Cashew's name
+    // also brings its emoji above River Street Deli's entire pin.
+    if (overlay.__attachedEmojiShell) {
+      const restingZ = el.style.zIndex;
+      const raise = () => {
+        if (!window.matchMedia('(hover: hover)').matches) return;
+        el.style.zIndex = '2147483000';
+        el.classList.add('wu-ranked-hovered');
+      };
+      const lower = () => {
+        el.style.zIndex = restingZ;
+        el.classList.remove('wu-ranked-hovered');
+      };
+      el.addEventListener('pointerenter', raise);
+      el.addEventListener('pointerleave', lower);
+      el.addEventListener('focusin', raise);
+      el.addEventListener('focusout', lower);
     }
 
     const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, fixedEmoji: overlay.__fixedEmoji || null, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
