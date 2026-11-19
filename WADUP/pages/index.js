@@ -980,10 +980,10 @@ export default function WadUp() {
 
       // Keep non-top-10 restaurants discoverable at every zoom level.
       // Their smaller dot remains clickable and opens the existing venue popup.
-      contentEl.className = 'wu-pin-discovery visible' + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
+      contentEl.className = 'wu-pin-discovery visible';
       contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
 
-      const chosenEmoji = cats.includes('restaurant') ? restaurantFoodIcon(v) : (['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕'].includes(v.custom_emoji) ? v.custom_emoji : null);
+      const chosenEmoji = cats.includes('restaurant') ? restaurantFoodIcon(v) : (v.custom_emoji || null);
       const dot = document.createElement(chosenEmoji ? 'span' : 'div');
       dot.className = chosenEmoji ? 'wu-bar-discovery-emoji' : 'wu-discovery-dot';
       if (chosenEmoji) {
@@ -992,12 +992,7 @@ export default function WadUp() {
         dot.style.cssText = 'font-size:calc(var(--wu-dot-size, 8px) * 1.5);line-height:1;';
       }
 
-      const label = document.createElement('div');
-      label.className = 'wu-discovery-label';
-      label.textContent = v.name;
-
       contentEl.appendChild(dot);
-      contentEl.appendChild(label);
     } else {
       contentEl.className = `wu-pin ${zoomClass}`;
       if (isLiveEvent) contentEl.classList.add('wu-pin-live');
@@ -1061,6 +1056,7 @@ export default function WadUp() {
 
     const el = document.createElement('div');
     el.className = 'wu-pin-wrapper';
+    if (tier === 'discovery' && cats.includes('restaurant')) el.title = v.name;
     if (baseZIndex != null) el.style.zIndex = String(baseZIndex);
     el.appendChild(contentEl);
 
@@ -1256,17 +1252,15 @@ export default function WadUp() {
     } else {
       // Same discovery tier, zoom scaling and label rules as restaurants;
       // the only visual difference is an emoji instead of a blue dot.
-      contentEl.className = 'wu-pin-discovery visible wu-bar-discovery' + (map.getZoom() >= 16 ? ' wu-discovery-named' : '');
+      contentEl.className = 'wu-pin-discovery visible wu-bar-discovery';
       contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
       const emoji = document.createElement('span');
       emoji.className = 'wu-bar-discovery-emoji';
-      emoji.textContent = venueMapEmoji(v, '🍺');
+      const selectedBarEmoji = venueMapEmoji(v, '🍺');
+      if (selectedBarEmoji === 'winged-burger') emoji.appendChild(foodIconElement(selectedBarEmoji));
+      else emoji.textContent = selectedBarEmoji;
       emoji.style.cssText = 'font-size:calc(var(--wu-dot-size, 8px) * 1.5);line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));';
-      const label = document.createElement('div');
-      label.className = 'wu-discovery-label';
-      label.textContent = v.name;
       contentEl.appendChild(emoji);
-      contentEl.appendChild(label);
     }
 
     // Ranked pill bubbles need to consistently paint in front of the small
@@ -1276,6 +1270,7 @@ export default function WadUp() {
 
     const el = document.createElement('div');
     el.className = 'wu-pin-wrapper';
+    if (!showName) el.title = v.name;
     el.style.zIndex = String(baseZIndex);
     el.appendChild(contentEl);
 
