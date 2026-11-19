@@ -8,7 +8,13 @@ import { getBestRated } from '../../lib/rankings';
 import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
 
-const RESTAURANT_ICON_CHOICES = ['Burgers', 'Wings', 'Pizza'];
+const MAP_EMOJI_OPTIONS = {
+  restaurant: ['🍔','winged-burger','🍕','🍗','🍖','🥩','🌮','🌯','🍣','🍜','🍝','🍤','🦞','🦀','🥪','🥞','🍳','🥐','🥗','🥘','🍛','🍱','🥟','🍲','🍟','🥙','🍚','🧀','🍽️','☕'],
+  nightlife: ['🍺','🍻','🍸','🍹','🥃','🍷','🍾','🍶','☕','🎤','🎱','🎯','🎶','💃','🪩','🍔','winged-burger'],
+  activities: ['🎳','🎮','🕹️','🎯','🏓','🪓','🏌️','🎟️','🧩','🎨','🎤','🎱']
+};
+const mapEmojiLabel = emoji => emoji === 'winged-burger' ? '🍔🪽 Burger with wings' : emoji;
+
 const categorySubs = (venue, cat) => (Array.isArray(venue.subcategories) && venue.subcategories.length ? venue.subcategories : [venue.subcategory].filter(Boolean)).filter(sub => CATEGORY_CHIPS.some(ch => ch.id === (cat === 'nightlife' ? 'bars' : cat) && ch.subcategories.some(x => x.id === sub)));
 const foodEmoji = (venue) => {
   const subs = categorySubs(venue, 'restaurant');
@@ -202,7 +208,7 @@ export default function VenuePage() {
   useEffect(()=>{if(router.isReady)setEditRequested(router.query.edit==='1');},[router.isReady,router.query.edit]);
   const startEditing=useCallback((section=null)=>{
     if(!venue)return;
-    setProfileDraft({name:venue.name||'',description:venue.description||'',phone:venue.phone||'',website:venue.website||'',cover_photo_url:venue.cover_photo_url||'',address:venue.address||'',categories:venueCategories(venue),subcategories:Array.isArray(venue.subcategories)?venue.subcategories:(venue.subcategory?[venue.subcategory]:[])});
+    setProfileDraft({name:venue.name||'',description:venue.description||'',phone:venue.phone||'',website:venue.website||'',cover_photo_url:venue.cover_photo_url||'',address:venue.address||'',categories:venueCategories(venue),subcategories:Array.isArray(venue.subcategories)?venue.subcategories:(venue.subcategory?[venue.subcategory]:[]),custom_emoji:venue.custom_emoji||''});
     setEditSection(section);setClassificationStep(1);setEditingProfile(true);setEditError('');
   },[venue]);
   // The edit URL grants access to the pencil control; it never opens a full form automatically.
@@ -226,7 +232,7 @@ export default function VenuePage() {
   const saveInlineProfile=async()=>{
     setEditBusy(true);setEditError('');
     try{
-      const fields=editSection==='identity'?['name']:editSection==='about'?['description','phone','website','cover_photo_url']:editSection==='address'?['address']:['categories','subcategories'];
+      const fields=editSection==='identity'?['name']:editSection==='about'?['description','phone','website','cover_photo_url']:editSection==='address'?['address']:['categories','subcategories','custom_emoji'];
       const updates=Object.fromEntries(fields.map(field=>[field,profileDraft[field]]));
       const result=await sendEdit('/api/admin/venue-profile',{venueId:id,updates});
       setVenue(result.venue);setEditingProfile(false);setEditSection(null);setEditRequested(false);
@@ -717,28 +723,31 @@ export default function VenuePage() {
                   {CATEGORY_CHIPS.filter(ch=>ch.id===(profileDraft.categories?.[0]==='nightlife'?'bars':profileDraft.categories?.[0])).flatMap(ch=>ch.subcategories).map(sub=><label key={sub.id} style={{display:'flex',alignItems:'center',gap:7,padding:'10px 12px',border:'1px solid #b9e7ef',borderRadius:10,cursor:'pointer',background:(profileDraft.subcategories||[]).includes(sub.id)?'#e5faff':'#fff'}}><input type={profileDraft.categories?.[0]==='nightlife'?'radio':'checkbox'} name={profileDraft.categories?.[0]==='nightlife'?'primaryBarType':undefined} checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:d.categories?.[0]==='nightlife'?[sub.id]:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(x=>x!==sub.id)}))}/>{sub.label}</label>)}
                 </div>
               </>}
-              {classificationStep===2&&profileDraft.categories?.[0]==='restaurant'&&['Burgers','Wings','Pizza'].filter(x=>(profileDraft.subcategories||[]).includes(x)).length>0&&<div style={{marginTop:18,padding:14,background:'#eefaff',borderRadius:10}}>
-                <strong>Which food type should represent this place on the map?</strong>
-                <p style={{color:'#536575',margin:'8px 0'}}>Choose the main icon. Wings are added to the burger or pizza icon when selected too.</p>
+              {classificationStep===2&&<div style={{marginTop:18,padding:14,background:'#eefaff',borderRadius:10}}>
+                <strong>Which emoji represents this place?</strong>
+                <p style={{color:'#536575',margin:'8px 0'}}>Choose one map icon. This does not change the restaurant or bar types you selected.</p>
                 <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                  {RESTAURANT_ICON_CHOICES.filter(x=>(profileDraft.subcategories||[]).includes(x)).map(choice=><button type="button" key={choice} style={{padding:'10px 14px',borderRadius:10,border:'1px solid #9adce9',background:profileDraft.subcategories?.find(x=>RESTAURANT_ICON_CHOICES.includes(x))===choice?'#a8f2ff':'#fff'}} onClick={()=>setProfileDraft(d=>({...d,subcategories:[choice,...(d.subcategories||[]).filter(x=>x!==choice)]}))}>{choice==='Burgers'?'🍔':choice==='Wings'?'🍗':'🍕'} {choice}</button>)}
+                  {(MAP_EMOJI_OPTIONS[profileDraft.categories?.[0]]||[]).map(emoji=><button type="button" key={emoji} aria-label={mapEmojiLabel(emoji)} aria-pressed={profileDraft.custom_emoji===emoji} style={{padding:'9px 12px',minWidth:52,borderRadius:10,border:'1px solid #9adce9',background:profileDraft.custom_emoji===emoji?'#a8f2ff':'#fff',cursor:'pointer',fontSize:22}} onClick={()=>setProfileDraft(d=>({...d,custom_emoji:emoji}))}>{emoji==='winged-burger'?<img src="/icons/winged-burger.svg" alt="Burger with wings" style={{width:36,height:30,objectFit:'contain'}}/>:emoji}</button>)}
                 </div>
               </div>}
               {classificationStep===3&&<>
-                <strong>3. Does it also fit another category?</strong>
-                <p style={{color:'#536575'}}>Optional. Choose one secondary category, or none.</p>
+                <strong>3. Does it also fit other categories?</strong>
+                <p style={{color:'#536575'}}>Optional. Choose either or both additional categories. Your primary category stays the same.</p>
                 <div style={{display:'grid',gap:8,marginTop:12}}>
-                  {[['','No secondary category'],...([['restaurant','🍔 Restaurants'],['nightlife','🍸 Bars & Nightlife'],['activities','🎳 Activities']].filter(([key])=>key!==profileDraft.categories?.[0]))].map(([key,label])=><label key={key} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',border:'1px solid #b9e7ef',borderRadius:10,cursor:'pointer',background:(profileDraft.categories?.[1]||'')===key?'#e5faff':'#fff'}}><input type="radio" name="secondaryVenueCategory" checked={(profileDraft.categories?.[1]||'')===key} onChange={()=>setProfileDraft(d=>({...d,categories:key?[d.categories[0],key]:[d.categories[0]],subcategories:(d.subcategories||[]).filter(sub=>CATEGORY_CHIPS.some(ch=>[d.categories[0],key].filter(Boolean).includes(ch.id==='bars'?'nightlife':ch.id)&&ch.subcategories.some(x=>x.id===sub)))}))}/>{label}</label>)}
+                  {([['restaurant','🍔 Restaurants'],['nightlife','🍸 Bars & Nightlife'],['activities','🎳 Activities']].filter(([key])=>key!==profileDraft.categories?.[0])).map(([key,label])=><div key={key}>
+                    <label style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',border:'1px solid #b9e7ef',borderRadius:10,cursor:'pointer',background:(profileDraft.categories||[]).includes(key)?'#e5faff':'#fff'}}>
+                      <input type="checkbox" checked={(profileDraft.categories||[]).includes(key)} onChange={e=>setProfileDraft(d=>{const categories=e.target.checked?[...d.categories,key]:d.categories.filter(c=>c!==key);const subcategories=(d.subcategories||[]).filter(sub=>CATEGORY_CHIPS.some(ch=>categories.includes(ch.id==='bars'?'nightlife':ch.id)&&ch.subcategories.some(x=>x.id===sub)));return {...d,categories,subcategories};})}/>{label}
+                    </label>
+                    {(profileDraft.categories||[]).includes(key)&&<div style={{display:'flex',flexWrap:'wrap',gap:8,padding:'12px 0 14px 12px'}}>
+                      {CATEGORY_CHIPS.filter(ch=>ch.id===(key==='nightlife'?'bars':key)).flatMap(ch=>ch.subcategories).map(sub=><label key={sub.id} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 12px',border:'1px solid #b9e7ef',borderRadius:10,background:(profileDraft.subcategories||[]).includes(sub.id)?'#e5faff':'#fff'}}>
+                        <input type={key==='nightlife'?'radio':'checkbox'} name={key==='nightlife'?'additionalBarType':undefined} checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:key==='nightlife'?[...(d.subcategories||[]).filter(x=>!CATEGORY_CHIPS.find(ch=>ch.id==='bars').subcategories.some(b=>b.id===x)),sub.id]:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(x=>x!==sub.id)}))}/>{sub.label}
+                      </label>)}
+                    </div>}
+                  </div>)}
                 </div>
-                {profileDraft.categories?.[1]&&<div style={{marginTop:18}}>
-                  <strong>{profileDraft.categories[1]==='nightlife'?'Choose one bar type':'Choose the subcategories that apply'}</strong>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:10}}>
-                    {CATEGORY_CHIPS.filter(ch=>ch.id===(profileDraft.categories[1]==='nightlife'?'bars':profileDraft.categories[1])).flatMap(ch=>ch.subcategories).map(sub=><label key={sub.id} style={{display:'flex',alignItems:'center',gap:7,padding:'10px 12px',border:'1px solid #b9e7ef',borderRadius:10,cursor:'pointer',background:(profileDraft.subcategories||[]).includes(sub.id)?'#e5faff':'#fff'}}><input type={profileDraft.categories[1]==='nightlife'?'radio':'checkbox'} name={profileDraft.categories[1]==='nightlife'?'secondaryBarType':undefined} checked={(profileDraft.subcategories||[]).includes(sub.id)} onChange={e=>setProfileDraft(d=>({...d,subcategories:d.categories[1]==='nightlife'?[...(d.subcategories||[]).filter(x=>!CATEGORY_CHIPS.find(ch=>ch.id==='bars').subcategories.some(b=>b.id===x)),sub.id]:e.target.checked?[...(d.subcategories||[]),sub.id]:(d.subcategories||[]).filter(x=>x!==sub.id)}))}/>{sub.label}</label>)}
-                  </div>
-                </div>}
                 <div style={{margin:'18px 0',padding:14,background:'#eefaff',border:'1px solid #a9e9f1',borderRadius:12}}>
                   <strong>PROFILE CLASSIFICATION PREVIEW</strong>
-                  {(profileDraft.categories||[]).map((cat,i)=><div key={cat} style={{marginTop:10}}><strong>{CATEGORY_LABELS[cat]||cat}{i===0?' · Primary':' · Secondary'}</strong><div>{(profileDraft.subcategories||[]).filter(sub=>CATEGORY_CHIPS.some(ch=>ch.id===(cat==='nightlife'?'bars':cat)&&ch.subcategories.some(x=>x.id===sub))).join(' · ')||'No type selected'}</div></div>)}
+                  {(profileDraft.categories||[]).map((cat,i)=><div key={cat} style={{marginTop:10}}><strong>{CATEGORY_LABELS[cat]||cat}{i===0?' · Primary':' · Additional'}</strong><div>{(profileDraft.subcategories||[]).filter(sub=>CATEGORY_CHIPS.some(ch=>ch.id===(cat==='nightlife'?'bars':cat)&&ch.subcategories.some(x=>x.id===sub))).join(' · ')||'No type selected'}</div></div>)}
                 </div>
               </>}
               <div className="wu-inline-actions" style={{marginTop:20}}>
