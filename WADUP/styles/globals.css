@@ -1001,11 +1001,24 @@ html, body {
 }
 .wu-pin:hover { transform: scale(1.15); }
 
-/* Ranked restaurant label + emoji must rise together; no separate name zoom. */
-.wu-ranked-emoji-label .wu-pin:hover { transform: none; }
-.wu-ranked-emoji-label.wu-ranked-hovered {
-  z-index: 2147483000 !important;
-  filter: drop-shadow(0 3px 5px rgba(0,0,0,.3));
+/* The entire ranked restaurant pin (name, pointer AND food emoji) is one
+   interactive unit. The independent scale property composes with Google's
+   positioning transform and the close-zoom collision translate. */
+.wu-ranked-emoji-label {
+  transition: scale 160ms ease, filter 160ms ease;
+  transform-origin: center bottom;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .wu-ranked-emoji-label:hover,
+  .wu-ranked-emoji-label:focus-within,
+  .wu-ranked-emoji-label.wu-ranked-hovered {
+    z-index: 2147483000 !important;
+    scale: 1.12;
+    filter: drop-shadow(0 3px 5px rgba(0,0,0,.3));
+  }
+  /* Prevent the name alone from scaling again inside the shared wrapper. */
+  .wu-ranked-emoji-label .wu-pin:hover { transform: none; }
 }
 
 /* Parks/golf courses: a bare landmark emoji instead of the name pill. */
