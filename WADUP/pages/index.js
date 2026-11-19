@@ -58,6 +58,7 @@ function restaurantFoodIcon(v) {
   // must never turn a restaurant into a beer / cocktail marker.
   const cats = venueCategories(v);
   if (!cats.includes('restaurant')) return null;
+  if (v.custom_emoji) return v.custom_emoji;
   const subs = Array.isArray(v.subcategories) && v.subcategories.length ? v.subcategories : [v.subcategory].filter(Boolean);
   const food = subs.map(x => String(x).toLowerCase());
   const first = food.find(x => /burger|wings?|pizza|mexican|taco|steak|seafood|lobster|bbq|barbecue|sushi|japanese|italian|greek|breakfast|brunch/.test(x)) || '';
@@ -1152,7 +1153,7 @@ export default function WadUp() {
   // Owner-selected map icons are constrained to an approved set.
   // Default bars use beer; restaurant discovery keeps its dot unless an
   // owner explicitly selects an icon. No new visible filters are added.
-  const OWNER_MAP_EMOJIS = new Set(['🍺','🍸','🍷','🎱','💃','🍔','🍕','🌮','🍣','🍗','🥗','☕']);
+  const OWNER_MAP_EMOJIS = new Set(['🍔','🍕','🍗','🍖','🥩','🌮','🌯','🍣','🍜','🍝','🍤','🦞','🦀','🥪','🥞','🍳','🥐','🥗','🥘','🍛','🍱','🥟','🍲','🍟','🥙','🍚','🧀','🍽️','☕','🍺','🍻','🍸','🍹','🥃','🍷','🍾','🍶','🎤','🎱','🎯','🎶','💃','🪩','🎳','🎮','🕹️','🏓','🪓','🏌️','🎟️','🧩','🎨','winged-burger']);
   const venueMapEmoji = (v, fallback = null) =>
     OWNER_MAP_EMOJIS.has(v.custom_emoji) ? v.custom_emoji : fallback;
 
