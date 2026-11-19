@@ -4,6 +4,7 @@ import { canAccessCity } from '../../../lib/admin';
 import { CATEGORY_CHIPS } from '../../../lib/data';
 
 const FIELDS=['name','description','phone','website','cover_photo_url','address'];
+const MAP_EMOJIS = new Set(['🍔','🍕','🍗','🍖','🥩','🌮','🌯','🍣','🍜','🍝','🍤','🦞','🦀','🥪','🥞','🍳','🥐','🥗','🥘','🍛','🍱','🥟','🍲','🍟','🥙','🍚','🧀','🍽️','☕','🍺','🍻','🍸','🍹','🥃','🍷','🍾','🍶','🎤','🎱','🎯','🎶','💃','🪩','🎳','🎮','🕹️','🏓','🪓','🏌️','🎟️','🧩','🎨','winged-burger']);
 const CATEGORIES=new Set(['restaurant','nightlife','events','sports','outdoors','activities']);
 export default async function handler(req,res){
   if(req.method!=='POST')return res.status(405).json({error:'Method not allowed'});
@@ -23,6 +24,7 @@ export default async function handler(req,res){
     if(typeof value!=='string'||value.length>4000)return res.status(400).json({error:'Invalid '+field});
     safe[field]=value.trim();
   }
+  if(updates.custom_emoji!==undefined){if(typeof updates.custom_emoji!=='string'||!MAP_EMOJIS.has(updates.custom_emoji))return res.status(400).json({error:'Choose an available map emoji'});safe.custom_emoji=updates.custom_emoji;}
   const hasLat=Object.prototype.hasOwnProperty.call(updates,'lat'),hasLng=Object.prototype.hasOwnProperty.call(updates,'lng');
   if(hasLat!==hasLng)return res.status(400).json({error:'Provide both latitude and longitude'});
   if(hasLat){
@@ -31,7 +33,7 @@ export default async function handler(req,res){
     safe.lat=lat;safe.lng=lng;
   }
   if(updates.categories!==undefined){
-    if(!Array.isArray(updates.categories)||!updates.categories.length||updates.categories.length>2||!updates.categories.every(x=>['restaurant','nightlife','activities'].includes(x))||new Set(updates.categories).size!==updates.categories.length)return res.status(400).json({error:'Choose a valid primary and optional secondary categories'});
+    if(!Array.isArray(updates.categories)||!updates.categories.length||updates.categories.length>3||!updates.categories.every(x=>['restaurant','nightlife','activities'].includes(x))||new Set(updates.categories).size!==updates.categories.length)return res.status(400).json({error:'Choose one primary category and up to two additional categories'});
     safe.categories=updates.categories;safe.category=updates.categories[0];
   }
   if(updates.subcategories!==undefined){
