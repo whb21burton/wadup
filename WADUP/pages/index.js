@@ -649,11 +649,19 @@ export default function WadUp() {
     // with a fresh rank the moment they're back in view.
     outsideViewport.forEach(v => {
       const entry = mapMarkers.current[v.id];
+      // Google InfoWindow auto-pans for edge pins. Never hide the selected
+      // marker while that automatic movement changes viewport bounds.
+      if (map.__wadupSelectedVenueId === v.id) return;
       if (entry) entry.marker.setMap(null);
       if (overlays.current[v.id]) overlays.current[v.id].setMap(null);
     });
 
-    ranked.forEach(v => dropPinForVenue(v, chip === 'wadup' ? null : v._areaRank));
+    ranked.forEach(v => {
+      // Recreating the anchor marker closes its Google InfoWindow, especially
+      // after the InfoWindow itself pans the map. Keep that marker intact.
+      if (map.__wadupSelectedVenueId === v.id && pinRegistry.current.has(v.id)) return;
+      dropPinForVenue(v, chip === 'wadup' ? null : v._areaRank);
+    });
 
     // Keep every eligible restaurant visible as a tiny discovery dot at wide zooms.
     // Never suppress venues based on screen-space spacing or a per-zoom cap.
@@ -913,6 +921,19 @@ export default function WadUp() {
   function handlePinInteraction(id) {
     const entry = pinRegistry.current.get(id);
     if (!entry) return;
+    const map = mapObj.current;
+    if (map) {
+      // Selection belongs to the venue ID, not the transient overlay DOM node.
+      const previous = map.__wadupSelectedPin;
+      if (previous && previous !== entry.el) {
+        previous.classList.remove('wu-pin-selected', 'wu-pin-front');
+        previous.dispatchEvent(new Event('wadup-restack'));
+      }
+      map.__wadupSelectedVenueId = id;
+      map.__wadupSelectedPin = entry.el;
+      entry.el?.classList.add('wu-pin-selected', 'wu-pin-front');
+      if (entry.el) entry.el.style.zIndex = '2147483000';
+    }
     entry.openPopup();
   }
 
@@ -1198,11 +1219,9 @@ export default function WadUp() {
       map.__wadupSelectedPin = el;
       el.classList.add('wu-pin-selected', 'wu-pin-front');
       el.style.zIndex = '2147483000';
-      // Re-anchor the existing popup to the newly created marker after a pan.
-      // Without this, Google Maps closes it when the old marker is removed.
-      if (infoWindow.current?.getMap()) {
-        infoWindow.current.open(map, marker);
-      }
+      // Normally the selected marker is retained across viewport updates.
+      // If another operation genuinely replaces it, restore its popup anchor.
+      if (infoWindow.current?.getMap()) infoWindow.current.open(map, marker);
     }
     queueMapLabelLayout(map);
   }, [zoomClass]);
