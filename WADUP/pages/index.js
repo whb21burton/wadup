@@ -791,7 +791,7 @@ export default function WadUp() {
       el.style.position = 'absolute';
       el.style.left = pt.x + 'px';
       el.style.top = pt.y + 'px';
-      el.style.transform = base + (overlay.__fixedEmojiLabel ? ' translateY(-18px)' : '');
+      el.style.transform = base + (overlay.__fixedEmojiLabel ? ' translateY(16px)' : '');
       queueMapLabelLayout(map);
     };
     overlay.onRemove = function() {
@@ -1143,7 +1143,11 @@ export default function WadUp() {
       // The emoji is a child of the same wrapper, not a separate OverlayView.
       const emojiShell = document.createElement('div');
       emojiShell.className = 'wu-ranked-attached-emoji';
-      emojiShell.style.cssText = 'position:absolute;left:50%;bottom:-34px;transform:translateX(-50%);width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;pointer-events:auto;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));';
+      emojiShell.style.cssText = 'position:relative;align-self:center;margin-top:3px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;pointer-events:auto;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));';
+      el.style.display = 'flex';
+      el.style.flexDirection = 'column';
+      el.style.alignItems = 'center';
+      el.style.transformOrigin = 'center bottom';
       const glyph = foodIconElement(restaurantFoodIcon(v));
       glyph.style.fontSize = '24px';
       emojiShell.appendChild(glyph);
@@ -1152,8 +1156,7 @@ export default function WadUp() {
     }
     overlays.current[v.id] = overlay;
 
-    // Hover is a single interaction across the label and the separate emoji overlay.
-    // Raise both above neighboring venues, and enlarge both without shifting their anchor.
+    // Ranked labels and emoji now share one continuous hitbox and stacking context.
     const emojiShell = overlay.__attachedEmojiShell;
     const baseLabelZ = el.style.zIndex;
     let hoverRelease;
@@ -1165,7 +1168,7 @@ export default function WadUp() {
       if (el.parentNode) el.parentNode.appendChild(el);
       el.style.zIndex = '2147483000';
       el.style.scale = '1.12';
-      if (emojiShell) emojiShell.style.scale = '1.08';
+      if (emojiShell) emojiShell.style.filter = 'drop-shadow(0 2px 5px rgba(0,0,0,.45))';
     };
     const deactivateHover = () => {
       clearTimeout(hoverRelease);
@@ -1173,7 +1176,7 @@ export default function WadUp() {
         el.style.zIndex = baseLabelZ;
         el.style.scale = '';
         if (emojiShell) {
-          emojiShell.style.scale = '';
+          emojiShell.style.filter = '';
         }
       }, 90);
     };
