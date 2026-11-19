@@ -706,6 +706,24 @@ export default function WadUp() {
   function layoutMapLabels(map) {
     const registry = map.__wadupLabelOverlays;
     if (!registry) return;
+    // At very close zoom, spread overlapping ranked restaurant emoji+label pairs together.
+    const rankedPairs = [...(pinRegistry.current?.values() || [])].filter(e => e.fixedEmoji?.__emojiShell && e.overlay?.getMap?.() === map);
+    const closeZoom = (map.getZoom() || 0) >= 19;
+    const placed = [];
+    for (const entry of rankedPairs.sort((a,b)=>(a.rank||99)-(b.rank||99))) {
+      const proj = entry.overlay.getProjection?.();
+      const point = proj?.fromLatLngToDivPixel(new window.google.maps.LatLng(entry.lat,entry.lng));
+      if (!point) continue;
+      let dx=0,dy=0;
+      if (closeZoom) {
+        const offsets=[[0,0],[-32,0],[32,0],[0,-34],[0,34],[-32,-34],[32,-34],[-32,34],[32,34],[-64,0],[64,0]];
+        const choice = offsets.find(([x,y])=>placed.every(p=>Math.hypot(point.x+x-p.x,point.y+y-p.y)>=38)) || offsets[offsets.length-1];
+        [dx,dy]=choice;
+      }
+      placed.push({x:point.x+dx,y:point.y+dy});
+      entry.el.style.translate = `${dx}px ${dy}px`;
+      entry.fixedEmoji.__emojiShell.style.translate = `${dx}px ${dy}px`;
+    }
     // Ranked restaurant labels stay anchored above their exact emoji positions.
     // Never collision-shift the bubble without its pointer.
     for (const o of registry) if (o.__fixedEmojiLabel && o.__labelEl) o.__labelEl.style.translate = 'none';
@@ -804,6 +822,7 @@ export default function WadUp() {
       shell.style.transform = 'translate(-50%, -50%)';
     };
     fixed.onRemove = function () { shell.remove(); };
+    fixed.__emojiShell = shell;
     fixed.setMap(map);
     return fixed;
   }
@@ -1131,12 +1150,14 @@ export default function WadUp() {
     if (tier === 'top10' && cats.includes('restaurant') && !eventsChipActive) {
       const fixedEmoji = makeFixedVenueEmoji(pos, restaurantFoodIcon(v), map, () => handlePinInteraction(v.id));
       overlays.current[v.id] = { setMap(nextMap) { overlay.setMap(nextMap); fixedEmoji.setMap(nextMap); } };
+      overlay.__fixedEmoji = fixedEmoji;
     } else {
       overlays.current[v.id] = overlay;
     }
 
-    const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
+    const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, fixedEmoji: overlay.__fixedEmoji || null, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
+    queueMapLabelLayout(map);
   }, [zoomClass]);
 
   useEffect(() => { dropVenuePinRef.current = dropVenuePin; }, [dropVenuePin]);
