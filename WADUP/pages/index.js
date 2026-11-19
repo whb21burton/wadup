@@ -1178,12 +1178,15 @@ export default function WadUp() {
           map.__wadupSelectedPin.dispatchEvent(new Event('wadup-restack'));
         }
         map.__wadupSelectedPin = el;
+        map.__wadupSelectedVenueId = v.id;
         el.classList.add('wu-pin-selected');
         syncStack();
       });
       el.addEventListener('wadup-restack', syncStack);
       const previousRemove = overlay.onRemove;
       overlay.onRemove = function() {
+        // A viewport re-rank rebuilds overlays. Keep the selected venue ID
+        // so its replacement overlay can restore the selection.
         if (map.__wadupSelectedPin === el) map.__wadupSelectedPin = null;
         previousRemove.call(this);
       };
@@ -1191,6 +1194,16 @@ export default function WadUp() {
 
     const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, fixedEmoji: overlay.__fixedEmoji || null, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
+    if (map.__wadupSelectedVenueId === v.id) {
+      map.__wadupSelectedPin = el;
+      el.classList.add('wu-pin-selected', 'wu-pin-front');
+      el.style.zIndex = '2147483000';
+      // Re-anchor the existing popup to the newly created marker after a pan.
+      // Without this, Google Maps closes it when the old marker is removed.
+      if (infoWindow.current?.getMap()) {
+        infoWindow.current.open(map, marker);
+      }
+    }
     queueMapLabelLayout(map);
   }, [zoomClass]);
 
@@ -2097,6 +2110,10 @@ export default function WadUp() {
       // calls e.stopPropagation(), so this never fires for those) closes
       // whatever popup is currently open.
       map.addListener('click', () => {
+        map.__wadupSelectedPin?.classList.remove('wu-pin-selected');
+        map.__wadupSelectedPin?.dispatchEvent(new Event('wadup-restack'));
+        map.__wadupSelectedPin = null;
+        map.__wadupSelectedVenueId = null;
         infoWindow.current?.close();
       });
 
