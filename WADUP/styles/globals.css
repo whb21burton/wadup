@@ -1001,6 +1001,13 @@ html, body {
 }
 .wu-pin:hover { transform: scale(1.15); }
 
+/* Ranked restaurant label + emoji must rise together; no separate name zoom. */
+.wu-ranked-emoji-label .wu-pin:hover { transform: none; }
+.wu-ranked-emoji-label.wu-ranked-hovered {
+  z-index: 2147483000 !important;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,.3));
+}
+
 /* Parks/golf courses: a bare landmark emoji instead of the name pill. */
 .wu-emoji-icon {
   font-size: 32px;
