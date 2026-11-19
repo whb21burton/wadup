@@ -9,7 +9,7 @@ import AuthSidebar from '../../components/AuthSidebar';
 import WriteReviewModal from '../../components/WriteReviewModal';
 
 const MAP_EMOJI_OPTIONS = {
-  restaurant: ['🍔','winged-burger','🍕','🍗','🍖','🥩','🌮','🌯','🍣','🍜','🍝','🍤','🦞','🦀','🥪','🥞','🍳','🥐','🥗','🥘','🍛','🍱','🥟','🍲','🍟','🥙','🍚','🧀','🍽️','☕'],
+  restaurant: ['🍔','winged-burger','🍕','🍗','🍖','🥩','🌮','🌯','🍣','🥢','🍜','🍝','🍤','🦞','🦀','🥪','🥞','🍳','🥐','🥗','🥘','🍛','🍱','🥟','🍲','🍟','🥙','🍚','🧀','🍽️','☕'],
   nightlife: ['🍺','🍻','🍸','🍹','🥃','🍷','🍾','🍶','☕','🎤','🎱','🎯','🎶','💃','🪩','🍔','winged-burger'],
   activities: ['🎳','🎮','🕹️','🎯','🏓','🪓','🏌️','🎟️','🧩','🎨','🎤','🎱']
 };
