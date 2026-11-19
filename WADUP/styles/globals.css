@@ -982,13 +982,23 @@ html, body {
 .trending-panel-scroll .sidebar-divider { margin: 8px 12px; }
 
 /* ── MAP PINS (clean white pill) ── */
-/* Positioning shell — makeOverlay moves THIS via an inline transform every
-   draw() call (see pages/index.js). The actual visual bubble is .wu-pin,
-   a child of this — putting the hover-scale transform on the same element
-   makeOverlay positions would just have the CSS clobber the inline JS
-   transform instead of composing with it. */
+/* One map pin = one OverlayView container (.wu-pin-wrapper) holding one
+   interactive pin (.wu-pin). Responsibilities are split so transforms never
+   fight (see "Map pin layout" in pages/index.js):
+     .wu-pin-wrapper — geographic position (inline left/top/transform),
+                       close-zoom stagger (inline translate) and stacking
+                       (z-index). It is the element that is a sibling of
+                       every other pin in the Maps pane, so it is the one
+                       whose z-index decides who is in front.
+     .wu-pin         — hover scale + emphasis, about the pin's own anchor.
+   Hover lives entirely here: hovering ANY part (name, pointer, emoji)
+   matches .wu-pin-wrapper:hover, so the whole pin reacts as one unit. */
 .wu-pin-wrapper {
   position: absolute;
+  z-index: var(--wu-z, auto);
+  /* Only the visible parts of a pin take the pointer (see .wu-pin > *),
+     so transparent space around a bubble never blocks a neighbour. */
+  pointer-events: none;
 }
 .wu-pin {
   position: relative;
@@ -996,10 +1006,42 @@ html, body {
   flex-direction: column;
   align-items: center;
   cursor: pointer;
-  transition: transform 0.15s ease;
-  transform-origin: center bottom;
+  pointer-events: none;
+  transform-origin: 50% 100%;            /* pointer tip = venue coordinate */
+  transition: transform 170ms ease-out, filter 170ms ease-out;
 }
-.wu-pin:hover { transform: scale(1.15); }
+.wu-pin > * { pointer-events: auto; }
+.wu-pin-emoji { transform-origin: 50% 50%; }   /* park/golf icon is centred */
+/* Ranked pin with emoji: the emoji centre is the venue coordinate. */
+.wu-has-emoji > .wu-pin { transform-origin: 50% calc(100% - 16px); }
+
+@media (hover: hover) {
+  .wu-pin-wrapper:hover { z-index: 100000; }
+  .wu-pin-wrapper:hover > .wu-pin {
+    transform: scale(1.12);
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.22));
+  }
+}
+
+/* Pointer + emoji column of a ranked pin (makePinStem). 32px wide so the
+   hover/click area runs continuously from the bubble to the emoji. */
+.wu-pin-stem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 32px;
+}
+.wu-pin-stem .wu-tail { margin-bottom: 3px; }   /* gap between pointer and emoji */
+.wu-pin-emoji-marker {
+  width: 32px;
+  height: 32px;                                 /* = PIN_EMOJI_BOX in index.js */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.35));
+}
 
 /* Parks/golf courses: a bare landmark emoji instead of the name pill. */
 .wu-emoji-icon {
