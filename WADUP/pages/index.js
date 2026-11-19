@@ -1157,24 +1157,36 @@ export default function WadUp() {
     }
     overlays.current[v.id] = overlay;
 
-    // A ranked restaurant's label, pointer and food emoji are ONE overlay.
-    // Raise the outer overlay (not just .wu-pin) so hovering Cashew's name
-    // also brings its emoji above River Street Deli's entire pin.
-    if (overlay.__attachedEmojiShell) {
+    // Every pin is one interactive overlay. Hovering its label OR emoji
+    // raises the entire wrapper; clicking keeps it in front until another
+    // pin is selected. Do not change its map position or split its children.
+    {
       const restingZ = el.style.zIndex;
-      const raise = () => {
-        if (!window.matchMedia('(hover: hover)').matches) return;
-        el.style.zIndex = '2147483000';
-        el.classList.add('wu-ranked-hovered');
+      const syncStack = () => {
+        const active = el.classList.contains('wu-pin-selected');
+        const hovered = el.matches(':hover') || el.matches(':focus-within');
+        el.style.zIndex = active || hovered ? '2147483000' : restingZ;
+        el.classList.toggle('wu-pin-front', active || hovered);
       };
-      const lower = () => {
-        el.style.zIndex = restingZ;
-        el.classList.remove('wu-ranked-hovered');
+      el.addEventListener('pointerenter', syncStack);
+      el.addEventListener('pointerleave', syncStack);
+      el.addEventListener('focusin', syncStack);
+      el.addEventListener('focusout', () => requestAnimationFrame(syncStack));
+      el.addEventListener('click', () => {
+        map.__wadupSelectedPin?.classList.remove('wu-pin-selected');
+        if (map.__wadupSelectedPin && map.__wadupSelectedPin !== el) {
+          map.__wadupSelectedPin.dispatchEvent(new Event('wadup-restack'));
+        }
+        map.__wadupSelectedPin = el;
+        el.classList.add('wu-pin-selected');
+        syncStack();
+      });
+      el.addEventListener('wadup-restack', syncStack);
+      const previousRemove = overlay.onRemove;
+      overlay.onRemove = function() {
+        if (map.__wadupSelectedPin === el) map.__wadupSelectedPin = null;
+        previousRemove.call(this);
       };
-      el.addEventListener('pointerenter', raise);
-      el.addEventListener('pointerleave', lower);
-      el.addEventListener('focusin', raise);
-      el.addEventListener('focusout', lower);
     }
 
     const entry = { id: v.id, type: 'venue', tier, rank: areaRank, marker, overlay, fixedEmoji: overlay.__fixedEmoji || null, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
