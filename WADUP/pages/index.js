@@ -706,13 +706,16 @@ export default function WadUp() {
   function layoutMapLabels(map) {
     const registry = map.__wadupLabelOverlays;
     if (!registry) return;
+    // Ranked restaurant labels stay anchored above their exact emoji positions.
+    // Never collision-shift the bubble without its pointer.
+    for (const o of registry) if (o.__fixedEmojiLabel && o.__labelEl) o.__labelEl.style.translate = 'none';
     // Keep labels at their natural positions at city/regional zoom.
     // Only spread overlapping labels when zoomed into neighborhood/street level.
     if ((map.getZoom() || 0) < 17) {
       for (const o of registry) if (o.__labelEl) o.__labelEl.style.translate = 'none';
       return;
     }
-    const items = [...registry].filter(o => o.getMap() === map && o.__labelEl?.getClientRects().length)
+    const items = [...registry].filter(o => !o.__fixedEmojiLabel && o.getMap() === map && o.__labelEl?.getClientRects().length)
       .sort((a,b) => (b.__labelPriority || 0) - (a.__labelPriority || 0) || String(a.__labelId).localeCompare(String(b.__labelId)));
     const occupied = [];
     const candidates = [0,-24,24,-48,48,-72,72,-96,96];
@@ -771,7 +774,7 @@ export default function WadUp() {
       el.style.position = 'absolute';
       el.style.left = pt.x + 'px';
       el.style.top = pt.y + 'px';
-      el.style.transform = base;
+      el.style.transform = base + (overlay.__fixedEmojiLabel ? ' translateY(-27px)' : '');
       queueMapLabelLayout(map);
     };
     overlay.onRemove = function() {
@@ -1102,6 +1105,10 @@ export default function WadUp() {
     });
     const overlayAnchor = specialIcon ? 'center' : tier === 'discovery' ? 'top' : 'bottom';
     const overlay = makeOverlay(pos, el, map, overlayAnchor);
+    if (tier === 'top10' && cats.includes('restaurant') && !eventsChipActive) {
+      overlay.__fixedEmojiLabel = true;
+      el.classList.add('wu-ranked-emoji-label');
+    }
 
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
