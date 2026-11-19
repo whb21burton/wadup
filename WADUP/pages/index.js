@@ -73,7 +73,7 @@ function restaurantFoodIcon(v) {
   if (/steak/.test(first)) return '🥩';
   if (/seafood|lobster/.test(first)) return '🦞';
   if (/bbq|barbecue/.test(first)) return '🍖';
-  if (/sushi|japanese|hibachi/.test(first)) return '🥢';
+  if (/sushi|japanese|hibachi|asian|chinese|thai|korean|vietnamese/.test(first)) return '🥢';
   if (/italian|greek/.test(first)) return '🍝';
   if (/breakfast|brunch/.test(first)) return '🍳';
   if (has(/burger/)) return wings ? 'winged-burger' : '🍔';
@@ -82,7 +82,7 @@ function restaurantFoodIcon(v) {
   if (has(/mexican|taco|tex.mex/)) return '🌮';
   if (has(/steak/)) return '🥩';
   if (has(/seafood|lobster/)) return '🦞';
-  if (has(/sushi|japanese|hibachi/)) return '🥢';
+  if (has(/sushi|japanese|hibachi|asian|chinese|thai|korean|vietnamese/)) return '🥢';
   if (/blue moose/.test(name)) return wings ? 'winged-burger' : '🍔';
   if (/fuji|japanese|hibachi|sushi/.test(name)) return '🥢';
   if (/lobster|seafood|crab/.test(name)) return '🦞';
