@@ -1156,6 +1156,10 @@ export default function WadUp() {
     const activateHover = () => {
       if (!window.matchMedia('(hover: hover)').matches) return;
       clearTimeout(hoverRelease);
+      // Both overlays share a Maps pane: move them to the end of its DOM stacking order.
+      // z-index alone is not reliable across Google Maps OverlayView siblings.
+      if (el.parentNode) el.parentNode.appendChild(el);
+      if (emojiShell?.parentNode) emojiShell.parentNode.appendChild(emojiShell);
       el.style.zIndex = '2147483000';
       el.style.scale = '1.12';
       if (emojiShell) {
