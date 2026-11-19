@@ -4,7 +4,7 @@ import { canAccessCity } from '../../../lib/admin';
 import { CATEGORY_CHIPS } from '../../../lib/data';
 
 const FIELDS=['name','description','phone','website','cover_photo_url','address'];
-const MAP_EMOJIS = new Set(['🍔','🍕','🍗','🍖','🥩','🌮','🌯','🍣','🍜','🍝','🍤','🦞','🦀','🥪','🥞','🍳','🥐','🥗','🥘','🍛','🍱','🥟','🍲','🍟','🥙','🍚','🧀','🍽️','☕','🍺','🍻','🍸','🍹','🥃','🍷','🍾','🍶','🎤','🎱','🎯','🎶','💃','🪩','🎳','🎮','🕹️','🏓','🪓','🏌️','🎟️','🧩','🎨','winged-burger']);
+const MAP_EMOJIS = new Set(['🍔','🍕','🍗','🍖','🥩','🌮','🌯','🍣','🥢','🍜','🍝','🍤','🦞','🦀','🥪','🥞','🍳','🥐','🥗','🥘','🍛','🍱','🥟','🍲','🍟','🥙','🍚','🧀','🍽️','☕','🍺','🍻','🍸','🍹','🥃','🍷','🍾','🍶','🎤','🎱','🎯','🎶','💃','🪩','🎳','🎮','🕹️','🏓','🪓','🏌️','🎟️','🧩','🎨','winged-burger']);
 const CATEGORIES=new Set(['restaurant','nightlife','events','sports','outdoors','activities']);
 export default async function handler(req,res){
   if(req.method!=='POST')return res.status(405).json({error:'Method not allowed'});
