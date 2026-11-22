@@ -87,7 +87,7 @@ export default async function handler(req, res) {
   await supabaseAdmin.from('restaurant_coverage_tiles').update({ status: 'queued' })
     .eq('status', 'running').lt('started_at', new Date(now.getTime() - 15 * 60000).toISOString());
   const { data: tiles, error: tileError } = await supabaseAdmin
-    .from('restaurant_coverage_tiles').select('id,lat,lng,radius_m,attempts,status')
+    .from('restaurant_coverage_tiles').select('id,lat,lng,radius_m,attempts,status,discovered,staged')
     .eq('status', 'queued').limit(1000);
   if (tileError) return res.status(503).json({ status: 'tile_query_failed' });
   const tile = (tiles || []).sort((a,b) => distance(a) - distance(b) || a.id - b.id)[0];
