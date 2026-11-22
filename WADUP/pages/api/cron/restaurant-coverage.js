@@ -123,15 +123,19 @@ export default async function handler(req, res) {
       const ids = rows.map(r => r.google_place_id);
       const [live, pending, deleted] = await Promise.all([
         supabaseAdmin.from('venues').select('google_place_id').in('google_place_id', ids),
-        supabaseAdmin.from('venues_pending').select('google_place_id').in('google_place_id', ids),
+        supabaseAdmin.from('venues_pending').select('google_place_id,status').in('google_place_id', ids),
         supabaseAdmin.from('deleted_venues').select('google_place_id').in('google_place_id', ids),
       ]);
       if (live.error || pending.error || deleted.error) throw Error(live.error?.message || pending.error?.message || deleted.error?.message);
-      const known = new Set([...(live.data || []), ...(pending.data || []), ...(deleted.data || [])].map(r => r.google_place_id));
-      const fresh = rows.filter(r => !known.has(r.google_place_id));
+      const blocked = new Set([...(live.data || []), ...(deleted.data || [])].map(r => r.google_place_id));
+      // Previously rejected places must stay excluded; approved/pending places
+      // can be promoted automatically once, without overwriting curated venues.
+      const pendingById = new Map((pending.data || []).map(r => [r.google_place_id, r]));
+      const fresh = rows.filter(r => !blocked.has(r.google_place_id) && !pendingById.has(r.google_place_id));
       if (fresh.length) {
-        const { error } = await supabaseAdmin.from('venues_pending')
-          .upsert(fresh.map(r => ({ ...r, status: 'pending' })), { onConflict: 'google_place_id' });
+        const { error } = await supabaseAdmin.from('venues')
+          .upsert(fresh.map(r => ({ ...r, source: 'google_places', is_verified: false })),
+            { onConflict: 'google_place_id', ignoreDuplicates: true });
         if (error) throw error;
         staged = fresh.length;
       }
@@ -148,7 +152,7 @@ export default async function handler(req, res) {
       status: 'done', discovered: rows.length, staged, finished_at: new Date().toISOString(),
     }).eq('id', run.id);
     return res.json({ status: 'done', tile: tile.id, categorySearched: task.category,
-      classified: rows.length, staged, categoryProgress: cursor + 1, categoriesPerTile: TYPES.length });
+      classified: rows.length, addedToMap: staged, categoryProgress: cursor + 1, categoriesPerTile: TYPES.length });
   } catch (e) {
     await supabaseAdmin.from('restaurant_coverage_tiles').update({
       status: 'queued', last_error: String(e.message).slice(0, 500),
