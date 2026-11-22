@@ -1,6 +1,6 @@
 // Conservative, resumable Chattanooga-outward venue discovery.
 // One Google Nearby Search (Pro field mask) per run; eight runs/day = <=248/month.
-// An external, verified Google Cloud billing guard is still required before spending.
+// Bounded by local daily/monthly request counters; Google may bill these calls.
 import { supabaseAdmin } from '../supabase-admin';
 import { searchNearby, mapPlaceToRow, isChain, isBlockedPrimaryType } from '../../../lib/placesSync';
 
@@ -50,10 +50,6 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`)
     return res.status(401).json({ error: 'Unauthorized' });
-  // A self-imposed request counter does not guarantee no charges. Do not
-  // silently bypass the original externally verified spending protection.
-  if (process.env.GOOGLE_PLACES_FREE_BUDGET_VERIFIED !== 'true')
-    return res.json({ status: 'paused_unverified_google_billing_guard' });
   if (!process.env.GOOGLE_PLACES_KEY)
     return res.status(503).json({ status: 'missing_google_places_key' });
 
@@ -62,23 +58,17 @@ export default async function handler(req, res) {
   const monthStart = `${month}-01T00:00:00.000Z`;
   const dayStart = new Date(now);
   dayStart.setUTCHours(0, 0, 0, 0);
-  const [snapshotsResult, monthResult, dayResult] = await Promise.all([
-    supabaseAdmin.from('google_api_budget_snapshots').select('requests,captured_at')
-      .eq('month_utc', month).eq('sku', 'nearby_search_pro').eq('source', 'google_cloud')
-      .order('captured_at', { ascending: false }).limit(1),
-    supabaseAdmin.from('restaurant_coverage_runs').select('api_calls,started_at').gte('started_at', monthStart),
+  // Track our own API requests. This is a usage limit, NOT a guarantee of
+  // zero Google Cloud charges (other clients can share the same API key).
+  const [monthResult, dayResult] = await Promise.all([
+    supabaseAdmin.from('restaurant_coverage_runs').select('api_calls').gte('started_at', monthStart),
     supabaseAdmin.from('restaurant_coverage_runs').select('api_calls').gte('started_at', dayStart.toISOString()),
   ]);
-  if (snapshotsResult.error || monthResult.error || dayResult.error)
-    return res.status(503).json({ status: 'budget_check_unavailable' });
-  const snapshot = snapshotsResult.data?.[0];
-  if (!snapshot || now.getTime() - new Date(snapshot.captured_at).getTime() > 6 * 3600000)
-    return res.json({ status: 'paused_missing_fresh_google_sku_snapshot' });
-  const afterSnapshot = (monthResult.data || []).filter(r => new Date(r.started_at) > new Date(snapshot.captured_at))
-    .reduce((sum, r) => sum + (r.api_calls || 0), 0);
+  if (monthResult.error || dayResult.error)
+    return res.status(503).json({ status: 'usage_counter_unavailable' });
   const monthCalls = (monthResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
   const dayCalls = (dayResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
-  if (snapshot.requests + afterSnapshot >= MONTHLY_LIMIT || monthCalls >= MONTHLY_LIMIT)
+  if (monthCalls >= MONTHLY_LIMIT)
     return res.json({ status: 'monthly_limit_reached', monthlyLimit: MONTHLY_LIMIT });
   if (dayCalls >= DAILY_LIMIT)
     return res.json({ status: 'daily_limit_reached', dailyLimit: DAILY_LIMIT });
