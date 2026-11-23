@@ -2202,6 +2202,13 @@ export default function WadUp() {
         sessionStorage.setItem('wadup_map_state', JSON.stringify(state));
       };
       window.addEventListener('beforeunload', saveMapState);
+      // Save BEFORE navigating to a profile. Mobile browsers and Next.js
+      // client-side navigation do not consistently dispatch beforeunload.
+      const saveBeforeVenueNavigation = (event) => {
+        const link = event.target?.closest?.('a[href*="/venue/"]');
+        if (link) saveMapState();
+      };
+      document.addEventListener('click', saveBeforeVenueNavigation, true);
 
       // Bridge for the "✏️ Edit Venue" button embedded in a venue popup's raw
       // HTML string (see dropVenuePin's iwHtml) — an inline onclick="" handler
