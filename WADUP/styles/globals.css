@@ -3656,3 +3656,20 @@ html, body {
 /* ── Subtle Admin link in the AuthSidebar (only shown to admins at all) ── */
 .admin-quick-link-subtle { opacity: 0.75; }
 .admin-quick-link-subtle:hover { opacity: 1; }
+
+/* Map pins: only visible name pills and emoji glyphs receive pointer hits.
+   The wrapper, label/emoji gap and decorative arrow must not intercept
+   another venue underneath. Applies to every venue category. */
+.wu-pin-wrapper,
+.wu-pin-wrapper .wu-hover-visual,
+.wu-pin-wrapper .wu-pin,
+.wu-pin-wrapper .wu-tail {
+  pointer-events: none;
+}
+.wu-pin-wrapper .wu-pill,
+.wu-pin-wrapper .wu-ranked-attached-emoji,
+.wu-pin-wrapper .wu-emoji-icon,
+.wu-pin-wrapper .wu-discovery-label,
+.wu-pin-wrapper .wu-discovery-dot {
+  pointer-events: auto;
+}
