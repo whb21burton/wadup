@@ -1726,8 +1726,9 @@ export default function WadUp() {
     // Ticketmaster performance retains its own date, time and ticket URL.
     // The date picker decides whether a production's pin is visible.
     // Once opened, list ALL upcoming performances, not just the selected day.
-    const performances = [...(ev.showings || [ev])]
-      .sort((a,b) => (a.dateStr + 'T' + (a.timeStr || '')).localeCompare(b.dateStr + 'T' + (b.timeStr || '')));
+    const performances = (Array.isArray(ev.showings) && ev.showings.length ? ev.showings : [ev])
+      .filter(Boolean)
+      .sort((a,b) => ((a.dateStr || '') + 'T' + (a.timeStr || '')).localeCompare((b.dateStr || '') + 'T' + (b.timeStr || '')));
     const showingRows = performances.map(show => {
       const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
       const ticketLink = show.url?.startsWith('http') ? withTMAffiliateTracking(show.url) : null;
@@ -1742,7 +1743,7 @@ export default function WadUp() {
       <div class="gm-iw">
         <div class="popup-name">${icon} ${escapeHtml(ev.name)}</div>
         <div class="popup-type">${escapeHtml(CATEGORY_LABELS[ev.cat] || ev.cat)}${ev.city ? ' · ' + escapeHtml(ev.city) + ', ' + escapeHtml(ev.state) : ''}</div>
-        ${showingRows}
+        <div class="tm-showtimes" style="max-height:300px;overflow-y:auto;overscroll-behavior:contain">${showingRows || '<div style="padding:10px 0">Performance details are currently unavailable.</div>'}</div>
         <div class="popup-source">via Ticketmaster</div>
       </div>`;
 
@@ -1848,7 +1849,7 @@ export default function WadUp() {
           price: ev.price || '', img: ev.image_url || '', url: ev.url || '',
           live: true,
         };
-        // Same title + venue + selected day = one pin, multiple showtimes.
+        // Same production and venue across dates = one pin, multiple showtimes.
         // Coordinates alone are insufficient: unrelated events can share a venue.
         const groupKey = [norm.name.trim().toLowerCase().replace(/\\s+/g, ' '),
           norm.address.trim().toLowerCase(), norm.city.trim().toLowerCase(),
