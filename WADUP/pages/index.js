@@ -941,11 +941,9 @@ export default function WadUp() {
   // status + a compact beer-icon pin outside the top ranks — everything else
   // keeps the standard rank pill/discovery dot (dropVenuePin).
   function dropPinForVenue(v, areaRank) {
-    if (venueCategories(v).includes('nightlife') && !venueCategories(v).includes('restaurant')) {
-      dropBarPinRef.current?.(v, areaRank);
-    } else {
-      dropVenuePinRef.current?.(v, areaRank);
-    }
+    // Every venue category uses the same restaurant pin component and
+    // interaction lifecycle: unified label+emoji, hover, stacking and click.
+    dropVenuePinRef.current?.(v, areaRank);
   }
 
   // Smooth, zoom-aware discovery markers: small at regional scale, gradually
@@ -1025,7 +1023,7 @@ export default function WadUp() {
       contentEl.className = 'wu-pin-discovery visible';
       contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
 
-      const chosenEmoji = cats.includes('restaurant') ? restaurantFoodIcon(v) : (v.custom_emoji || null);
+      const chosenEmoji = cats.includes('restaurant') ? restaurantFoodIcon(v) : (v.custom_emoji || ({nightlife:'🍺',coffee:'☕',activities:'🎳',outdoors:'🌳',shopping:'🛍️',events:'🎟️','must-see':'📍'}[v.category] || '📍'));
       const dot = document.createElement(chosenEmoji ? 'span' : 'div');
       dot.className = chosenEmoji ? 'wu-bar-discovery-emoji' : 'wu-discovery-dot';
       if (chosenEmoji) {
@@ -1170,7 +1168,7 @@ export default function WadUp() {
       el.style.flexDirection = 'column';
       el.style.alignItems = 'center';
       el.style.transformOrigin = 'center bottom';
-      const glyph = foodIconElement(restaurantFoodIcon(v));
+      const glyph = foodIconElement(cats.includes('restaurant') ? restaurantFoodIcon(v) : (v.custom_emoji || ({nightlife:'🍺',coffee:'☕',activities:'🎳',outdoors:'🌳',shopping:'🛍️',events:'🎟️','must-see':'📍'}[v.category] || '📍')));
       glyph.style.fontSize = '24px';
       emojiShell.appendChild(glyph);
       el.appendChild(emojiShell);
