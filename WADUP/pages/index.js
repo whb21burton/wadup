@@ -1125,7 +1125,7 @@ export default function WadUp() {
       ` : '';
 
     const iwHtml = `
-      <div class="gm-iw">
+      <div class="gm-iw ${v.cover_photo_url || v.cover_photo_mobile_url ? 'gm-iw-with-cover' : ''}" ${v.cover_photo_url || v.cover_photo_mobile_url ? `style="--wu-popup-cover:url(&quot;${escapeHtml(v.cover_photo_url || v.cover_photo_mobile_url)}&quot;)"` : ''}>
         <div class="popup-name">${escapeHtml(v.name)}</div>
         ${eventPopupHtml}
         <div class="popup-category-rows">${cats.map(cat => {
