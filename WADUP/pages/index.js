@@ -1128,7 +1128,7 @@ export default function WadUp() {
       <div class="gm-iw">
         <div class="popup-name">${escapeHtml(v.name)}</div>
         ${eventPopupHtml}
-        <div class="popup-type">${escapeHtml(cats.map(c => CATEGORY_LABELS[c] || c).join(' · '))}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
+        <div class="popup-type">${escapeHtml(popupVenueEmoji(v))} ${escapeHtml(cats.map(popupCategoryText).join(' · '))}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
         ${ratingHtml}
         ${badgesHtml}
         <div class="popup-address">📍 ${escapeHtml(v.address)}</div>
@@ -1285,6 +1285,16 @@ export default function WadUp() {
     OWNER_MAP_EMOJIS.has(v.custom_emoji) ? v.custom_emoji
       : (String(v.category || '').toLowerCase() === 'nightlife' ? nightlifeEmoji(v) : fallback);
 
+  // Use the same venue-specific emoji in the map popup as on its pin.
+  // Category labels are text only here: their generic emoji must never
+  // override a venue's own icon (e.g. Social Bar 🎯, not nightlife 🍸).
+  const popupCategoryText = (category) => String(CATEGORY_LABELS[category] || category).replace(/^[^\\p{L}\\p{N}]+/u, '').trim();
+  const popupVenueEmoji = (v) => {
+    const cat = String(v.category || '').toLowerCase();
+    const defaults = { restaurant: '🍔', nightlife: '🍺', activities: '🎳', outdoors: '🌳', sports: '🏟️', events: '🎵', 'must-see': '⭐' };
+    return venueMapEmoji(v, defaults[cat] || '📍');
+  };
+
   // ── Drop a bar/nightlife pin ── same viewport-scoped areaRank as
   // dropVenuePin (a venues.admin_rank_number override, when set, wins over
   // it — see calculateDisplayRank in lib/rankings.js for the same
@@ -1427,7 +1437,7 @@ export default function WadUp() {
       <div class="gm-iw">
         <div class="popup-name">${escapeHtml(v.name)}</div>
         ${eventPopupHtml}
-        <div class="popup-type">${escapeHtml(CATEGORY_LABELS.nightlife || 'Nightlife')}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
+        <div class="popup-type">${escapeHtml(popupVenueEmoji(v))} ${escapeHtml(popupCategoryText('nightlife'))}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
         ${ratingHtml}
         ${flameHtml}
         <div class="popup-address">📍 ${escapeHtml(v.address)}</div>
