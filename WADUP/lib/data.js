@@ -34,6 +34,7 @@ export const CATEGORY_CHIPS = [
     { id: 'Dive Bar', label: 'Dive Bar' },
     { id: 'Karaoke Bar', label: 'Karaoke Bar' },
     { id: 'Rooftop Bar', label: 'Rooftop Bar' },
+    { id: 'Social Bar', label: 'Social Bar' },
   ]},
   { id: 'restaurant', label: '🍔 Restaurants', subcategories: [
     { id: 'American', label: 'American' },
