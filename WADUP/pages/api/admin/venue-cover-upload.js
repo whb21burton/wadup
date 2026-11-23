@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
   if (authError || !user) return res.status(401).json({ error: 'Invalid session' });
   const { venueId, image, positionX = 50, positionY = 50, zoom = 1, device = 'desktop' } = req.body || {};
-  if (!['desktop','mobile'].includes(device) || typeof zoom !== 'number' || zoom < 1 || zoom > 3) return res.status(400).json({error:'Invalid photo settings'});
+  if (!['desktop','mobile'].includes(device) || typeof zoom !== 'number' || zoom < 0.5 || zoom > 3) return res.status(400).json({error:'Invalid photo settings'});
   if (![positionX,positionY].every(v=>Number.isInteger(v)&&v>=0&&v<=100)) return res.status(400).json({error:'Invalid photo position'});
   if (typeof venueId !== 'string' || !/^[0-9a-f-]{36}$/i.test(venueId)) return res.status(400).json({ error: 'Invalid venue' });
   if (typeof image !== 'string' || image.length > 7000000 || !/^data:image\/(jpeg|png|webp);base64,/.test(image)) return res.status(400).json({ error: 'Upload a JPG, PNG, or WebP under 5 MB' });
