@@ -941,9 +941,11 @@ export default function WadUp() {
   // status + a compact beer-icon pin outside the top ranks — everything else
   // keeps the standard rank pill/discovery dot (dropVenuePin).
   function dropPinForVenue(v, areaRank) {
-    // Every venue category uses the same restaurant pin component and
-    // interaction lifecycle: unified label+emoji, hover, stacking and click.
-    dropVenuePinRef.current?.(v, areaRank);
+    if (venueCategories(v).includes('nightlife') && !venueCategories(v).includes('restaurant')) {
+      dropBarPinRef.current?.(v, areaRank);
+    } else {
+      dropVenuePinRef.current?.(v, areaRank);
+    }
   }
 
   // Smooth, zoom-aware discovery markers: small at regional scale, gradually
