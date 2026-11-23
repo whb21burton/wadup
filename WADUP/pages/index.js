@@ -375,7 +375,7 @@ export default function WadUp() {
   const matchesSelectedTM = (ev, date) => {
     const chip = activeCategoryRef.current;
     return (chip === 'wadup' || (chip === 'events' && matchesEventSubcategories(ev, activeSubcategoryRef.current.events || []))) &&
-      isTMEventVisibleForDay(ev, date);
+      (ev.showings || [ev]).some(show => isTMEventVisibleForDay(show, date));
   };
   const [feedRevision, setFeedRevision] = useState(0);
   const [feedNow, setFeedNow] = useState(() => Date.now());
@@ -1722,24 +1722,26 @@ export default function WadUp() {
     el.className = 'wu-pin-wrapper';
     el.appendChild(contentEl);
 
-    const dateDisplay = ev.dateStr
-      ? new Date(ev.dateStr + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
-      : 'Date TBD';
-
-    // Only attempt the affiliate wrap (and only show the button at all) for
-    // something that's actually a URL — a missing/malformed ev.url would
-    // otherwise still render a broken "Get Tickets" link.
-    const ticketLink = ev.url && ev.url.startsWith('http') ? withTMAffiliateTracking(ev.url) : null;
+    // A single map pin represents one production at one venue; each
+    // Ticketmaster performance retains its own date, time and ticket URL.
+    const performances = (ev.showings || [ev]).filter(show =>
+      isTMEventVisibleForDay(show, activeDateRef.current || todayIsoStr())
+    ).sort((a,b) => (a.dateStr + 'T' + (a.timeStr || '')).localeCompare(b.dateStr + 'T' + (b.timeStr || '')));
+    const showingRows = performances.map(show => {
+      const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
+      const ticketLink = show.url?.startsWith('http') ? withTMAffiliateTracking(show.url) : null;
+      return `<div style="padding:10px 0;border-top:1px solid #e4e7eb">
+        <div class="popup-row"><span class="popup-stat">📅 ${escapeHtml(day)} · ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : 'Time TBD')}</span>
+        ${show.price ? `<span class="popup-stat popup-price">${escapeHtml(show.price)}</span>` : ''}</div>
+        ${ticketLink ? `<a class="popup-link" href="${escapeHtml(ticketLink)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets for ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : day)} →</a>` : '<span style="color:#777">Tickets unavailable</span>'}
+      </div>`;
+    }).join('');
 
     const iwHtml = `
       <div class="gm-iw">
         <div class="popup-name">${icon} ${escapeHtml(ev.name)}</div>
         <div class="popup-type">${escapeHtml(CATEGORY_LABELS[ev.cat] || ev.cat)}${ev.city ? ' · ' + escapeHtml(ev.city) + ', ' + escapeHtml(ev.state) : ''}</div>
-        <div class="popup-row">
-          <span class="popup-stat">📅 ${dateDisplay}${ev.timeStr ? ' · '+formatTime(ev.timeStr) : ''}</span>
-          ${ev.price ? `<span class="popup-stat popup-price">${escapeHtml(ev.price)}</span>` : ''}
-        </div>
-        ${ticketLink ? `<a class="popup-link" href="${escapeHtml(ticketLink)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets →</a>` : ''}
+        ${showingRows}
         <div class="popup-source">via Ticketmaster</div>
       </div>`;
 
@@ -1831,6 +1833,7 @@ export default function WadUp() {
       tmMarkers.current = {};
       tmEventsRef.current = [];
 
+      const groupedShows = new Map();
       (events || []).forEach((ev) => {
         const norm = {
           id: 'tm_' + ev.tm_id, _isTM: true,
@@ -1844,9 +1847,19 @@ export default function WadUp() {
           price: ev.price || '', img: ev.image_url || '', url: ev.url || '',
           live: true,
         };
-        tmEventsRef.current.push(norm);
-        dropTMPin(norm);
+        // Same title + venue + selected day = one pin, multiple showtimes.
+        // Coordinates alone are insufficient: unrelated events can share a venue.
+        const groupKey = [norm.name.trim().toLowerCase().replace(/\\s+/g, ' '),
+          norm.address.trim().toLowerCase(), norm.lat, norm.lng, norm.dateStr].join('|');
+        if (!groupedShows.has(groupKey)) groupedShows.set(groupKey, []);
+        groupedShows.get(groupKey).push(norm);
       });
+      for (const shows of groupedShows.values()) {
+        shows.sort((a,b) => (a.timeStr || '').localeCompare(b.timeStr || ''));
+        const representative = { ...shows[0], showings: shows };
+        tmEventsRef.current.push(representative);
+        dropTMPin(representative);
+      }
 
       filterPins();
       setFeedRevision(v => v + 1);
