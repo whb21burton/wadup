@@ -144,14 +144,15 @@ export default function VenuePage() {
   const [coverY,setCoverY]=useState(50);
   const [coverUploading,setCoverUploading]=useState(false);
   const [coverZoom,setCoverZoom]=useState(1);
+  const coverDragRef=useRef(null);
   const [coverSettings,setCoverSettings]=useState({desktop:{x:50,y:50,zoom:1},mobile:{x:50,y:50,zoom:1}});
   const [coverSources,setCoverSources]=useState({desktop:'',mobile:''});
   const [coverEditorOpen,setCoverEditorOpen]=useState(false);
   const [coverPreviewMode,setCoverPreviewMode]=useState('desktop');
   const coverImageRef=useRef(null);
   const openCoverEditor=()=>{
-    setCoverSource('');setCoverSources({desktop:'',mobile:''});setCoverSettings({desktop:{x:venue?.cover_position_x??50,y:venue?.cover_position_y??50,zoom:Number(venue?.cover_zoom)||1},mobile:{x:venue?.cover_mobile_position_x??50,y:venue?.cover_mobile_position_y??50,zoom:Number(venue?.cover_mobile_zoom)||1}});setCoverX(venue?.cover_position_x??50);setCoverY(venue?.cover_position_y??50);setCoverZoom(Number(venue?.cover_zoom)||1);
-    setCoverPreviewMode('desktop');setEditError('');setCoverEditorOpen(true);
+    setCoverSource('');setCoverSources({desktop:'',mobile:''});setCoverSettings({desktop:{x:venue?.cover_position_x??50,y:venue?.cover_position_y??50,zoom:Number(venue?.cover_zoom)||1},mobile:{x:venue?.cover_mobile_position_x??50,y:venue?.cover_mobile_position_y??50,zoom:Number(venue?.cover_mobile_zoom)||1}});setCoverX(typeof window!=='undefined'&&window.innerWidth<=600?(venue?.cover_mobile_position_x??50):(venue?.cover_position_x??50));setCoverY(typeof window!=='undefined'&&window.innerWidth<=600?(venue?.cover_mobile_position_y??50):(venue?.cover_position_y??50));setCoverZoom(Number((typeof window!=='undefined'&&window.innerWidth<=600?venue?.cover_mobile_zoom:venue?.cover_zoom))||1);
+    setCoverPreviewMode(typeof window!=='undefined'&&window.innerWidth<=600?'mobile':'desktop');setEditError('');setCoverEditorOpen(true);
   };
   const chooseCover=(event)=>{
     const file=event.target.files?.[0];
@@ -167,6 +168,32 @@ export default function VenuePage() {
     const current=coverSettings[device];
     setCoverPreviewMode(device);setCoverX(current.x);setCoverY(current.y);setCoverZoom(current.zoom);
     setCoverSource(coverSources[device]||'');
+  };
+  const startCoverDrag=(event)=>{
+    if(!coverEditorOpen)return;
+    event.preventDefault();
+    coverDragRef.current={x:event.clientX,y:event.clientY,positionX:coverX,positionY:coverY};
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveCoverDrag=(event)=>{
+    if(!coverDragRef.current)return;
+    const rect=event.currentTarget.getBoundingClientRect();
+    const dx=(event.clientX-coverDragRef.current.x)/Math.max(1,rect.width)*100;
+    const dy=(event.clientY-coverDragRef.current.y)/Math.max(1,rect.height)*100;
+    setCoverX(Math.max(0,Math.min(100,Math.round(coverDragRef.current.positionX-dx))));
+    setCoverY(Math.max(0,Math.min(100,Math.round(coverDragRef.current.positionY-dy))));
+  };
+  const endCoverDrag=()=>{coverDragRef.current=null;};
+  const coverEditingThisDevice=coverEditorOpen&&(typeof window!=='undefined'?(window.innerWidth<=600?'mobile':'desktop')===coverPreviewMode:true);
+  const activeCoverUrl=coverSource||(coverPreviewMode==='mobile'?(venue?.cover_photo_mobile_url||venue?.cover_photo_url):venue?.cover_photo_url);
+  const coverImageStyle=(device)=>{
+    const editing=coverEditorOpen&&coverPreviewMode===device;
+    const hasMobile=Boolean(venue.cover_photo_mobile_url);
+    const isMobile=device==='mobile'&&hasMobile;
+    const x=editing?coverX:(isMobile?venue.cover_mobile_position_x:venue.cover_position_x)??50;
+    const y=editing?coverY:(isMobile?venue.cover_mobile_position_y:venue.cover_position_y)??50;
+    const zoom=editing?coverZoom:Number(isMobile?venue.cover_mobile_zoom:venue.cover_zoom)||1;
+    return {objectPosition:`${x}% ${y}%`,transform:`scale(${zoom})`};
   };
   const saveCover=async()=>{
     setCoverUploading(true);setEditError('');
@@ -654,10 +681,10 @@ export default function VenuePage() {
       `}</style>
       <div className="venue-page">
         <div className="venue-header">
-          <div className="venue-cover">
+          <div className={`venue-cover ${coverEditorOpen?'wu-cover-direct-edit':''}`} onPointerDown={startCoverDrag} onPointerMove={moveCoverDrag} onPointerUp={endCoverDrag} onPointerCancel={endCoverDrag}>
             {(venue.cover_photo_url||venue.cover_photo_mobile_url) ? <>
-              <img className="wu-cover-hero-image wu-cover-desktop" src={venue.cover_photo_url||venue.cover_photo_mobile_url} alt="" style={{objectPosition:`${venue.cover_position_x??50}% ${venue.cover_position_y??50}%`,transform:`scale(${Number(venue.cover_zoom)||1})`}}/>
-              <img className="wu-cover-hero-image wu-cover-mobile" src={venue.cover_photo_mobile_url||venue.cover_photo_url} alt="" style={{objectPosition:`${venue.cover_photo_mobile_url?venue.cover_mobile_position_x??50:venue.cover_position_x??50}% ${venue.cover_photo_mobile_url?venue.cover_mobile_position_y??50:venue.cover_position_y??50}%`,transform:`scale(${Number(venue.cover_photo_mobile_url?venue.cover_mobile_zoom:venue.cover_zoom)||1})`}}/>
+              <img className="wu-cover-hero-image wu-cover-desktop" src={coverEditorOpen&&coverPreviewMode==='desktop'&&coverSource?coverSource:(venue.cover_photo_url||venue.cover_photo_mobile_url)} alt="" style={coverImageStyle('desktop')}/>
+              <img className="wu-cover-hero-image wu-cover-mobile" src={coverEditorOpen&&coverPreviewMode==='mobile'&&coverSource?coverSource:(venue.cover_photo_mobile_url||venue.cover_photo_url)} alt="" style={coverImageStyle('mobile')}/>
               <div className="wu-cover-photo-shade"/>
             </> : <div className="venue-cover-gradient" />}
             {canManage&&editingProfile&&<button type="button" className="wu-cover-edit-trigger" onClick={openCoverEditor} title="Upload or reposition cover photo" aria-label="Edit cover photo">📷 Edit cover photo</button>}
@@ -679,24 +706,18 @@ export default function VenuePage() {
             >{editingProfile ? '✓' : '✏️'}</button>}
           </div>
 
-          {coverEditorOpen&&<div className="wu-cover-modal-backdrop" role="presentation" onClick={()=>!coverUploading&&setCoverEditorOpen(false)}>
-            <div className="wu-cover-modal" role="dialog" aria-modal="true" aria-label="Edit cover photo" onClick={e=>e.stopPropagation()}>
-              <div className="wu-cover-modal-top"><h2>Position cover photo</h2><button type="button" disabled={coverUploading} onClick={()=>setCoverEditorOpen(false)}>✕</button></div>
-              <p>Upload a separate desktop and phone photo if you like. Zoom and position each one to match the actual profile.</p>
-              <label className="wu-cover-choose">📷 {coverSource?'Change '+coverPreviewMode+' photo':'Choose '+coverPreviewMode+' photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseCover} style={{display:'none'}}/></label>
-              <div className="wu-cover-preview-switch"><button type="button" className={coverPreviewMode==='desktop'?'active':''} onClick={()=>switchCoverDevice('desktop')}>Desktop</button><button type="button" className={coverPreviewMode==='mobile'?'active':''} onClick={()=>switchCoverDevice('mobile')}>Phone</button></div>
-              <div className={`wu-cover-live-preview ${coverPreviewMode==='mobile'?'mobile':''}`}>
-                {(coverSource||(coverPreviewMode==='mobile'?(venue.cover_photo_mobile_url||venue.cover_photo_url):venue.cover_photo_url))&&<img className="wu-cover-preview-image" src={coverSource||(coverPreviewMode==='mobile'?(venue.cover_photo_mobile_url||venue.cover_photo_url):venue.cover_photo_url)} alt="" style={{objectPosition:`${coverX}% ${coverY}%`,transform:`scale(${coverZoom})`}}/>}
-                <div className="wu-cover-photo-shade"/>
-                <div className="wu-cover-preview-copy"><strong>{venue.name}</strong><span>📍 {venue.address} · {venue.city}</span><span>{venueCategories(venue).map(c=>CATEGORY_LABELS[c]||c).join(' · ')}</span></div>
-              </div>
-              {coverSource&&<img ref={coverImageRef} src={coverSource} alt="" style={{display:'none'}}/>}
-              <label className="wu-cover-position-control">Zoom<input type="range" min="1" max="3" step="0.05" value={coverZoom} onChange={e=>setCoverZoom(Number(e.target.value))}/></label>
-              <label className="wu-cover-position-control">Move photo left / right<input type="range" min="0" max="100" value={coverX} onChange={e=>setCoverX(Number(e.target.value))}/></label>
-              <label className="wu-cover-position-control">Move photo up / down<input type="range" min="0" max="100" value={coverY} onChange={e=>setCoverY(Number(e.target.value))}/></label>
-              {editError&&<p role="alert" className="wu-cover-error">{editError}</p>}
-              <div className="wu-cover-modal-actions"><button type="button" disabled={coverUploading} onClick={()=>setCoverEditorOpen(false)}>Cancel</button><button type="button" disabled={coverUploading||(!coverSources.desktop&&!coverSources.mobile&&!venue.cover_photo_url&&!venue.cover_photo_mobile_url)} onClick={saveCover}>{coverUploading?'Saving photo…':'Save cover photo'}</button></div>
+          {coverEditorOpen&&<div className="wu-cover-inline-controls" onPointerDown={e=>e.stopPropagation()}>
+            <div className="wu-cover-inline-top"><strong>📷 Edit cover on profile</strong><button type="button" onClick={()=>setCoverEditorOpen(false)} aria-label="Close cover editor">✕</button></div>
+            <p>Drag the actual picture to position it. Zoom out or in, then save.</p>
+            <div className="wu-cover-inline-actions">
+              <label className="wu-cover-choose">📷 {coverSource?'Change':'Upload'} {coverPreviewMode} photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseCover} style={{display:'none'}}/></label>
+              <button type="button" onClick={()=>switchCoverDevice(coverPreviewMode==='desktop'?'mobile':'desktop')}>Editing: {coverPreviewMode==='desktop'?'Desktop':'Phone'} ↔</button>
             </div>
+            <label>Zoom <span>{Math.round(coverZoom*100)}%</span><input type="range" min="0.5" max="3" step="0.05" value={coverZoom} onChange={e=>setCoverZoom(Number(e.target.value))}/></label>
+            <label>Left / right<input type="range" min="0" max="100" value={coverX} onChange={e=>setCoverX(Number(e.target.value))}/></label>
+            <label>Up / down<input type="range" min="0" max="100" value={coverY} onChange={e=>setCoverY(Number(e.target.value))}/></label>
+            {editError&&<p role="alert" className="wu-cover-error">{editError}</p>}
+            <div className="wu-cover-modal-actions"><button type="button" onClick={()=>setCoverEditorOpen(false)}>Cancel</button><button type="button" disabled={coverUploading||(!coverSources.desktop&&!coverSources.mobile&&!venue.cover_photo_url&&!venue.cover_photo_mobile_url)} onClick={saveCover}>{coverUploading?'Saving…':'Save photo'}</button></div>
           </div>}
           <div className="venue-header-content">
             {canManage&&editingProfile&&editSection==='identity'?<div className="wu-inline-name"><input aria-label="Venue name" autoFocus value={profileDraft.name||''} onChange={e=>setProfileDraft(d=>({...d,name:e.target.value}))}/><button disabled={editBusy} onClick={saveInlineProfile}>Save</button><button onClick={()=>setEditSection(null)}>Cancel</button>{editError&&<span role="alert">{editError}</span>}</div>:<h1 className="venue-name" onClick={()=>{if(canManage&&editingProfile)setEditSection('identity');}} style={canManage&&editingProfile?{cursor:'text',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>{venue.name}{canManage&&editingProfile?' ✎':''}</h1>}
