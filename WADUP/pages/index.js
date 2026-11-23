@@ -763,6 +763,46 @@ export default function WadUp() {
   function layoutMapLabels(map) {
     const registry = map.__wadupLabelOverlays;
     if (!registry) return;
+    // Ticketmaster events frequently share an exact venue coordinate. Spread
+    // their WHOLE pins (name + pointer + emoji) in screen pixels, never just
+    // the label, so each event remains individually visible and clickable.
+    // Their invisible Google marker stays at the true venue for the popup.
+    const tmPins = [...pinRegistry.current.values()]
+      .filter(e => e.type === 'tm' && e.overlay?.getMap?.() === map && e.el?.isConnected)
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const tmOccupied = [];
+    const offsets = [[0,0]];
+    for (let ring = 1; ring <= 7; ring++) {
+      const n = Math.max(8, ring * 10);
+      for (let i = 0; i < n; i++) {
+        const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
+        offsets.push([Math.round(Math.cos(angle) * ring * 86), Math.round(Math.sin(angle) * ring * 64)]);
+      }
+    }
+    for (const entry of tmPins) {
+      const el = entry.el;
+      // Measure the unshifted whole pin, not just its text label.
+      el.style.translate = 'none';
+      const base = el.getBoundingClientRect();
+      if (!base.width || !base.height) continue;
+      let chosen = offsets[0], best = Infinity;
+      for (const [dx, dy] of offsets) {
+        const rect = { left:base.left+dx-5, right:base.right+dx+5,
+          top:base.top+dy-5, bottom:base.bottom+dy+5 };
+        let overlap = 0;
+        for (const q of tmOccupied) {
+          overlap += Math.max(0, Math.min(rect.right,q.right)-Math.max(rect.left,q.left))
+            * Math.max(0, Math.min(rect.bottom,q.bottom)-Math.max(rect.top,q.top));
+        }
+        const score = overlap * 10000 + Math.hypot(dx,dy);
+        if (score < best) { best = score; chosen = [dx,dy]; }
+        if (overlap === 0) break;
+      }
+      const [dx,dy] = chosen;
+      el.style.translate = dx + 'px ' + dy + 'px';
+      tmOccupied.push({left:base.left+dx-5,right:base.right+dx+5,
+        top:base.top+dy-5,bottom:base.bottom+dy+5});
+    }
     // At very close zoom, spread overlapping ranked restaurant emoji+label pairs together.
     const rankedPairs = [...(pinRegistry.current?.values() || [])].filter(e => e.overlay?.__attachedEmojiShell && e.overlay?.getMap?.() === map);
     const closeZoom = (map.getZoom() || 0) >= 19;
@@ -789,7 +829,7 @@ export default function WadUp() {
       for (const o of registry) if (o.__labelEl) o.__labelEl.style.translate = 'none';
       return;
     }
-    const items = [...registry].filter(o => !o.__fixedEmojiLabel && o.getMap() === map && o.__labelEl?.getClientRects().length)
+    const items = [...registry].filter(o => !o.__fixedEmojiLabel && !o.__tmEventPin && o.getMap() === map && o.__labelEl?.getClientRects().length)
       .sort((a,b) => (b.__labelPriority || 0) - (a.__labelPriority || 0) || String(a.__labelId).localeCompare(String(b.__labelId)));
     const occupied = [];
     const candidates = [0,-24,24,-48,48,-72,72,-96,96];
@@ -1705,6 +1745,7 @@ export default function WadUp() {
     });
 
     const overlay = makeOverlay(pos, el, map);
+    overlay.__tmEventPin = true;
     // Keep name, pointer and event emoji in one OverlayView, with one hit area.
 
     const openPopup = () => {
