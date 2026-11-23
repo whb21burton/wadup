@@ -143,11 +143,14 @@ export default function VenuePage() {
   const [coverX,setCoverX]=useState(50);
   const [coverY,setCoverY]=useState(50);
   const [coverUploading,setCoverUploading]=useState(false);
+  const [coverZoom,setCoverZoom]=useState(1);
+  const [coverSettings,setCoverSettings]=useState({desktop:{x:50,y:50,zoom:1},mobile:{x:50,y:50,zoom:1}});
+  const [coverSources,setCoverSources]=useState({desktop:'',mobile:''});
   const [coverEditorOpen,setCoverEditorOpen]=useState(false);
   const [coverPreviewMode,setCoverPreviewMode]=useState('desktop');
   const coverImageRef=useRef(null);
   const openCoverEditor=()=>{
-    setCoverSource('');setCoverX(venue?.cover_position_x ?? 50);setCoverY(venue?.cover_position_y ?? 50);
+    setCoverSource('');setCoverSources({desktop:'',mobile:''});setCoverSettings({desktop:{x:venue?.cover_position_x??50,y:venue?.cover_position_y??50,zoom:Number(venue?.cover_zoom)||1},mobile:{x:venue?.cover_mobile_position_x??50,y:venue?.cover_mobile_position_y??50,zoom:Number(venue?.cover_mobile_zoom)||1}});setCoverX(venue?.cover_position_x??50);setCoverY(venue?.cover_position_y??50);setCoverZoom(Number(venue?.cover_zoom)||1);
     setCoverPreviewMode('desktop');setEditError('');setCoverEditorOpen(true);
   };
   const chooseCover=(event)=>{
@@ -155,29 +158,44 @@ export default function VenuePage() {
     if(!file)return;
     if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>15*1024*1024){setEditError('Choose a JPG, PNG or WebP image under 15 MB');return;}
     const reader=new FileReader();
-    reader.onload=()=>{setCoverSource(String(reader.result));setEditError('');};
+    reader.onload=()=>{const src=String(reader.result);setCoverSource(src);setCoverSources(prev=>({...prev,[coverPreviewMode]:src}));setEditError('');};
     reader.readAsDataURL(file);
     event.target.value='';
+  };
+  const switchCoverDevice=(device)=>{
+    setCoverSettings(prev=>({...prev,[coverPreviewMode]:{x:coverX,y:coverY,zoom:coverZoom}}));
+    const current=coverSettings[device];
+    setCoverPreviewMode(device);setCoverX(current.x);setCoverY(current.y);setCoverZoom(current.zoom);
+    setCoverSource(coverSources[device]||'');
   };
   const saveCover=async()=>{
     setCoverUploading(true);setEditError('');
     try{
-      if(coverSource){
-        const image=coverImageRef.current;
-        if(!image?.naturalWidth)throw new Error('Photo is still loading');
-        const canvas=document.createElement('canvas');
-        const scale=Math.min(1,1800/image.naturalWidth,1800/image.naturalHeight);
-        canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));
-        canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
-        canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
-        const data=canvas.toDataURL('image/jpeg',0.84);
-        const result=await sendEdit('/api/admin/venue-cover-upload',{venueId:id,image:data,positionX:coverX,positionY:coverY});
-        setVenue(result.venue);
-      }else if(venue.cover_photo_url){
-        const result=await sendEdit('/api/admin/venue-profile',{venueId:id,updates:{cover_position_x:coverX,cover_position_y:coverY}});
-        setVenue(result.venue);
-      }else throw new Error('Choose a photo first');
-      setCoverEditorOpen(false);setCoverSource('');
+      const settings={...coverSettings,[coverPreviewMode]:{x:coverX,y:coverY,zoom:coverZoom}};
+      let latest=venue;
+      for(const device of ['desktop','mobile']){
+        const source=coverSources[device];
+        const {x,y,zoom}=settings[device];
+        if(source){
+          const image=new Image();
+          image.src=source;
+          await image.decode();
+          const canvas=document.createElement('canvas');
+          const scale=Math.min(1,2200/image.naturalWidth,2200/image.naturalHeight);
+          canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));
+          canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+          canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+          const data=canvas.toDataURL('image/jpeg',0.88);
+          const result=await sendEdit('/api/admin/venue-cover-upload',{venueId:id,image:data,positionX:x,positionY:y,zoom,device});
+          latest=result.venue;
+        }else if(device==='desktop' ? latest.cover_photo_url : latest.cover_photo_mobile_url){
+          const updates=device==='desktop'?{cover_position_x:x,cover_position_y:y,cover_zoom:zoom}:{cover_mobile_position_x:x,cover_mobile_position_y:y,cover_mobile_zoom:zoom};
+          const result=await sendEdit('/api/admin/venue-profile',{venueId:id,updates});
+          latest=result.venue;
+        }
+      }
+      if(!latest.cover_photo_url&&!latest.cover_photo_mobile_url)throw new Error('Choose a photo first');
+      setVenue(latest);setCoverEditorOpen(false);setCoverSource('');
     }catch(e){setEditError(e.message);}finally{setCoverUploading(false);}
   };
   const [editingActivity,setEditingActivity]=useState(null);
@@ -636,8 +654,12 @@ export default function VenuePage() {
       `}</style>
       <div className="venue-page">
         <div className="venue-header">
-          <div className="venue-cover" style={venue.cover_photo_url ? { backgroundImage: `linear-gradient(180deg,rgba(2,9,20,.18),rgba(2,9,20,.72)),url("${venue.cover_photo_url}")`, backgroundPosition: `center, ${venue.cover_position_x ?? 50}% ${venue.cover_position_y ?? 50}%` } : undefined}>
-            {!venue.cover_photo_url && <div className="venue-cover-gradient" />}
+          <div className="venue-cover">
+            {(venue.cover_photo_url||venue.cover_photo_mobile_url) ? <>
+              <img className="wu-cover-hero-image wu-cover-desktop" src={venue.cover_photo_url||venue.cover_photo_mobile_url} alt="" style={{objectPosition:`${venue.cover_position_x??50}% ${venue.cover_position_y??50}%`,transform:`scale(${Number(venue.cover_zoom)||1})`}}/>
+              <img className="wu-cover-hero-image wu-cover-mobile" src={venue.cover_photo_mobile_url||venue.cover_photo_url} alt="" style={{objectPosition:`${venue.cover_photo_mobile_url?venue.cover_mobile_position_x??50:venue.cover_position_x??50}% ${venue.cover_photo_mobile_url?venue.cover_mobile_position_y??50:venue.cover_position_y??50}%`,transform:`scale(${Number(venue.cover_photo_mobile_url?venue.cover_mobile_zoom:venue.cover_zoom)||1})`}}/>
+              <div className="wu-cover-photo-shade"/>
+            </> : <div className="venue-cover-gradient" />}
             {canManage&&editingProfile&&<button type="button" className="wu-cover-edit-trigger" onClick={openCoverEditor} title="Upload or reposition cover photo" aria-label="Edit cover photo">📷 Edit cover photo</button>}
             <button
               type="button"
@@ -660,17 +682,20 @@ export default function VenuePage() {
           {coverEditorOpen&&<div className="wu-cover-modal-backdrop" role="presentation" onClick={()=>!coverUploading&&setCoverEditorOpen(false)}>
             <div className="wu-cover-modal" role="dialog" aria-modal="true" aria-label="Edit cover photo" onClick={e=>e.stopPropagation()}>
               <div className="wu-cover-modal-top"><h2>Position cover photo</h2><button type="button" disabled={coverUploading} onClick={()=>setCoverEditorOpen(false)}>✕</button></div>
-              <p>One photo works on desktop and mobile. Position it so the venue information stays readable.</p>
-              <label className="wu-cover-choose">📷 {coverSource?'Change photo':'Choose photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseCover} style={{display:'none'}}/></label>
-              <div className="wu-cover-preview-switch"><button type="button" className={coverPreviewMode==='desktop'?'active':''} onClick={()=>setCoverPreviewMode('desktop')}>Desktop</button><button type="button" className={coverPreviewMode==='mobile'?'active':''} onClick={()=>setCoverPreviewMode('mobile')}>Phone</button></div>
-              <div className={`wu-cover-live-preview ${coverPreviewMode==='mobile'?'mobile':''}`} style={{backgroundImage:(coverSource||venue.cover_photo_url)?`linear-gradient(180deg,rgba(2,9,20,.18),rgba(2,9,20,.78)),url("${coverSource||venue.cover_photo_url}")`:undefined,backgroundPosition:`center, ${coverX}% ${coverY}%`}}>
+              <p>Upload a separate desktop and phone photo if you like. Zoom and position each one to match the actual profile.</p>
+              <label className="wu-cover-choose">📷 {coverSource?'Change '+coverPreviewMode+' photo':'Choose '+coverPreviewMode+' photo'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseCover} style={{display:'none'}}/></label>
+              <div className="wu-cover-preview-switch"><button type="button" className={coverPreviewMode==='desktop'?'active':''} onClick={()=>switchCoverDevice('desktop')}>Desktop</button><button type="button" className={coverPreviewMode==='mobile'?'active':''} onClick={()=>switchCoverDevice('mobile')}>Phone</button></div>
+              <div className={`wu-cover-live-preview ${coverPreviewMode==='mobile'?'mobile':''}`}>
+                {(coverSource||(coverPreviewMode==='mobile'?(venue.cover_photo_mobile_url||venue.cover_photo_url):venue.cover_photo_url))&&<img className="wu-cover-preview-image" src={coverSource||(coverPreviewMode==='mobile'?(venue.cover_photo_mobile_url||venue.cover_photo_url):venue.cover_photo_url)} alt="" style={{objectPosition:`${coverX}% ${coverY}%`,transform:`scale(${coverZoom})`}}/>}
+                <div className="wu-cover-photo-shade"/>
                 <div className="wu-cover-preview-copy"><strong>{venue.name}</strong><span>📍 {venue.address} · {venue.city}</span><span>{venueCategories(venue).map(c=>CATEGORY_LABELS[c]||c).join(' · ')}</span></div>
               </div>
               {coverSource&&<img ref={coverImageRef} src={coverSource} alt="" style={{display:'none'}}/>}
+              <label className="wu-cover-position-control">Zoom<input type="range" min="1" max="3" step="0.05" value={coverZoom} onChange={e=>setCoverZoom(Number(e.target.value))}/></label>
               <label className="wu-cover-position-control">Move photo left / right<input type="range" min="0" max="100" value={coverX} onChange={e=>setCoverX(Number(e.target.value))}/></label>
               <label className="wu-cover-position-control">Move photo up / down<input type="range" min="0" max="100" value={coverY} onChange={e=>setCoverY(Number(e.target.value))}/></label>
               {editError&&<p role="alert" className="wu-cover-error">{editError}</p>}
-              <div className="wu-cover-modal-actions"><button type="button" disabled={coverUploading} onClick={()=>setCoverEditorOpen(false)}>Cancel</button><button type="button" disabled={coverUploading||(!coverSource&&!venue.cover_photo_url)} onClick={saveCover}>{coverUploading?'Saving photo…':'Save cover photo'}</button></div>
+              <div className="wu-cover-modal-actions"><button type="button" disabled={coverUploading} onClick={()=>setCoverEditorOpen(false)}>Cancel</button><button type="button" disabled={coverUploading||(!coverSources.desktop&&!coverSources.mobile&&!venue.cover_photo_url&&!venue.cover_photo_mobile_url)} onClick={saveCover}>{coverUploading?'Saving photo…':'Save cover photo'}</button></div>
             </div>
           </div>}
           <div className="venue-header-content">
