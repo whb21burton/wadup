@@ -40,6 +40,47 @@ function categoryFor(place, searched) {
   // Avoid misclassifying a result from a broad Google includedTypes match.
   return primary ? null : searched;
 }
+// Recheck existing Chattanooga restaurants each run at no additional Places API cost.
+// Only strong, explicit sports-viewing evidence is auto-published; ambiguous
+// references to a TV, a bar, or a grill are not sufficient.
+function sportsBarEvidence(v) {
+  const name = String(v.name || '');
+  const description = String(v.description || '');
+  if (/\\b(sports? bar|sports? pub|sports? grill)\\b/i.test(name)) return 'explicit_sports_venue_name';
+  if (/\\b(sports? bar|sports? pub|sports? grill|dedicated sports viewing|watch (?:the |live )?games?|game.day watch parties|multiple (?:big.screen )?(?:tvs|televisions))\\b/i.test(description))
+    return 'explicit_sports_viewing_description';
+  const reviews = Array.isArray(v.google_reviews) ? v.google_reviews : [];
+  const matching = reviews.filter(r => /\\b(watch(?:ed|ing)? (?:the |a )?(?:game|football|basketball|baseball)|sports bar|plenty of (?:tvs|televisions)|tvs? (?:everywhere|all around))\\b/i.test(String(r?.text?.text || r?.text || '')));
+  return matching.length >= 2 ? 'two_independent_sports_viewing_reviews' : null;
+}
+async function classifyChattanoogaSportsBars() {
+  const { data, error } = await supabaseAdmin.from('venues')
+    .select('id,name,description,google_reviews,category,subcategory,categories,subcategories,is_claimed,is_hidden,is_private')
+    .eq('city', 'Chattanooga').eq('category', 'restaurant').eq('is_claimed', false)
+    .eq('is_hidden', false).eq('is_private', false).limit(1000);
+  if (error) throw error;
+  let updated = 0;
+  const reviewCandidates = [];
+  for (const v of data || []) {
+    if ((v.categories || []).includes('nightlife') && (v.subcategories || []).includes('Sports Bar')) continue;
+    const evidence = sportsBarEvidence(v);
+    if (!evidence) {
+      if (/\\b(?:sports|game.day|televisions|tvs?)\\b/i.test([v.name,v.description].join(' ')))
+        reviewCandidates.push(v.name);
+      continue;
+    }
+    const categories = [...new Set([...(v.categories || [v.category]), 'nightlife'])];
+    const subcategories = [...new Set([...(v.subcategories || [v.subcategory]).filter(Boolean), 'Sports Bar'])];
+    // Protect owner edits, and re-check the previous category membership.
+    const { data: saved, error: saveError } = await supabaseAdmin.from('venues')
+      .update({ categories, subcategories }).eq('id', v.id)
+      .eq('is_claimed', false).eq('category', 'restaurant')
+      .select('id');
+    if (saveError) throw saveError;
+    updated += saved?.length || 0;
+  }
+  return { updated, needsReview: reviewCandidates.slice(0, 20) };
+}
 const distance = t => {
   const dLat = (Number(t.lat) - CENTER.lat) * 111.2;
   const dLng = (Number(t.lng) - CENTER.lng) * 91.2;
@@ -52,6 +93,12 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   if (!process.env.GOOGLE_PLACES_KEY)
     return res.status(503).json({ status: 'missing_google_places_key' });
+
+  // Classification does not consume a Google search request. It continues
+  // even if the separate discovery search budget is exhausted.
+  let sportsBarAudit;
+  try { sportsBarAudit = await classifyChattanoogaSportsBars(); }
+  catch (error) { sportsBarAudit = { error: String(error.message).slice(0, 180) }; }
 
   const now = new Date();
   const month = now.toISOString().slice(0, 7);
@@ -69,9 +116,9 @@ export default async function handler(req, res) {
   const monthCalls = (monthResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
   const dayCalls = (dayResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
   if (monthCalls >= MONTHLY_LIMIT)
-    return res.json({ status: 'monthly_limit_reached', monthlyLimit: MONTHLY_LIMIT });
+    return res.json({ status: 'monthly_limit_reached', monthlyLimit: MONTHLY_LIMIT, sportsBarAudit });
   if (dayCalls >= DAILY_LIMIT)
-    return res.json({ status: 'daily_limit_reached', dailyLimit: DAILY_LIMIT });
+    return res.json({ status: 'daily_limit_reached', dailyLimit: DAILY_LIMIT, sportsBarAudit });
 
   // Recover stale interrupted tiles; attempts is the next category cursor (0..7).
   await supabaseAdmin.from('restaurant_coverage_tiles').update({ status: 'queued' })
@@ -81,7 +128,7 @@ export default async function handler(req, res) {
     .eq('status', 'queued').limit(1000);
   if (tileError) return res.status(503).json({ status: 'tile_query_failed' });
   const tile = (tiles || []).sort((a,b) => distance(a) - distance(b) || a.id - b.id)[0];
-  if (!tile) return res.json({ status: 'all_tiles_processed' });
+  if (!tile) return res.json({ status: 'all_tiles_processed', sportsBarAudit });
   const cursor = Math.min(Number(tile.attempts || 0), TYPES.length - 1);
   const task = TYPES[cursor];
   const { data: claimed, error: claimError } = await supabaseAdmin
@@ -142,7 +189,7 @@ export default async function handler(req, res) {
       status: 'done', discovered: rows.length, staged, finished_at: new Date().toISOString(),
     }).eq('id', run.id);
     return res.json({ status: 'done', tile: tile.id, categorySearched: task.category,
-      classified: rows.length, addedToMap: staged, categoryProgress: cursor + 1, categoriesPerTile: TYPES.length });
+      classified: rows.length, addedToMap: staged, sportsBarAudit, categoryProgress: cursor + 1, categoriesPerTile: TYPES.length });
   } catch (e) {
     await supabaseAdmin.from('restaurant_coverage_tiles').update({
       status: 'queued', last_error: String(e.message).slice(0, 500),
