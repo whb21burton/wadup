@@ -1166,6 +1166,16 @@ export default function WadUp() {
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
       infoWindow.current.open(map, marker);
+      // The close-button space is owned by Google Maps outside .gm-iw.
+      // Paint the cover on Google's outer popup surface so that upper
+      // whitespace is covered without changing the popup's dimensions.
+      window.google.maps.event.addListenerOnce(infoWindow.current, 'domready', () => {
+        const popup = document.querySelector('.gm-style-iw-c:has(.gm-iw-with-cover)');
+        if (popup) {
+          const photo = v.cover_photo_url || v.cover_photo_mobile_url;
+          if (photo) popup.style.setProperty('--wu-outer-cover', 'url("' + String(photo).replace(/["\\\n\r]/g, '') + '")');
+        }
+      });
     };
 
     el.addEventListener('click', (e) => {
