@@ -139,6 +139,43 @@ export default function VenuePage() {
   const [activitySchedule,setActivitySchedule]=useState([]);
   const [editingProfile,setEditingProfile]=useState(false);
   const [profileDraft,setProfileDraft]=useState({});
+  const [coverSource,setCoverSource]=useState('');
+  const [coverZoom,setCoverZoom]=useState(1);
+  const [coverX,setCoverX]=useState(50);
+  const [coverY,setCoverY]=useState(50);
+  const [coverImageSize,setCoverImageSize]=useState({width:1,height:1});
+  const [coverUploading,setCoverUploading]=useState(false);
+  const coverImageRef=useRef(null);
+  const chooseCover=(event)=>{
+    const file=event.target.files?.[0];
+    if(!file)return;
+    if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>15*1024*1024){setEditError('Choose a JPG, PNG or WebP image under 15 MB');return;}
+    const reader=new FileReader();
+    reader.onload=()=>{setCoverSource(String(reader.result));setCoverZoom(1);setCoverX(50);setCoverY(50);setEditError('');};
+    reader.readAsDataURL(file);
+    event.target.value='';
+  };
+  const uploadCroppedCover=async()=>{
+    if(!coverSource)return;
+    setCoverUploading(true);setEditError('');
+    try{
+      const image=coverImageRef.current;
+      if(!image?.naturalWidth)throw new Error('Photo is still loading');
+      const canvas=document.createElement('canvas');
+      canvas.width=1200;canvas.height=600;
+      const ctx=canvas.getContext('2d');
+      const w=image.naturalWidth,h=image.naturalHeight;
+      const scale=Math.max(canvas.width/w,canvas.height/h)*coverZoom;
+      const renderedW=w*scale,renderedH=h*scale;
+      const x=(canvas.width-renderedW)*(coverX/100);
+      const y=(canvas.height-renderedH)*(coverY/100);
+      ctx.drawImage(image,x,y,renderedW,renderedH);
+      const data=canvas.toDataURL('image/jpeg',0.85);
+      const result=await sendEdit('/api/admin/venue-cover-upload',{venueId:id,image:data});
+      setVenue(result.venue);setProfileDraft(d=>({...d,cover_photo_url:result.venue.cover_photo_url}));
+      setCoverSource('');
+    }catch(e){setEditError(e.message);}finally{setCoverUploading(false);}
+  };
   const [editingActivity,setEditingActivity]=useState(null);
   const [editError,setEditError]=useState('');
   const [editBusy,setEditBusy]=useState(false);
@@ -725,7 +762,24 @@ export default function VenuePage() {
               <label>Description<textarea value={profileDraft.description||''} onChange={e=>setProfileDraft(d=>({...d,description:e.target.value}))}/></label>
               <label>Phone<input value={profileDraft.phone||''} onChange={e=>setProfileDraft(d=>({...d,phone:e.target.value}))}/></label>
               <label>Website<input value={profileDraft.website||''} onChange={e=>setProfileDraft(d=>({...d,website:e.target.value}))}/></label>
-              <label>Cover photo URL<input value={profileDraft.cover_photo_url||''} onChange={e=>setProfileDraft(d=>({...d,cover_photo_url:e.target.value}))}/></label>
+              <div className="wu-cover-editor">
+                <strong>Cover photo</strong>
+                <p style={{fontSize:13,color:'#64748b',margin:'6px 0'}}>Choose a photo, adjust the crop, and save. It will fit your profile automatically.</p>
+                <label className="wu-cover-choose">📷 {coverSource ? 'Choose a different photo' : 'Upload a photo'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseCover} style={{display:'none'}}/>
+                </label>
+                {coverSource ? <>
+                  <div className="wu-cover-crop" style={{position:'relative',width:'100%',aspectRatio:'2 / 1',overflow:'hidden',borderRadius:12,background:'#111',marginTop:12}}>
+                    <img ref={coverImageRef} src={coverSource} alt="Cover photo crop preview" onLoad={e=>setCoverImageSize({width:e.target.naturalWidth,height:e.target.naturalHeight})}
+                      style={{position:'absolute',width:'100%',height:'100%',objectFit:'cover',objectPosition:`${coverX}% ${coverY}%`,transform:`scale(${coverZoom})`,transformOrigin:`${coverX}% ${coverY}%`}}/>
+                  </div>
+                  <label>Zoom <input type="range" min="1" max="2.5" step="0.05" value={coverZoom} onChange={e=>setCoverZoom(Number(e.target.value))}/></label>
+                  <label>Move left / right <input type="range" min="0" max="100" value={coverX} onChange={e=>setCoverX(Number(e.target.value))}/></label>
+                  <label>Move up / down <input type="range" min="0" max="100" value={coverY} onChange={e=>setCoverY(Number(e.target.value))}/></label>
+                  <button type="button" disabled={coverUploading} onClick={uploadCroppedCover}>{coverUploading?'Uploading…':'Save cropped photo'}</button>
+                  <button type="button" disabled={coverUploading} onClick={()=>setCoverSource('')}>Cancel photo</button>
+                </> : profileDraft.cover_photo_url ? <img src={profileDraft.cover_photo_url} alt="Current cover" style={{width:'100%',aspectRatio:'2 / 1',objectFit:'cover',borderRadius:12,marginTop:10}}/> : null}
+              </div>
               <div className="wu-inline-actions"><button disabled={editBusy} onClick={saveInlineProfile}>Save</button><button onClick={()=>setEditSection(null)}>Cancel</button></div>{editError&&<p role="alert">{editError}</p>}
             </div>}
             {canManage&&editingProfile&&editSection==='categories'&&<div className="wu-edit-inline">
