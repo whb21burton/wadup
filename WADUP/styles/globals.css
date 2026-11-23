@@ -3895,7 +3895,7 @@ html, body {
 }
 
 /* Owner/admin-only photo control, positioned inside the existing popup header. */
-.gm-style .gm-style-iw-c:has(.wu-popup-photo-edit) {position:relative;}
+/* Preserve Google Maps' absolute InfoWindow positioning; never set position:relative here. */
 .wu-popup-photo-edit {position:absolute;top:7px;left:8px;z-index:15;border:0;background:rgba(0,0,0,.65);color:white;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:16px;display:grid;place-items:center;}
 .wu-popup-photo-edit:hover {background:#00c5dc;color:#00121f;}
 .wu-map-photo-backdrop {position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:12px;}
