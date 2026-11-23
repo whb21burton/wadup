@@ -1150,7 +1150,7 @@ export default function WadUp() {
         }).join('')}</div>
         ${ratingHtml}
         ${badgesHtml}
-        <div class="popup-address"><a class="wu-directions-link" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)) ? `${v.lat},${v.lng}` : [v.address,v.city,v.state].filter(Boolean).join(', '))}" target="_blank" rel="noopener noreferrer" title="Get directions">📍 ${escapeHtml(v.address || [v.city,v.state].filter(Boolean).join(', '))} ↗</a></div>
+        <div class="popup-address"><a class="wu-directions-link" href="${/iPhone|iPad|iPod/i.test(typeof navigator!=='undefined'?navigator.userAgent:'')?'https://maps.apple.com/?daddr=':'https://www.google.com/maps/dir/?api=1&destination='}${encodeURIComponent(Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)) ? `${v.lat},${v.lng}` : [v.address,v.city,v.state].filter(Boolean).join(', '))}" target="_blank" rel="noopener noreferrer" title="Get directions">📍 ${escapeHtml(v.address || [v.city,v.state].filter(Boolean).join(', '))} ↗</a></div>
         <a class="popup-view-reviews" href="/venue/${encodeURIComponent(v.id)}">👀 CHECK IT OUT</a>
       </div>`;
 
@@ -1485,7 +1485,7 @@ export default function WadUp() {
         <div class="popup-type">${escapeHtml(popupVenueEmoji(v))} ${escapeHtml(popupCategoryText('nightlife'))}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
         ${ratingHtml}
         ${flameHtml}
-        <div class="popup-address"><a class="wu-directions-link" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)) ? `${v.lat},${v.lng}` : [v.address,v.city,v.state].filter(Boolean).join(', '))}" target="_blank" rel="noopener noreferrer" title="Get directions">📍 ${escapeHtml(v.address || [v.city,v.state].filter(Boolean).join(', '))} ↗</a></div>
+        <div class="popup-address"><a class="wu-directions-link" href="${/iPhone|iPad|iPod/i.test(typeof navigator!=='undefined'?navigator.userAgent:'')?'https://maps.apple.com/?daddr=':'https://www.google.com/maps/dir/?api=1&destination='}${encodeURIComponent(Number.isFinite(Number(v.lat)) && Number.isFinite(Number(v.lng)) ? `${v.lat},${v.lng}` : [v.address,v.city,v.state].filter(Boolean).join(', '))}" target="_blank" rel="noopener noreferrer" title="Get directions">📍 ${escapeHtml(v.address || [v.city,v.state].filter(Boolean).join(', '))} ↗</a></div>
         <a class="popup-view-reviews" href="/venue/${encodeURIComponent(v.id)}">👀 CHECK IT OUT</a>
       </div>`;
 
