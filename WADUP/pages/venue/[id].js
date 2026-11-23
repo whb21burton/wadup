@@ -589,9 +589,16 @@ export default function VenuePage() {
   // at all — e.g. a shared link straight to this page, where history.back()
   // would otherwise leave the button doing nothing).
   const goBack = () => {
-    // Back always means return to the discovery map, never a prior
-    // pin-placement or edit route lingering in browser history.
-    router.push('/');
+    // Returning from the map should restore the existing map page rather than
+    // creating a fresh visit (which can show the mobile welcome screen).
+    let cameFromMap = false;
+    try { cameFromMap = !!window.sessionStorage.getItem('wadup_map_state'); } catch (_) {}
+    if (cameFromMap && window.history.length > 1) {
+      router.back();
+    } else {
+      // Direct/shared profile link: there is no map page in this tab's history.
+      router.push('/');
+    }
   };
 
   const share = async () => {
