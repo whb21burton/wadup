@@ -3828,3 +3828,23 @@ html, body {
   .venue-header .venue-header-content {padding:0 14px 14px!important;gap:4px;}
   .venue-body {padding-top:18px;}
 }
+
+/* Venue cover inside map hover/click card, without changing card dimensions. */
+.gm-iw.gm-iw-with-cover {
+  position:relative;
+  isolation:isolate;
+  background:#fff;
+}
+.gm-iw.gm-iw-with-cover::before {
+  content:"";
+  position:absolute;
+  inset:0 0 auto;
+  height:100px;
+  z-index:-1;
+  pointer-events:none;
+  background-image:linear-gradient(to bottom,rgba(255,255,255,.55) 0%,rgba(255,255,255,.86) 52%,#fff 100%),var(--wu-popup-cover);
+  background-position:center;
+  background-size:cover;
+  background-repeat:no-repeat;
+}
+.gm-iw.gm-iw-with-cover .popup-name {text-shadow:0 1px 3px #fff;}
