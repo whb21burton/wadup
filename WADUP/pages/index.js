@@ -1102,8 +1102,8 @@ export default function WadUp() {
     if (baseZIndex != null) el.style.zIndex = String(baseZIndex);
     el.appendChild(contentEl);
 
-    const ratingHtml = hasRating
-      ? `<div class="popup-rating">⭐ ${rating.toFixed(1)} (${ratingCount} ${hasWadupRating(v) ? 'WadUp ' : 'Google '}review${ratingCount === 1 ? '' : 's'})</div>`
+    const ratingHtml = hasRating && hasWadupRating(v)
+      ? `<div class="popup-rating">⭐ ${rating.toFixed(1)} (${ratingCount} WadUp review${ratingCount === 1 ? '' : 's'})</div>`
       : '';
     const badgesHtml = badges.length
       ? `<div class="popup-badges">${badges.map(b => `<span class="popup-badge">${b.icon} ${escapeHtml(b.label)}</span>`).join('')}</div>`
@@ -1125,7 +1125,7 @@ export default function WadUp() {
       ` : '';
 
     const iwHtml = `
-      <div class="gm-iw ${v.cover_photo_url || v.cover_photo_mobile_url ? 'gm-iw-with-cover' : ''}" ${v.cover_photo_url || v.cover_photo_mobile_url ? `style="--wu-popup-cover:url(&quot;${escapeHtml(v.cover_photo_url || v.cover_photo_mobile_url)}&quot;)"` : ''}>
+      <div class="gm-iw ${v.cover_photo_mobile_url || v.cover_photo_url ? 'gm-iw-with-cover' : ''}" ${v.cover_photo_mobile_url || v.cover_photo_url ? `style="--wu-popup-cover:url(&quot;${escapeHtml(v.cover_photo_mobile_url || v.cover_photo_url)}&quot;)"` : ''}>
         <div class="popup-name">${escapeHtml(v.name)}</div>
         ${eventPopupHtml}
         <div class="popup-category-rows">${cats.map(cat => {
@@ -1172,7 +1172,7 @@ export default function WadUp() {
       window.google.maps.event.addListenerOnce(infoWindow.current, 'domready', () => {
         const popup = document.querySelector('.gm-style-iw-c:has(.gm-iw-with-cover)');
         if (popup) {
-          const photo = v.cover_photo_url || v.cover_photo_mobile_url;
+          const photo = v.cover_photo_mobile_url || v.cover_photo_url;
           if (photo) popup.style.setProperty('--wu-outer-cover', 'url("' + String(photo).replace(/["\\\n\r]/g, '') + '")');
         }
       });
@@ -1442,8 +1442,8 @@ export default function WadUp() {
     const rating = effectiveRating(v);
     const ratingCount = effectiveRatingCount(v);
     const hasRating = rating != null && (ratingCount || 0) > 0;
-    const ratingHtml = hasRating
-      ? `<div class="popup-rating">⭐ ${rating.toFixed(1)} (${ratingCount} ${hasWadupRating(v) ? 'WadUp ' : 'Google '}review${ratingCount === 1 ? '' : 's'})</div>`
+    const ratingHtml = hasRating && hasWadupRating(v)
+      ? `<div class="popup-rating">⭐ ${rating.toFixed(1)} (${ratingCount} WadUp review${ratingCount === 1 ? '' : 's'})</div>`
       : '';
     const flameHtml = flameEmoji
       ? `<div class="popup-flame">${flameEmoji} ${flameLevel === 3 ? 'Packed!' : flameLevel === 2 ? 'Getting Busy' : 'Getting There'}</div>`
