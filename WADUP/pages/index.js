@@ -1256,9 +1256,33 @@ export default function WadUp() {
   // Owner-selected map icons are constrained to an approved set.
   // Default bars use beer; restaurant discovery keeps its dot unless an
   // owner explicitly selects an icon. No new visible filters are added.
-  const OWNER_MAP_EMOJIS = new Set(['🍔','🍕','🍗','🍖','🥩','🌮','🌯','🍣','🍜','🍝','🍤','🦞','🦀','🥪','🥞','🍳','🥐','🥗','🥘','🍛','🍱','🥟','🍲','🍟','🥙','🍚','🧀','🍽️','☕','🍺','🍻','🍸','🍹','🥃','🍷','🍾','🍶','🎤','🎱','🎯','🎶','💃','🪩','🎳','🎮','🕹️','🏓','🪓','🏌️','🎟️','🧩','🎨','winged-burger']);
+  const OWNER_MAP_EMOJIS = new Set(['🍔','🍕','🍗','🍖','🥩','🌮','🌯','🍣','🍜','🍝','🍤','🦞','🦀','🥪','🥞','🍳','🥐','🥗','🥘','🍛','🍱','🥟','🍲','🍟','🥙','🍚','🧀','🍽️','☕','🍺','🍻','🍸','🍹','🥃','🍷','🍾','🍶','🎤','🎱','🎯','🎶','💃','🪩','🎳','🎮','🕹️','🏓','🪓','🏌️','🎟️','🧩','🎨','🏈','🏀','⚾','⛳','🌃','winged-burger']);
+  // Nightlife emoji defaults follow the primary nightlife subcategory.
+  // A verified owner's approved custom_emoji always wins and remains fixed.
+  const seasonalSportsEmoji = (date = new Date()) => {
+    const month = date.getMonth() + 1;
+    return month >= 9 || month === 1 ? '🏈' : month <= 3 ? '🏀' : '⚾';
+  };
+  const nightlifeEmoji = (v) => {
+    const primary = String(v.category || '').toLowerCase();
+    const subs = Array.isArray(v.subcategories) ? v.subcategories : [];
+    const selected = primary === 'nightlife'
+      ? (v.subcategory || subs.find(x => /sports bar|speakeasy|dance club|brewery|dive bar|karaoke|rooftop|pool hall/i.test(String(x))) || '')
+      : '';
+    const type = String(selected).toLowerCase().trim();
+    if (/sports bar/.test(type)) return seasonalSportsEmoji();
+    if (/speakeasy/.test(type)) return '🥃';
+    if (/dance club|nightclub/.test(type)) return '🪩';
+    if (/brewery/.test(type)) return '🍺';
+    if (/dive bar/.test(type)) return '🍻';
+    if (/karaoke/.test(type)) return '🎤';
+    if (/rooftop/.test(type)) return '🌃';
+    if (/pool hall|billiard/.test(type)) return '🎱';
+    return '🍺';
+  };
   const venueMapEmoji = (v, fallback = null) =>
-    OWNER_MAP_EMOJIS.has(v.custom_emoji) ? v.custom_emoji : fallback;
+    OWNER_MAP_EMOJIS.has(v.custom_emoji) ? v.custom_emoji
+      : (String(v.category || '').toLowerCase() === 'nightlife' ? nightlifeEmoji(v) : fallback);
 
   // ── Drop a bar/nightlife pin ── same viewport-scoped areaRank as
   // dropVenuePin (a venues.admin_rank_number override, when set, wins over
