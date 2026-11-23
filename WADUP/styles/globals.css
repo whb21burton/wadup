@@ -3788,3 +3788,10 @@ html, body {
  .wu-cover-inline-controls {right:8px!important;bottom:8px!important;width:min(340px,calc(100vw - 16px))!important;max-height:50vh;}
  .wu-cover-hero-image {width:calc(100% + 200px)!important;height:calc(100% + 200px)!important;left:-100px!important;top:-100px!important;}
 }
+
+/* Compact venue hero after removing redundant action strip. */
+.venue-header .venue-header-content {padding-bottom:14px;min-height:0;}
+.venue-header .venue-header-content .venue-rating-line:empty {display:none;}
+.venue-contact-row {display:flex;align-items:center;flex-wrap:wrap;gap:12px;}
+.wu-about-share {appearance:none;background:transparent;border:0;color:#1675e8;font:inherit;font-weight:700;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px;}
+.wu-about-share:hover {color:#0957b9;}
