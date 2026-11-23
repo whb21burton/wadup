@@ -19,12 +19,12 @@
 // AdminEditPanel, or a mapping from the Google primaryType that means the
 // same thing ('pub' → Dive Bar, 'night club' → Dance Club).
 export const CATEGORY_CHIPS = [
-  { id: 'events', label: '🎵 Events', subcategories: [
-    { id: 'Concert Hall', label: 'Concert Hall' },
+  { id: 'events', label: '🎟️ Events', subcategories: [
+    { id: 'Sports', label: 'Sports' },
+    { id: 'Music', label: 'Music' },
     { id: 'Theater', label: 'Theater' },
-    { id: 'Comedy Club', label: 'Comedy Club' },
-    { id: 'Music Venue', label: 'Music Venue' },
-    { id: 'Seasonal Event Venue', label: 'Seasonal Event Venues' },
+    { id: 'Comedy', label: 'Comedy' },
+    { id: 'Festivals & Markets', label: 'Festivals & Markets' },
   ]},
   { id: 'bars', label: '🍸 Bars & Nightlife', subcategories: [
     { id: 'Sports Bar', label: 'Sports Bar' },
@@ -50,17 +50,6 @@ export const CATEGORY_CHIPS = [
     { id: 'Breakfast', label: 'Breakfast' },
     { id: 'Southern', label: 'Southern' },
     { id: 'Other Restaurants', label: 'Other Restaurants' },
-  ]},
-  { id: 'sports', label: '🏟️ Sports', subcategories: [
-    { id: 'Football', label: '🏈 Football' },
-    { id: 'Baseball', label: '⚾ Baseball' },
-    { id: 'Basketball', label: '🏀 Basketball' },
-    { id: 'Soccer', label: '⚽ Soccer' },
-    { id: 'Hockey', label: '🏒 Hockey' },
-    { id: 'Golf', label: '⛳ Golf' },
-    { id: 'Racing', label: '🏎️ Racing' },
-    { id: 'Tennis', label: '🎾 Tennis' },
-    { id: 'Other Sports', label: '🏆 Other Sports' },
   ]},
   { id: 'outdoors', label: '🌳 Outdoors', subcategories: [
     { id: 'Park', label: '🌳 Parks' },
@@ -141,7 +130,7 @@ function subcategoryMatches(value, selected) {
 // labels a venue/event by its actual category (venue profile, discover,
 // browse, profile tabs, admin sync stats) reads this dict.
 export const CATEGORY_LABELS = {
-  events: '🎵 Events',
+  events: '🎟️ Events',
   nightlife: '🍸 Bars & Nightlife',
   restaurant: '🍔 Restaurants',
   sports: '🏟️ Sports',
@@ -211,7 +200,7 @@ export function venueMatchesChip(chip, venue, subcategory) {
   const cats = venueCategories(venue);
   // The map's chip id is 'bars', but venues are stored under 'nightlife' —
   // match either so the chip actually finds them.
-  const chipMatches = chip === 'bars'
+  const chipMatches = chip === 'events' ? (cats.includes('events') || cats.includes('sports')) : chip === 'bars'
     ? (cats.includes('nightlife') || cats.includes('bars'))
     : cats.includes(chip);
   if (!chipMatches) return false;
