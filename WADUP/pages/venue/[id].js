@@ -666,7 +666,7 @@ export default function VenuePage() {
                   <button type="button" onClick={()=>router.push(`/?placePin=${encodeURIComponent(id)}`)}>📍 Place pin on map</button>
                   {editError&&<span role="alert">{editError}</span>}
                 </span>:
-                <>{venue.address ? `${venue.address} · ` : ''}{venue.city}{venue.state ? `, ${venue.state}` : ''}{canManage&&editingProfile?' ✎':''}</>}
+                <>{canManage&&editingProfile ? <span>{venue.address ? `${venue.address} · ` : ''}{venue.city}{venue.state ? `, ${venue.state}` : ''} ✎</span> : <a className="wu-directions-link" href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(Number.isFinite(Number(venue.lat)) && Number.isFinite(Number(venue.lng)) ? `${venue.lat},${venue.lng}` : [venue.address,venue.city,venue.state].filter(Boolean).join(', '))}`} target="_blank" rel="noopener noreferrer" title="Get directions">{venue.address ? `${venue.address} · ` : ''}{venue.city}{venue.state ? `, ${venue.state}` : ''} ↗</a>}</>}
             </div>
             <div className="venue-category-line" onClick={()=>{if(canManage&&editingProfile)setEditSection('categories');}} style={canManage&&editingProfile?{cursor:'pointer',outline:'1px dashed #24cbe2',borderRadius:6,padding:5}:undefined}>
               <div style={{display:'flex',flexDirection:'column',gap:6,width:'100%'}}>
