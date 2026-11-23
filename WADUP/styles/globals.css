@@ -3728,3 +3728,15 @@ html, body {
  .wu-cover-edit-trigger {bottom:210px;}
  .wu-cover-modal {padding:12px;}
 }
+
+/* Photo preview and published hero share the same cover rendering. */
+.venue-cover {overflow:hidden;}
+.wu-cover-hero-image,.wu-cover-preview-image {position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;transform-origin:center center;}
+.wu-cover-photo-shade {position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(2,9,20,.06) 0%,rgba(2,9,20,.2) 35%,rgba(2,9,20,.78) 100%);}
+.wu-cover-hero-image.wu-cover-mobile {display:none;}
+.wu-cover-live-preview {height:390px;aspect-ratio:auto;background-image:none!important;}
+.wu-cover-live-preview.mobile {height:340px;aspect-ratio:auto;}
+.wu-cover-live-preview .wu-cover-preview-copy {z-index:2;bottom:0;padding:18px 20px 22px;min-height:205px;justify-content:flex-start;}
+.wu-cover-live-preview .wu-cover-preview-copy strong {font-size:clamp(20px,2.3vw,30px);line-height:1.2;}
+.wu-cover-live-preview .wu-cover-preview-copy span {font-size:13px;}
+@media(max-width:600px){.wu-cover-hero-image.wu-cover-desktop {display:none;}.wu-cover-hero-image.wu-cover-mobile {display:block;}}
