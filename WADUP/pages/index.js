@@ -1427,28 +1427,64 @@ export default function WadUp() {
       e.stopPropagation();
       handlePinInteraction(v.id);
     });
-    el.addEventListener('mouseenter', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      el.style.zIndex = '9999';
-      // Only reveal a non-ranked beer label on hover; permanent labels
-      // overlap heavily in dense downtown nightlife clusters.
-
-    });
-    el.addEventListener('mouseleave', () => {
-      el.style.zIndex = String(baseZIndex);
-
-    });
-
-    mapMarkers.current[v.id] = { marker };
+    // Ranked nightlife pins use ONE overlay for name, arrow, and emoji.
+    // No independent emoji overlay: it can drift and paint above the label.
     if (showName && !eventsChipActive) {
-      const fixedEmoji = makeFixedVenueEmoji(pos, venueMapEmoji(v, '🍺'), map, () => handlePinInteraction(v.id));
-      overlays.current[v.id] = { setMap(nextMap) { overlay.setMap(nextMap); fixedEmoji.setMap(nextMap); } };
-    } else {
-      overlays.current[v.id] = overlay;
+      el.classList.add('wu-ranked-emoji-label');
+      overlay.__fixedEmojiLabel = true;
+      const emojiShell = document.createElement('div');
+      emojiShell.className = 'wu-ranked-attached-emoji';
+      emojiShell.style.cssText = 'position:relative;align-self:center;margin-top:3px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;pointer-events:auto;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));';
+      el.style.display = 'flex';
+      el.style.flexDirection = 'column';
+      el.style.alignItems = 'center';
+      const glyph = foodIconElement(venueMapEmoji(v, '🍺'));
+      glyph.style.fontSize = '24px';
+      emojiShell.appendChild(glyph);
+      el.appendChild(emojiShell);
     }
-
+    const hoverVisual = document.createElement('div');
+    hoverVisual.className = 'wu-hover-visual';
+    hoverVisual.style.cssText = 'display:flex;flex-direction:column;align-items:center;transform:scale(1);transform-origin:center bottom;transition:transform 180ms ease-out;';
+    while (el.firstChild) hoverVisual.appendChild(el.firstChild);
+    el.appendChild(hoverVisual);
+    const restingZ = el.style.zIndex;
+    const syncStack = () => {
+      const active = el.classList.contains('wu-pin-selected');
+      const hovered = el.matches(':hover') || el.matches(':focus-within');
+      el.style.zIndex = active || hovered ? '2147483000' : restingZ;
+      el.classList.toggle('wu-pin-front', active || hovered);
+      hoverVisual.style.transform = hovered ? 'scale(1.18)' : 'scale(1)';
+    };
+    el.addEventListener('pointerenter', syncStack);
+    el.addEventListener('pointerleave', syncStack);
+    el.addEventListener('focusin', syncStack);
+    el.addEventListener('focusout', () => requestAnimationFrame(syncStack));
+    el.addEventListener('click', () => {
+      map.__wadupSelectedPin?.classList.remove('wu-pin-selected');
+      if (map.__wadupSelectedPin && map.__wadupSelectedPin !== el)
+        map.__wadupSelectedPin.dispatchEvent(new Event('wadup-restack'));
+      map.__wadupSelectedPin = el;
+      map.__wadupSelectedVenueId = v.id;
+      el.classList.add('wu-pin-selected');
+      syncStack();
+    });
+    el.addEventListener('wadup-restack', syncStack);
+    const previousRemove = overlay.onRemove;
+    overlay.onRemove = function () {
+      if (map.__wadupSelectedPin === el) map.__wadupSelectedPin = null;
+      previousRemove.call(this);
+    };
+    mapMarkers.current[v.id] = { marker };
+    overlays.current[v.id] = overlay;
     const entry = { id: v.id, type: 'venue', tier: showName ? 'top10' : 'discovery', rank: areaRank, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(v.id, entry);
+    if (map.__wadupSelectedVenueId === v.id) {
+      map.__wadupSelectedPin = el;
+      el.classList.add('wu-pin-selected', 'wu-pin-front');
+      el.style.zIndex = '2147483000';
+    }
+    queueMapLabelLayout(map);
   }, [zoomClass]);
 
   useEffect(() => { dropBarPinRef.current = dropBarPin; }, [dropBarPin]);
