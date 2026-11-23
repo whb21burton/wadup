@@ -24,8 +24,12 @@ export default async function handler(req,res){
     if(typeof value!=='string'||value.length>4000)return res.status(400).json({error:'Invalid '+field});
     safe[field]=value.trim();
   }
-  for(const field of ['cover_position_x','cover_position_y']) if(updates[field]!==undefined){
+  for(const field of ['cover_position_x','cover_position_y','cover_mobile_position_x','cover_mobile_position_y']) if(updates[field]!==undefined){
     if(!Number.isInteger(updates[field])||updates[field]<0||updates[field]>100)return res.status(400).json({error:'Invalid cover position'});
+    safe[field]=updates[field];
+  }
+  for(const field of ['cover_zoom','cover_mobile_zoom']) if(updates[field]!==undefined){
+    if(typeof updates[field]!=='number'||updates[field]<1||updates[field]>3)return res.status(400).json({error:'Invalid cover zoom'});
     safe[field]=updates[field];
   }
   if(updates.custom_emoji!==undefined){if(typeof updates.custom_emoji!=='string'||!MAP_EMOJIS.has(updates.custom_emoji))return res.status(400).json({error:'Choose an available map emoji'});safe.custom_emoji=updates.custom_emoji;}
