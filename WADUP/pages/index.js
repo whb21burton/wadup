@@ -139,6 +139,51 @@ function outdoorIcon(v) {
   if (/outdoor attraction/i.test(terms)) return '🏞️';
   return '🌳';
 }
+
+// Event classification is based on the individual scheduled event, not merely
+// the venue's category. Ticketmaster's segment/genre are more reliable than
+// title guesses, with title-based specificity for the actual emoji.
+function eventKind(ev) {
+  const title = String(ev.name || ev.title || '').toLowerCase();
+  const segment = String(ev.segment || '').toLowerCase();
+  const genre = String(ev.genre || ev.subGenre || '').toLowerCase();
+  const type = String(ev.event_type || '').toLowerCase();
+  const all = [title, segment, genre, type].join(' ');
+  if (/sport|football|basketball|baseball|softball|soccer|hockey|golf|tennis|wrestling|boxing|mma|ufc|nascar|racing|race|regatta|marathon|triathlon|ironman|volleyball|lacrosse|rodeo|motocross|pickleball/.test(all)) return 'Sports';
+  if (/comedy|comedian|stand.up|improv/.test(all)) return 'Comedy';
+  if (/theat|theater|theatre|broadway|musical|opera|ballet|dance performance|performing arts|play\b/.test(all)) return 'Theater';
+  if (/festival|farmers.market|market|fair\b|expo|parade|food.truck|craft.show|art.show/.test(all)) return 'Festivals & Markets';
+  if (/music|concert|live_music|dj|band|singer|karaoke|rock|country|hip.hop|jazz|blues|pop\b/.test(all)) return 'Music';
+  return 'Festivals & Markets';
+}
+function specificEventEmoji(ev) {
+  const title = String(ev.name || ev.title || '').toLowerCase();
+  const all = [title, ev.segment, ev.genre, ev.subGenre, ev.event_type].filter(Boolean).join(' ').toLowerCase();
+  // Prefer specific event titles/genres over generic source-provided icons.
+  const icons = [
+    [/basketball|nba\b|wnba\b/, '🏀'], [/football|nfl\b/, '🏈'],
+    [/baseball|mlb\b|softball/, '⚾'], [/golf|pga\b|lpga\b/, '🏌️'],
+    [/soccer|football club|mls\b/, '⚽'], [/hockey|nhl\b/, '🏒'],
+    [/tennis/, '🎾'], [/volleyball/, '🏐'], [/boxing|mma|ufc|wrestling/, '🥊'],
+    [/regatta|rowing|boat race/, '🚣'], [/ironman|triathlon/, '🏊'],
+    [/marathon|5k\b|10k\b|half.marathon|running race/, '🏃'],
+    [/nascar|motorsport|auto racing|grand prix|formula 1|indycar/, '🏎️'],
+    [/rodeo/, '🤠'], [/pickleball/, '🏓'],
+    [/farmers.market|farmers market/, '🥕'], [/food festival|food.truck/, '🍔'],
+    [/art festival|art fair|craft fair/, '🎨'], [/holiday market|christmas market/, '🎄'],
+    [/comedy|comedian|stand.up|improv/, '🎤'],
+    [/opera/, '🎼'], [/ballet/, '🩰'], [/theat|theater|theatre|broadway|musical|stage play/, '🎭'],
+    [/jazz/, '🎷'], [/rock concert|rock music/, '🎸'], [/dj\b|electronic|edm/, '🎧'],
+    [/country music|country concert/, '🤠'], [/hip.hop|rap concert/, '🎙️'],
+    [/concert|live.music|live music|music|band|singer/, '🎵'],
+    [/festival|fair\b|market|expo/, '🎪'],
+  ];
+  return icons.find(([re]) => re.test(all))?.[1] || ({ Sports:'🏆', Music:'🎵', Theater:'🎭', Comedy:'🎤', 'Festivals & Markets':'🎪' }[eventKind(ev)] || '🎟️');
+}
+function matchesEventSubcategories(ev, selected) {
+  return !selected?.length || selected.some(s => s.toLowerCase() === eventKind(ev).toLowerCase());
+}
+
 function tmMatchesSportFilter(ev, selected) {
   if (!selected?.length) return true;
   const details = [ev.genre, ev.subGenre, ev.name].filter(Boolean).join(' ').toLowerCase();
@@ -324,12 +369,12 @@ export default function WadUp() {
     const chip = activeCategoryRef.current;
     return chip === 'wadup'
       ? venueEventsRef.current.some(e => e.venue_id === venue.id && (e.start_time || '').slice(0, 10) === date && !['happy_hour', 'specials'].includes(e.event_type) && (date !== localIsoDate() || !e.end_time || new Date(e.end_time.replace(' ', 'T')).getTime() >= Date.now()))
-      : chip !== 'sports' && venueMatchesChip(chip, venue, activeSubcategoryRef.current[chip] || []) &&
-        (chip !== 'events' || !!getVenueEventForDay(venue.id, date));
+      : venueMatchesChip(chip, venue, chip === 'events' ? [] : (activeSubcategoryRef.current[chip] || [])) &&
+        (chip !== 'events' || (() => { const event = getVenueEventForDay(venue.id, date); return !!event && matchesEventSubcategories({ ...event, name: event.name || event.title || venue.name }, activeSubcategoryRef.current.events || []); })());
   };
   const matchesSelectedTM = (ev, date) => {
     const chip = activeCategoryRef.current;
-    return (chip === 'wadup' || (ev.cat === chip && (chip !== 'sports' || tmMatchesSportFilter(ev, activeSubcategoryRef.current[chip] || [])))) &&
+    return (chip === 'wadup' || (chip === 'events' && matchesEventSubcategories(ev, activeSubcategoryRef.current.events || []))) &&
       isTMEventVisibleForDay(ev, date);
   };
   const [feedRevision, setFeedRevision] = useState(0);
@@ -677,7 +722,7 @@ export default function WadUp() {
     // and only ever considered for the Events/Sports chips — same cat===chip
     // gate filterPins uses for TM pins, plus the same day+3hr-showable window
     // (isTMEventVisibleForDay) filterPins applies to actual pin visibility.
-    const tmInBounds = (selected.includes('events') || selected.includes('sports') || selected.includes('wadup'))
+    const tmInBounds = (selected.includes('events') || selected.includes('wadup'))
       ? tmEventsRef.current
           .filter(ev => matchesSelectedTM(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
           .sort((a, b) => {
@@ -1588,14 +1633,14 @@ export default function WadUp() {
       pinRegistry.current.delete(ev.id);
     }
 
-    const isSports = ev.cat === 'sports';
-    const icon = isSports ? (ev.sportEmoji || '🏟️') : '🎟️';
+    const icon = specificEventEmoji(ev);
 
     // contentEl gets the hover-scale CSS transform; el (below) is a plain
     // positioning shell makeOverlay moves with its own inline transform —
     // see dropVenuePin's identical split for why these can't be one element.
     const contentEl = document.createElement('div');
     contentEl.className = `wu-pin ${zoomClass}`;
+    contentEl.style.cssText = 'display:flex;flex-direction:column;align-items:center;transform-origin:center bottom;';
 
     const pill = document.createElement('div');
     pill.className = 'wu-pill wu-pill-tm';
@@ -1610,7 +1655,7 @@ export default function WadUp() {
 
     const metaSpan = document.createElement('span');
     metaSpan.className = 'wu-rating';
-    metaSpan.textContent = `${icon}${ev.price ? ' ' + ev.price : ''}`;
+    metaSpan.textContent = ev.price || '';
     textWrap.appendChild(metaSpan);
 
     pill.appendChild(textWrap);
@@ -1620,6 +1665,11 @@ export default function WadUp() {
 
     contentEl.appendChild(pill);
     contentEl.appendChild(tail);
+    const emojiShell = document.createElement('div');
+    emojiShell.className = 'wu-tm-attached-emoji';
+    emojiShell.style.cssText = 'font-size:25px;line-height:30px;height:30px;min-width:30px;display:flex;align-items:center;justify-content:center;pointer-events:auto;filter:drop-shadow(0 1px 3px #0006);';
+    emojiShell.textContent = icon;
+    contentEl.appendChild(emojiShell);
 
     const el = document.createElement('div');
     el.className = 'wu-pin-wrapper';
@@ -1655,6 +1705,7 @@ export default function WadUp() {
     });
 
     const overlay = makeOverlay(pos, el, map);
+    // Keep name, pointer and event emoji in one OverlayView, with one hit area.
 
     const openPopup = () => {
       infoWindow.current.setContent(iwHtml);
@@ -1665,13 +1716,14 @@ export default function WadUp() {
       e.stopPropagation();
       handlePinInteraction(ev.id);
     });
-    el.addEventListener('mouseenter', () => {
-      if (!window.matchMedia('(hover: hover)').matches) return;
-      el.style.zIndex = '9999';
-    });
-    el.addEventListener('mouseleave', () => {
-      el.style.zIndex = '';
-    });
+    const syncEventStack = () => {
+      const selected = map.__wadupSelectedVenueId === ev.id;
+      el.style.zIndex = selected ? '2147483000' : el.matches(':hover') ? '2147482000' : '';
+      contentEl.style.transform = el.matches(':hover') ? 'scale(1.15)' : 'scale(1)';
+    };
+    el.addEventListener('pointerenter', syncEventStack);
+    el.addEventListener('pointerleave', syncEventStack);
+    el.addEventListener('wadup-restack', syncEventStack);
 
     tmMarkers.current[ev.id] = { marker, overlay };
 
@@ -1734,7 +1786,7 @@ export default function WadUp() {
       (events || []).forEach((ev) => {
         const norm = {
           id: 'tm_' + ev.tm_id, _isTM: true,
-          name: ev.name, cat: ev.cat || 'events',
+          name: ev.name, cat: 'events',
           segment: ev.segment, genre: ev.genre, subGenre: ev.sub_genre,
           sportEmoji: ev.sport_emoji || undefined,
           address: ev.address || '',
