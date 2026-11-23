@@ -3883,3 +3883,13 @@ html, body {
    width:100%!important;height:100%!important;
  }
 }
+
+/* Shared map/mobile image can be edited on desktop, with the actual shared
+   image shown in the cover while that edit is active. */
+@media(min-width:601px){
+ .venue-cover.wu-editing-map-photo .wu-cover-hero-image.wu-cover-desktop {display:none!important;}
+ .venue-cover.wu-editing-map-photo .wu-cover-hero-image.wu-cover-mobile {display:block!important;}
+}
+@media(max-width:600px){
+ .wu-cover-device-switch {display:none!important;}
+}
