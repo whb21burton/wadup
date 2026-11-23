@@ -9,7 +9,8 @@ export default async function handler(req, res) {
   if (!token) return res.status(401).json({ error: 'Sign in required' });
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
   if (authError || !user) return res.status(401).json({ error: 'Invalid session' });
-  const { venueId, image, positionX = 50, positionY = 50 } = req.body || {};
+  const { venueId, image, positionX = 50, positionY = 50, zoom = 1, device = 'desktop' } = req.body || {};
+  if (!['desktop','mobile'].includes(device) || typeof zoom !== 'number' || zoom < 1 || zoom > 3) return res.status(400).json({error:'Invalid photo settings'});
   if (![positionX,positionY].every(v=>Number.isInteger(v)&&v>=0&&v<=100)) return res.status(400).json({error:'Invalid photo position'});
   if (typeof venueId !== 'string' || !/^[0-9a-f-]{36}$/i.test(venueId)) return res.status(400).json({ error: 'Invalid venue' });
   if (typeof image !== 'string' || image.length > 7000000 || !/^data:image\/(jpeg|png|webp);base64,/.test(image)) return res.status(400).json({ error: 'Upload a JPG, PNG, or WebP under 5 MB' });
@@ -25,11 +26,13 @@ export default async function handler(req, res) {
   if (!jpg && !png && !webp) return res.status(400).json({ error: 'Invalid image file' });
   const type = jpg ? 'image/jpeg' : png ? 'image/png' : 'image/webp';
   const ext = jpg ? 'jpg' : png ? 'png' : 'webp';
-  const key = venueId + '/' + Date.now() + '-' + Math.random().toString(36).slice(2,9) + '.' + ext;
+  const key = venueId + '/' + device + '-' + Date.now() + '-' + Math.random().toString(36).slice(2,9) + '.' + ext;
   const { error: uploadError } = await supabaseAdmin.storage.from('venue-covers').upload(key, bytes, { contentType: type, upsert: false, cacheControl: '3600' });
   if (uploadError) return res.status(500).json({ error: 'Photo upload failed' });
   const { data: urlData } = supabaseAdmin.storage.from('venue-covers').getPublicUrl(key);
-  const { data: updated, error: updateError } = await supabaseAdmin.from('venues').update({ cover_photo_url: urlData.publicUrl, cover_position_x: positionX, cover_position_y: positionY }).eq('id',venueId).select().single();
+  const { data: updated, error: updateError } = await supabaseAdmin.from('venues').update(device === 'mobile'
+    ? {cover_photo_mobile_url:urlData.publicUrl,cover_mobile_position_x:positionX,cover_mobile_position_y:positionY,cover_mobile_zoom:zoom}
+    : {cover_photo_url:urlData.publicUrl,cover_position_x:positionX,cover_position_y:positionY,cover_zoom:zoom}).eq('id',venueId).select().single();
   if (updateError) return res.status(500).json({ error: 'Photo uploaded but could not be saved to venue' });
   return res.json({ venue: updated });
 }
