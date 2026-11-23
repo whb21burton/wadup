@@ -3848,3 +3848,15 @@ html, body {
   background-repeat:no-repeat;
 }
 .gm-iw.gm-iw-with-cover .popup-name {text-shadow:0 1px 3px #fff;}
+
+/* Photo fills the entire existing Google popup, including the close-button area.
+   Do not add any height: the original card dimensions stay unchanged. */
+.gm-style .gm-style-iw-c:has(.gm-iw-with-cover) {
+  background-image:linear-gradient(to bottom,rgba(255,255,255,.12) 0%,rgba(255,255,255,.28) 30%,rgba(255,255,255,.78) 68%,#fff 90%),var(--wu-outer-cover);
+  background-size:cover;
+  background-position:center top;
+  background-repeat:no-repeat;
+}
+.gm-iw.gm-iw-with-cover {background:transparent;}
+.gm-iw.gm-iw-with-cover::before {display:none;}
+.gm-iw.gm-iw-with-cover .popup-name {text-shadow:0 1px 4px #fff,0 0 5px #fff;}
