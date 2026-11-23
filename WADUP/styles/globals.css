@@ -3694,3 +3694,37 @@ html, body {
 /* Directions are visibly actionable in both map popups and venue profiles. */
 .wu-directions-link { color:#00a9d4; font-weight:700; text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:3px; cursor:pointer; }
 .wu-directions-link:hover,.wu-directions-link:focus-visible { color:#007da5; text-decoration-thickness:2px; }
+
+/* Responsive single-photo venue hero and in-place cover editing. */
+.venue-header .venue-cover {height:390px;background-size:cover;background-repeat:no-repeat;background-color:#061423;}
+.venue-header .venue-header-content {position:relative;margin-top:-205px;min-height:205px;background:transparent;padding-top:14px;text-shadow:0 2px 8px rgba(0,0,0,.85);}
+.venue-header .venue-header-content button {text-shadow:none;}
+.wu-cover-edit-trigger {position:absolute;left:50%;bottom:205px;transform:translateX(-50%);z-index:5;border:1px solid rgba(255,255,255,.65);background:rgba(0,0,0,.72);color:#fff;border-radius:999px;padding:10px 18px;font-weight:700;cursor:pointer;}
+.wu-cover-modal-backdrop {position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);display:flex;justify-content:center;align-items:center;padding:16px;}
+.wu-cover-modal {background:#071424;color:#fff;width:min(720px,100%);max-height:94vh;overflow:auto;border:1px solid #23748a;border-radius:16px;padding:18px;box-shadow:0 16px 60px rgba(0,0,0,.6);}
+.wu-cover-modal-top {display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.wu-cover-modal-top h2 {font-size:22px;margin:0;}
+.wu-cover-modal-top button {border:0;background:transparent;color:white;font-size:24px;cursor:pointer;}
+.wu-cover-modal p {font-size:13px;color:#b7d4dd;}
+.wu-cover-choose {display:inline-flex;align-items:center;background:#00bdd5;color:#00141c;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:800;}
+.wu-cover-preview-switch {display:flex;gap:8px;margin:14px 0 10px;}
+.wu-cover-preview-switch button {background:#172b38;color:#c9e8f0;border:1px solid #335b67;border-radius:8px;padding:8px 16px;cursor:pointer;}
+.wu-cover-preview-switch button.active {background:#ffe500;color:#101010;}
+.wu-cover-live-preview {position:relative;aspect-ratio:2.7 / 1;background-color:#071424;background-size:cover;background-repeat:no-repeat;border:1px solid #355e69;border-radius:12px;overflow:hidden;transition:width .2s;}
+.wu-cover-live-preview.mobile {width:min(320px,100%);aspect-ratio:0.88 / 1;margin-inline:auto;}
+.wu-cover-preview-copy {position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:6px;padding:14px;color:#fff;text-shadow:0 2px 7px #000;}
+.wu-cover-preview-copy strong {font-size:clamp(16px,2.3vw,25px);text-transform:uppercase;}
+.wu-cover-preview-copy span {font-size:12px;font-weight:700;}
+.wu-cover-position-control {display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:13px;}
+.wu-cover-position-control input {width:100%;accent-color:#00c7df;}
+.wu-cover-modal-actions {display:flex;justify-content:flex-end;gap:10px;margin-top:16px;}
+.wu-cover-modal-actions button {border:1px solid #2b5d6c;border-radius:9px;padding:11px 16px;background:#122b3a;color:#fff;cursor:pointer;}
+.wu-cover-modal-actions button:last-child {background:#ffe500;color:#000;font-weight:800;}
+.wu-cover-modal-actions button:disabled {opacity:.5;cursor:wait;}
+.wu-cover-error {color:#ff8d8d!important;}
+@media(max-width:600px){
+ .venue-header .venue-cover {height:340px;}
+ .venue-header .venue-header-content {margin-top:-205px;}
+ .wu-cover-edit-trigger {bottom:210px;}
+ .wu-cover-modal {padding:12px;}
+}
