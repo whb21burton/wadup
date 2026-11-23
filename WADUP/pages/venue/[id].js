@@ -635,9 +635,7 @@ export default function VenuePage() {
                     {venue.weighted_rating_count} rating{venue.weighted_rating_count === 1 ? '' : 's'}
                   </span>
                 </>
-              ) : (
-                <span className="venue-new-badge">New on WadUp — be the first to rate!</span>
-              )}
+              ) : null}
             </div>
             {venue.subcategory_weighted_ratings && Object.keys(venue.subcategory_weighted_ratings).length > 0 && (
               <div className="venue-subcat-ratings-row">
