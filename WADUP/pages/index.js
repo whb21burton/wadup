@@ -1023,7 +1023,7 @@ export default function WadUp() {
       contentEl.className = 'wu-pin-discovery visible';
       contentEl.style.setProperty('--wu-dot-size', `${discoveryDotSize(map.getZoom())}px`);
 
-      const chosenEmoji = cats.includes('restaurant') ? restaurantFoodIcon(v) : (v.custom_emoji || ({nightlife:'🍺',coffee:'☕',activities:'🎳',outdoors:'🌳',shopping:'🛍️',events:'🎟️','must-see':'📍'}[v.category] || '📍'));
+      const chosenEmoji = cats.includes('restaurant') ? restaurantFoodIcon(v) : (v.custom_emoji || null);
       const dot = document.createElement(chosenEmoji ? 'span' : 'div');
       dot.className = chosenEmoji ? 'wu-bar-discovery-emoji' : 'wu-discovery-dot';
       if (chosenEmoji) {
@@ -1143,7 +1143,7 @@ export default function WadUp() {
     });
     const overlayAnchor = specialIcon ? 'center' : tier === 'discovery' ? 'top' : 'bottom';
     const overlay = makeOverlay(pos, el, map, overlayAnchor);
-    if (tier === 'top10' && !eventsChipActive) {
+    if (tier === 'top10' && cats.includes('restaurant') && !eventsChipActive) {
       overlay.__fixedEmojiLabel = true;
       el.classList.add('wu-ranked-emoji-label');
     }
@@ -1168,7 +1168,7 @@ export default function WadUp() {
       el.style.flexDirection = 'column';
       el.style.alignItems = 'center';
       el.style.transformOrigin = 'center bottom';
-      const glyph = foodIconElement(cats.includes('restaurant') ? restaurantFoodIcon(v) : (v.custom_emoji || ({nightlife:'🍺',coffee:'☕',activities:'🎳',outdoors:'🌳',shopping:'🛍️',events:'🎟️','must-see':'📍'}[v.category] || '📍')));
+      const glyph = foodIconElement(restaurantFoodIcon(v));
       glyph.style.fontSize = '24px';
       emojiShell.appendChild(glyph);
       el.appendChild(emojiShell);
