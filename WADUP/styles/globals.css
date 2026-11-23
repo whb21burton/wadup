@@ -3860,3 +3860,6 @@ html, body {
 .gm-iw.gm-iw-with-cover {background:transparent;}
 .gm-iw.gm-iw-with-cover::before {display:none;}
 .gm-iw.gm-iw-with-cover .popup-name {text-shadow:0 1px 4px #fff,0 0 5px #fff;}
+
+/* Map card subcategories should read as important venue details. */
+.gm-iw .popup-category-subs {font-weight:800;color:#394651;}
