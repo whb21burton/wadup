@@ -24,6 +24,10 @@ export default async function handler(req,res){
     if(typeof value!=='string'||value.length>4000)return res.status(400).json({error:'Invalid '+field});
     safe[field]=value.trim();
   }
+  for(const field of ['cover_position_x','cover_position_y']) if(updates[field]!==undefined){
+    if(!Number.isInteger(updates[field])||updates[field]<0||updates[field]>100)return res.status(400).json({error:'Invalid cover position'});
+    safe[field]=updates[field];
+  }
   if(updates.custom_emoji!==undefined){if(typeof updates.custom_emoji!=='string'||!MAP_EMOJIS.has(updates.custom_emoji))return res.status(400).json({error:'Choose an available map emoji'});safe.custom_emoji=updates.custom_emoji;}
   const hasLat=Object.prototype.hasOwnProperty.call(updates,'lat'),hasLng=Object.prototype.hasOwnProperty.call(updates,'lng');
   if(hasLat!==hasLng)return res.status(400).json({error:'Provide both latitude and longitude'});
