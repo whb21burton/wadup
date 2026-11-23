@@ -3763,3 +3763,28 @@ html, body {
 .wu-cover-inline-actions>button {background:#152d3b;border:1px solid #397085;color:#fff;border-radius:9px;padding:10px;cursor:pointer;}
 .wu-cover-inline-controls .wu-cover-modal-actions {margin:0;}
 @media(max-width:600px){.wu-cover-inline-controls{margin:8px;padding:12px;}.wu-cover-inline-controls label:not(.wu-cover-choose){grid-template-columns:80px 1fr;}}
+
+/* Keep real profile information visible while editing; float tools at lower right. */
+.wu-cover-inline-controls {
+  position:fixed!important;
+  right:18px!important;
+  bottom:18px!important;
+  left:auto!important;
+  top:auto!important;
+  margin:0!important;
+  z-index:10020!important;
+  width:min(420px,calc(100vw - 36px))!important;
+  max-width:none!important;
+  max-height:min(76vh,560px);
+  overflow:auto;
+  box-shadow:0 12px 45px rgba(0,0,0,.65);
+}
+.wu-cover-inline-controls label:not(.wu-cover-choose) {grid-template-columns:95px 1fr;}
+.wu-cover-inline-controls label:not(.wu-cover-choose) span {grid-column:2;}
+.wu-cover-inline-controls label:not(.wu-cover-choose) input {grid-column:2;}
+.wu-cover-hero-image {width:calc(100% + 400px)!important;height:calc(100% + 300px)!important;left:-200px!important;top:-150px!important;max-width:none!important;}
+.venue-header .venue-header-content {z-index:2;}
+@media(max-width:600px) {
+ .wu-cover-inline-controls {right:8px!important;bottom:8px!important;width:min(340px,calc(100vw - 16px))!important;max-height:50vh;}
+ .wu-cover-hero-image {width:calc(100% + 200px)!important;height:calc(100% + 200px)!important;left:-100px!important;top:-100px!important;}
+}
