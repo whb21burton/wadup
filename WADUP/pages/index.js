@@ -1288,7 +1288,7 @@ export default function WadUp() {
   // Use the same venue-specific emoji in the map popup as on its pin.
   // Category labels are text only here: their generic emoji must never
   // override a venue's own icon (e.g. Social Bar 🎯, not nightlife 🍸).
-  const popupCategoryText = (category) => String(CATEGORY_LABELS[category] || category).replace(/^[^\\p{L}\\p{N}]+/u, '').trim();
+  const popupCategoryText = (category) => String(CATEGORY_LABELS[category] || category).replace(/^[^\p{L}\p{N}]+/u, '').trim();
   const popupVenueEmoji = (v) => {
     const cat = String(v.category || '').toLowerCase();
     const defaults = { restaurant: '🍔', nightlife: '🍺', activities: '🎳', outdoors: '🌳', sports: '🏟️', events: '🎵', 'must-see': '⭐' };
