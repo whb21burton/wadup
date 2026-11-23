@@ -29,7 +29,7 @@ export default async function handler(req,res){
     safe[field]=updates[field];
   }
   for(const field of ['cover_zoom','cover_mobile_zoom']) if(updates[field]!==undefined){
-    if(typeof updates[field]!=='number'||updates[field]<1||updates[field]>3)return res.status(400).json({error:'Invalid cover zoom'});
+    if(typeof updates[field]!=='number'||updates[field]<0.5||updates[field]>3)return res.status(400).json({error:'Invalid cover zoom'});
     safe[field]=updates[field];
   }
   if(updates.custom_emoji!==undefined){if(typeof updates.custom_emoji!=='string'||!MAP_EMOJIS.has(updates.custom_emoji))return res.status(400).json({error:'Choose an available map emoji'});safe.custom_emoji=updates.custom_emoji;}
