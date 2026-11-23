@@ -3893,3 +3893,25 @@ html, body {
 @media(max-width:600px){
  .wu-cover-device-switch {display:none!important;}
 }
+
+/* Owner/admin-only photo control, positioned inside the existing popup header. */
+.gm-style .gm-style-iw-c:has(.wu-popup-photo-edit) {position:relative;}
+.wu-popup-photo-edit {position:absolute;top:7px;left:8px;z-index:15;border:0;background:rgba(0,0,0,.65);color:white;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:16px;display:grid;place-items:center;}
+.wu-popup-photo-edit:hover {background:#00c5dc;color:#00121f;}
+.wu-map-photo-backdrop {position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:12px;}
+.wu-map-photo-editor {width:min(420px,100%);max-height:95dvh;overflow:auto;border:1px solid #00bcd4;border-radius:16px;background:#061727;color:#fff;padding:18px;box-shadow:0 20px 70px #0009;}
+.wu-map-photo-top {display:flex;justify-content:space-between;align-items:center;font-size:20px;}
+.wu-map-photo-top button {border:0;background:none;color:white;font-size:24px;cursor:pointer;}
+.wu-map-photo-editor p {color:#c0d7e2;font-size:13px;}
+.wu-map-photo-preview {height:290px;position:relative;overflow:hidden;border-radius:18px;background:#182b3a;touch-action:none;cursor:grab;user-select:none;}
+.wu-map-photo-preview img {width:100%;height:100%;object-fit:cover;pointer-events:none;user-select:none;}
+.wu-map-photo-preview-text {position:absolute;left:12px;right:12px;bottom:12px;display:flex;flex-direction:column;gap:10px;text-shadow:0 1px 5px #000;color:white;pointer-events:none;}
+.wu-map-photo-preview-text b {font-size:18px;}
+.wu-map-photo-preview-text span {font-size:12px;}
+.wu-map-photo-upload {display:inline-block;margin:14px 0;background:#00bed5;color:#001927;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;}
+.wu-map-photo-editor > label:not(.wu-map-photo-upload) {display:block;font-size:13px;margin:10px 0;}
+.wu-map-photo-editor input[type=range] {display:block;width:100%;accent-color:#00bed5;margin:7px 0;}
+.wu-map-photo-actions {display:flex;justify-content:flex-end;gap:12px;margin-top:15px;}
+.wu-map-photo-actions button {border:1px solid #3a5a68;background:#17303e;color:white;border-radius:9px;padding:10px 16px;cursor:pointer;}
+.wu-map-photo-actions button:last-child {background:#fff000;color:black;font-weight:800;border-color:#fff000;}
+@media(max-width:600px){.venue-cover .wu-cover-edit-trigger {display:none!important;}}
