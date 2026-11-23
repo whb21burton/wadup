@@ -173,9 +173,9 @@ function specificEventEmoji(ev) {
     [/art festival|art fair|craft fair/, '🎨'], [/holiday market|christmas market/, '🎄'],
     [/comedy|comedian|stand.up|improv/, '🎤'],
     [/opera/, '🎼'], [/ballet/, '🩰'], [/theat|theater|theatre|broadway|musical|stage play/, '🎭'],
-    [/jazz/, '🎷'], [/rock concert|rock music/, '🎸'], [/dj\b|electronic|edm/, '🎧'],
-    [/country music|country concert/, '🤠'], [/hip.hop|rap concert/, '🎙️'],
-    [/concert|live.music|live music|music|band|singer/, '🎵'],
+    // Consistent music pins: genre-specific microphones/instruments looked
+    // like unrelated categories. Every Ticketmaster music event uses 🎵.
+    [/jazz|rock concert|rock music|dj\b|electronic|edm|country music|country concert|hip.hop|rap concert|concert|live.music|live music|music|band|singer/, '🎵'],
     [/festival|fair\b|market|expo/, '🎪'],
   ];
   return icons.find(([re]) => re.test(all))?.[1] || ({ Sports:'🏆', Music:'🎵', Theater:'🎭', Comedy:'🎤', 'Festivals & Markets':'🎪' }[eventKind(ev)] || '🎟️');
