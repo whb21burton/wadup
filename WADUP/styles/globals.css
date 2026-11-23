@@ -3749,3 +3749,17 @@ html, body {
 .wu-cover-live-preview:not(.mobile) .wu-cover-preview-copy strong {font-size:clamp(12px,1.7vw,23px);}
 .wu-cover-live-preview:not(.mobile) .wu-cover-preview-copy span {font-size:clamp(9px,1vw,12px);}
 .wu-cover-live-preview .wu-cover-preview-copy {gap:3px;}
+
+/* On-profile cover editing: no separate dialog, real published frame is canvas. */
+.venue-cover.wu-cover-direct-edit {cursor:grab;touch-action:none;}
+.venue-cover.wu-cover-direct-edit:active {cursor:grabbing;}
+.wu-cover-inline-controls {position:relative;z-index:12;margin:10px 20px 12px;padding:14px 18px;border:1px solid #26748b;border-radius:12px;background:#071827;color:#fff;display:grid;gap:8px;max-width:720px;}
+.wu-cover-inline-top,.wu-cover-inline-actions {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.wu-cover-inline-top button {background:transparent;color:#fff;border:0;font-size:22px;cursor:pointer;}
+.wu-cover-inline-controls p {margin:0;font-size:12px;color:#bddce7;}
+.wu-cover-inline-controls label:not(.wu-cover-choose) {display:grid;grid-template-columns:105px 1fr;align-items:center;gap:10px;font-size:13px;}
+.wu-cover-inline-controls label span {grid-column:1;}
+.wu-cover-inline-controls input[type=range] {width:100%;accent-color:#00c6e0;}
+.wu-cover-inline-actions>button {background:#152d3b;border:1px solid #397085;color:#fff;border-radius:9px;padding:10px;cursor:pointer;}
+.wu-cover-inline-controls .wu-cover-modal-actions {margin:0;}
+@media(max-width:600px){.wu-cover-inline-controls{margin:8px;padding:12px;}.wu-cover-inline-controls label:not(.wu-cover-choose){grid-template-columns:80px 1fr;}}
