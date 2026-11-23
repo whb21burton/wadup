@@ -1180,6 +1180,22 @@ export default function WadUp() {
         if (popup) {
           const photo = v.cover_photo_mobile_url || v.cover_photo_url;
           if (photo) popup.style.setProperty('--wu-outer-cover', 'url("' + String(photo).replace(/["\\\n\r]/g, '') + '")');
+          // Google Maps sometimes leaves a tall photo popup above the visible
+          // viewport, especially when a venue is selected near the top edge.
+          // Measure the actual popup after layout and pan only enough to fit it.
+          // Do not close/recreate the selected marker during the resulting idle.
+          window.requestAnimationFrame(() => {
+            if (!popup.isConnected || map.__wadupSelectedVenueId !== v.id) return;
+            const mapBox = map.getDiv().getBoundingClientRect();
+            const popupBox = popup.getBoundingClientRect();
+            const margin = 14;
+            let dx = 0, dy = 0;
+            if (popupBox.top < mapBox.top + margin) dy = popupBox.top - mapBox.top - margin;
+            else if (popupBox.bottom > mapBox.bottom - margin) dy = popupBox.bottom - mapBox.bottom + margin;
+            if (popupBox.left < mapBox.left + margin) dx = popupBox.left - mapBox.left - margin;
+            else if (popupBox.right > mapBox.right - margin) dx = popupBox.right - mapBox.right + margin;
+            if (dx || dy) map.panBy(dx, dy);
+          });
         }
       });
     };
