@@ -36,6 +36,29 @@ const foodDisplay = (venue) => {
   return icon === 'winged-burger' ? <img src="/icons/winged-burger.svg" alt="Winged burger" style={{height:27,width:32,objectFit:'contain',verticalAlign:'middle'}} /> : icon === 'winged-pizza' ? '🪽🍕🪽' : icon;
 };
 
+const nightlifeProfileEmoji = (venue) => {
+  if (venue.custom_emoji && MAP_EMOJI_OPTIONS.nightlife.includes(venue.custom_emoji)) return venue.custom_emoji;
+  const subs = categorySubs(venue, 'nightlife');
+  const type = String(venue.category === 'nightlife' ? venue.subcategory || subs[0] : subs[0] || '').toLowerCase();
+  const month = new Date().getMonth() + 1;
+  if (/sports bar/.test(type)) return month >= 9 || month === 1 ? '🏈' : month <= 3 ? '🏀' : '⚾';
+  if (/social bar/.test(type)) return '🎯';
+  if (/speakeasy/.test(type)) return '🥃';
+  if (/dance club/.test(type)) return '🪩';
+  if (/brewery/.test(type)) return '🍺';
+  if (/dive bar/.test(type)) return '🍻';
+  if (/karaoke/.test(type)) return '🎤';
+  if (/rooftop/.test(type)) return '🌃';
+  if (/pool hall/.test(type)) return '🎱';
+  return '🍺';
+};
+const profileCategoryEmoji = (venue, category) => {
+  if (category === 'nightlife') return nightlifeProfileEmoji(venue);
+  if (category === 'restaurant') return foodDisplay(venue);
+  const defaults = {activities:'🎳',outdoors:'🌳',coffee:'☕',shopping:'🛍️',sports:'🏟️',events:'🎟️','must-see':'⭐'};
+  return venue.custom_emoji || defaults[category] || '📍';
+};
+
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const EVENT_TYPE_ICONS = {
@@ -649,7 +672,7 @@ export default function VenuePage() {
               <div style={{display:'flex',flexDirection:'column',gap:6,width:'100%'}}>
                 {venueCategories(venue).map((c,i) => (
                   <div key={c} style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:8}}>
-                    <span className="venue-category-badge">{c==='restaurant'?foodDisplay(venue):CATEGORY_LABELS[c]?.split(' ')[0]} {c==='restaurant'?'Restaurants':(CATEGORY_LABELS[c]||c).replace(/^[^a-zA-Z]+/,'')}</span>
+                    <span className="venue-category-badge">{profileCategoryEmoji(venue,c)} {c==='restaurant'?'Restaurants':(CATEGORY_LABELS[c]||c).replace(/^[^a-zA-Z]+/,'')}</span>
                     <span className="venue-subcategory-text">{categorySubs(venue,c).join(' · ') || (i===0?'':'')}</span>
                   </div>
                 ))}
