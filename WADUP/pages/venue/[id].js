@@ -778,17 +778,7 @@ export default function VenuePage() {
               </div>
             </div>
 
-            <div className="venue-actions">
-              <button className="venue-action-btn venue-action-primary" onClick={() => setShowReviewModal(true)}>
-                ✍️ Review
-              </button>
-              <button className="venue-action-btn" onClick={toggleSave}>
-                {saved ? '★ Saved' : '☆ Save'}
-              </button>
-              <button className="venue-action-btn" onClick={share}>
-                {shareCopied ? 'Copied!' : '🔗 Share'}
-              </button>
-            </div>
+
           </div>
         </div>
 
@@ -800,24 +790,6 @@ export default function VenuePage() {
                 <img key={i} src={`/api/places/photo?ref=${encodeURIComponent(ref)}&maxWidth=400`} alt={venue.name} />
               ))}
             </div>
-          )}
-
-          {venueCategories(venue).includes('nightlife') && (
-            <section className="venue-section flame-section">
-              <h3>How busy is it right now?</h3>
-              <div className="flame-buttons">
-                <button onClick={() => voteFlame(1)} className={`flame-btn${currentFlame === 1 ? ' active' : ''}`} disabled={flameVoting}>
-                  🟡 Getting There
-                </button>
-                <button onClick={() => voteFlame(2)} className={`flame-btn${currentFlame === 2 ? ' active' : ''}`} disabled={flameVoting}>
-                  🟠 Getting Busy
-                </button>
-                <button onClick={() => voteFlame(3)} className={`flame-btn${currentFlame === 3 ? ' active' : ''}`} disabled={flameVoting}>
-                  🔴 Packed!
-                </button>
-              </div>
-              <p className="flame-count">{flameVoteCount} people voted today</p>
-            </section>
           )}
 
           <section className="venue-section">
@@ -907,6 +879,7 @@ export default function VenuePage() {
                   📍 Find business details on Google Maps
                 </a>
               )}
+              <button type="button" className="wu-about-share" onClick={share}>{shareCopied?'✓ Link copied':'🔗 Share'}</button>
             </div>
 
             {(social.instagram || social.facebook || social.twitter) && (
