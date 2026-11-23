@@ -1143,7 +1143,7 @@ export default function WadUp() {
     });
     const overlayAnchor = specialIcon ? 'center' : tier === 'discovery' ? 'top' : 'bottom';
     const overlay = makeOverlay(pos, el, map, overlayAnchor);
-    if (tier === 'top10' && cats.includes('restaurant') && !eventsChipActive) {
+    if (tier === 'top10' && !eventsChipActive) {
       overlay.__fixedEmojiLabel = true;
       el.classList.add('wu-ranked-emoji-label');
     }
