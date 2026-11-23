@@ -3673,3 +3673,13 @@ html, body {
 .wu-pin-wrapper .wu-discovery-dot {
   pointer-events: auto;
 }
+
+/* Include unranked nightlife icons, restaurant discovery dots and special
+   landmark icons as individually clickable glyphs, not full wrappers. */
+.wu-pin-wrapper .wu-bar-discovery-emoji,
+.wu-pin-wrapper .wu-pin-discovery,
+.wu-pin-wrapper .wu-pin-special,
+.wu-pin-wrapper .wu-emoji,
+.wu-pin-wrapper .wu-pin-icon {
+  pointer-events: auto;
+}
