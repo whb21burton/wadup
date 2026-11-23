@@ -46,11 +46,11 @@ function categoryFor(place, searched) {
 function sportsBarEvidence(v) {
   const name = String(v.name || '');
   const description = String(v.description || '');
-  if (/\\b(sports? bar|sports? pub|sports? grill)\\b/i.test(name)) return 'explicit_sports_venue_name';
-  if (/\\b(sports? bar|sports? pub|sports? grill|dedicated sports viewing|watch (?:the |live )?games?|game.day watch parties|multiple (?:big.screen )?(?:tvs|televisions))\\b/i.test(description))
+  if (/\b(sports? bar|sports? pub|sports? grill)\b/i.test(name)) return 'explicit_sports_venue_name';
+  if (/\b(sports? bar|sports? pub|sports? grill|dedicated sports viewing|watch (?:the |live )?games?|game.day watch parties|multiple (?:big.screen )?(?:tvs|televisions))\b/i.test(description))
     return 'explicit_sports_viewing_description';
   const reviews = Array.isArray(v.google_reviews) ? v.google_reviews : [];
-  const matching = reviews.filter(r => /\\b(watch(?:ed|ing)? (?:the |a )?(?:game|football|basketball|baseball)|sports bar|plenty of (?:tvs|televisions)|tvs? (?:everywhere|all around))\\b/i.test(String(r?.text?.text || r?.text || '')));
+  const matching = reviews.filter(r => /\b(watch(?:ed|ing)? (?:the |a )?(?:game|football|basketball|baseball)|sports bar|plenty of (?:tvs|televisions)|tvs? (?:everywhere|all around))\b/i.test(String(r?.text?.text || r?.text || '')));
   return matching.length >= 2 ? 'two_independent_sports_viewing_reviews' : null;
 }
 async function classifyChattanoogaSportsBars() {
@@ -65,7 +65,7 @@ async function classifyChattanoogaSportsBars() {
     if ((v.categories || []).includes('nightlife') && (v.subcategories || []).includes('Sports Bar')) continue;
     const evidence = sportsBarEvidence(v);
     if (!evidence) {
-      if (/\\b(?:sports|game.day|televisions|tvs?)\\b/i.test([v.name,v.description].join(' ')))
+      if (/\b(?:sports|game.day|televisions|tvs?)\b/i.test([v.name,v.description].join(' ')))
         reviewCandidates.push(v.name);
       continue;
     }
