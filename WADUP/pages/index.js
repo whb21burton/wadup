@@ -1199,7 +1199,7 @@ export default function WadUp() {
       const syncStack = () => {
         const active = el.classList.contains('wu-pin-selected');
         const hovered = el.matches(':hover') || el.matches(':focus-within');
-        el.style.zIndex = active || hovered ? '2147483000' : restingZ;
+        el.style.zIndex = hovered ? '2147483600' : active ? '2147483000' : restingZ;
         el.classList.toggle('wu-pin-front', active || hovered);
       };
       el.addEventListener('pointerenter', syncStack);
@@ -1450,6 +1450,7 @@ export default function WadUp() {
       position: pos, map,
       icon: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', scaledSize: new window.google.maps.Size(1,1) },
       zIndex: baseZIndex,
+      clickable: false, // The invisible anchor must never steal pointer hits from visible pins.
     });
     const overlay = makeOverlay(pos, el, map, showName ? 'bottom' : 'top');
 
@@ -1487,7 +1488,7 @@ export default function WadUp() {
     const syncStack = () => {
       const active = el.classList.contains('wu-pin-selected');
       const hovered = el.matches(':hover') || el.matches(':focus-within');
-      el.style.zIndex = active || hovered ? '2147483000' : restingZ;
+      el.style.zIndex = hovered ? '2147483600' : active ? '2147483000' : restingZ;
       el.classList.toggle('wu-pin-front', active || hovered);
       hoverVisual.style.transform = hovered ? 'scale(1.18)' : 'scale(1)';
     };
