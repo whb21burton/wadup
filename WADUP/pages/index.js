@@ -1270,6 +1270,7 @@ export default function WadUp() {
       ? (v.subcategory || subs.find(x => /sports bar|speakeasy|dance club|brewery|dive bar|karaoke|rooftop|pool hall/i.test(String(x))) || '')
       : '';
     const type = String(selected).toLowerCase().trim();
+    if (/social bar/.test(type)) return '🎯';
     if (/sports bar/.test(type)) return seasonalSportsEmoji();
     if (/speakeasy/.test(type)) return '🥃';
     if (/dance club|nightclub/.test(type)) return '🪩';
