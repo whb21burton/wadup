@@ -193,7 +193,7 @@ export default function VenuePage() {
     const x=editing?coverX:(isMobile?venue.cover_mobile_position_x:venue.cover_position_x)??50;
     const y=editing?coverY:(isMobile?venue.cover_mobile_position_y:venue.cover_position_y)??50;
     const zoom=editing?coverZoom:Number(isMobile?venue.cover_mobile_zoom:venue.cover_zoom)||1;
-    return {objectPosition:`${x}% ${y}%`,transform:`scale(${zoom})`};
+    return {objectPosition:'center center',transform:`translate(${(50-x)*4}px, ${(50-y)*3}px) scale(${zoom})`};
   };
   const saveCover=async()=>{
     setCoverUploading(true);setEditError('');
