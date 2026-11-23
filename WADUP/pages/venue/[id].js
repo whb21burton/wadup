@@ -682,7 +682,7 @@ export default function VenuePage() {
       <div className="venue-page">
         <div className="venue-header">
           <div className={`venue-cover ${coverEditorOpen?'wu-cover-direct-edit':''}`} onPointerDown={startCoverDrag} onPointerMove={moveCoverDrag} onPointerUp={endCoverDrag} onPointerCancel={endCoverDrag}>
-            {(venue.cover_photo_url||venue.cover_photo_mobile_url) ? <>
+            {(venue.cover_photo_url||venue.cover_photo_mobile_url||coverSource) ? <>
               <img className="wu-cover-hero-image wu-cover-desktop" src={coverEditorOpen&&coverPreviewMode==='desktop'&&coverSource?coverSource:(venue.cover_photo_url||venue.cover_photo_mobile_url)} alt="" style={coverImageStyle('desktop')}/>
               <img className="wu-cover-hero-image wu-cover-mobile" src={coverEditorOpen&&coverPreviewMode==='mobile'&&coverSource?coverSource:(venue.cover_photo_mobile_url||venue.cover_photo_url)} alt="" style={coverImageStyle('mobile')}/>
               <div className="wu-cover-photo-shade"/>
