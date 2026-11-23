@@ -31,7 +31,7 @@ function toggleInArray(arr, id) {
 const SUBCATEGORY_OPTIONS = {
   nightlife: [
     'Sports Bar', 'Speakeasy', 'Dance Club', 'Karaoke Bar', 'Jazz Club',
-    'Dive Bar', 'Rooftop Bar', 'Brewery', 'Wine Bar', 'Cocktail Bar',
+    'Dive Bar', 'Rooftop Bar', 'Social Bar', 'Brewery', 'Wine Bar', 'Cocktail Bar',
     'College Bar', 'Irish Pub', 'Gay Bar', 'Country Bar', 'Hip Hop Club',
     'Hookah Lounge', 'Pool Bar', 'Arcade Bar', 'Comedy Bar', 'Live Music Bar',
   ],
