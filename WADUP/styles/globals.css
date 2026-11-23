@@ -3795,3 +3795,36 @@ html, body {
 .venue-contact-row {display:flex;align-items:center;flex-wrap:wrap;gap:12px;}
 .wu-about-share {appearance:none;background:transparent;border:0;color:#1675e8;font:inherit;font-weight:700;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px;}
 .wu-about-share:hover {color:#0957b9;}
+
+/* Venue profile: pin identity to the lower-left of the cover, with breathing room
+   before the About card. Keep the photo's existing crop untouched. */
+.venue-header {position:relative;}
+.venue-header .venue-cover {height:390px;}
+.venue-header .venue-header-content {
+  position:absolute;
+  z-index:3;
+  left:0;
+  right:0;
+  bottom:0;
+  margin:0!important;
+  padding:0 20px 16px!important;
+  min-height:0!important;
+  background:transparent;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:5px;
+}
+.venue-header .venue-header-content .venue-name {margin:0;line-height:1.1;}
+.venue-header .venue-header-content .venue-rating-line:empty {display:none;}
+.venue-header .venue-header-content .venue-rating-line {margin-top:0;}
+.venue-header .venue-header-content .venue-location {margin:0;}
+.venue-header .venue-header-content .venue-category-badge {flex-shrink:0;}
+.venue-body {padding-top:22px;}
+.venue-body > .venue-section:first-of-type {margin-top:0;}
+.venue-body > .venue-section:first-of-type h2 {display:block;margin:0 0 14px;}
+@media(max-width:600px){
+  .venue-header .venue-cover {height:340px;}
+  .venue-header .venue-header-content {padding:0 14px 14px!important;gap:4px;}
+  .venue-body {padding-top:18px;}
+}
