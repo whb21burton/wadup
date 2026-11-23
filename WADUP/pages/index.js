@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase';
 import { getAdminRole } from '../lib/admin';
 import AuthSidebar from '../components/AuthSidebar';
 import AdminEditPanel from '../components/AdminEditPanel';
+import MapCoverEditor from '../components/MapCoverEditor';
 
 
 
@@ -371,6 +372,9 @@ export default function WadUp() {
   // inside a venue's popup (see dropVenuePin's iwHtml + window.__wadupEditVenue
   // below), never via a separate mode toggle or right-click menu.
   const [editPanelVenue, setEditPanelVenue] = useState(null);
+  const [mapPhotoVenue,setMapPhotoVenue] = useState(null);
+  const sessionRef = useRef(null);
+  useEffect(()=>{sessionRef.current=session},[session]);
   const [relocating,     setRelocating]     = useState(false);
   const [relocateTarget, setRelocateTarget] = useState(null); // { lat, lng } | null
   const [mapActionError,   setMapActionError]   = useState('');
@@ -1124,7 +1128,9 @@ export default function WadUp() {
         <div class="popup-event-time">${isLiveEvent ? '<span class="live-now-text">🔴 LIVE NOW</span>' : `🕐 ${escapeHtml(formatTime((todayEvent.start_time || '').slice(11, 16)))}`}</div>
       ` : '';
 
+    const canEditPhoto = Boolean(adminRoleRef.current || (sessionRef.current?.user?.id && v.owner_id === sessionRef.current.user.id));
     const iwHtml = `
+      ${canEditPhoto ? `<button class="wu-popup-photo-edit" type="button" title="Edit map & phone photo" aria-label="Edit map and phone photo" onclick="event.stopPropagation();window.__wadupEditMapPhoto('${escapeHtml(v.id)}')">📷</button>` : ''}
       <div class="gm-iw ${v.cover_photo_mobile_url || v.cover_photo_url ? 'gm-iw-with-cover' : ''}" ${v.cover_photo_mobile_url || v.cover_photo_url ? `style="--wu-popup-cover:url(&quot;${escapeHtml(v.cover_photo_mobile_url || v.cover_photo_url)}&quot;)"` : ''}>
         <div class="popup-name">${escapeHtml(v.name)}</div>
         ${eventPopupHtml}
@@ -2213,6 +2219,10 @@ export default function WadUp() {
       // Bridge for the "✏️ Edit Venue" button embedded in a venue popup's raw
       // HTML string (see dropVenuePin's iwHtml) — an inline onclick="" handler
       // has no way to reach React state directly, so it calls this instead.
+      window.__wadupEditMapPhoto = (venueId) => {
+        const venue = venuesRef.current.find(v=>v.id===venueId);
+        if(venue) setMapPhotoVenue(venue);
+      };
       window.__wadupEditVenue = (venueId) => {
         const venue = venuesRef.current.find(v => v.id === venueId);
         if (!venue) return;
@@ -2970,6 +2980,13 @@ export default function WadUp() {
 
           </div>
 
+          {mapPhotoVenue && session && <MapCoverEditor venue={mapPhotoVenue} session={session} onClose={()=>setMapPhotoVenue(null)} onSaved={(updated)=>{
+            venuesRef.current=venuesRef.current.map(v=>v.id===updated.id?{...v,...updated}:v);
+            setMapPhotoVenue(null);
+            infoWindow.current?.close();
+            setFeedRevision(n=>n+1);
+            filterPinsRef.current?.();
+          }}/>} 
           {editPanelVenue && (
             <AdminEditPanel
               venue={editPanelVenue}
