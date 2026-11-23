@@ -770,6 +770,13 @@ export default function WadUp() {
     const tmPins = [...pinRegistry.current.values()]
       .filter(e => e.type === 'tm' && e.overlay?.getMap?.() === map && e.el?.isConnected)
       .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    // At city/regional zoom, events must remain at their real map positions.
+    // Stagger whole event pins only at neighborhood/street zoom, as with
+    // restaurant labels; reset previous shifts when zooming back out.
+    const staggerEvents = (map.getZoom() || 0) >= 17;
+    if (!staggerEvents) {
+      for (const entry of tmPins) entry.el.style.translate = 'none';
+    }
     const tmOccupied = [];
     const offsets = [[0,0]];
     for (let ring = 1; ring <= 7; ring++) {
@@ -779,7 +786,7 @@ export default function WadUp() {
         offsets.push([Math.round(Math.cos(angle) * ring * 86), Math.round(Math.sin(angle) * ring * 64)]);
       }
     }
-    for (const entry of tmPins) {
+    for (const entry of (staggerEvents ? tmPins : [])) {
       const el = entry.el;
       // Measure the unshifted whole pin, not just its text label.
       el.style.translate = 'none';
