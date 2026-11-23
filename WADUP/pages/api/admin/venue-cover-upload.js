@@ -1,3 +1,4 @@
+export const config = { api: { bodyParser: { sizeLimit: '8mb' } } };
 import { supabaseAdmin } from '../supabase-admin';
 import { requireAdmin } from './_authAdmin';
 import { canAccessCity } from '../../../lib/admin';
