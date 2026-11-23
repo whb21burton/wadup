@@ -3740,3 +3740,12 @@ html, body {
 .wu-cover-live-preview .wu-cover-preview-copy strong {font-size:clamp(20px,2.3vw,30px);line-height:1.2;}
 .wu-cover-live-preview .wu-cover-preview-copy span {font-size:13px;}
 @media(max-width:600px){.wu-cover-hero-image.wu-cover-desktop {display:none;}.wu-cover-hero-image.wu-cover-mobile {display:block;}}
+
+/* Desktop editor must preview the same wide aspect ratio as the published header,
+   not a tall 720px modal frame that changes the crop. */
+.wu-cover-live-preview:not(.mobile) {height:auto;aspect-ratio:4.8 / 1;min-height:0;}
+.wu-cover-live-preview.mobile {height:auto;aspect-ratio:0.88 / 1;}
+.wu-cover-live-preview .wu-cover-preview-copy {min-height:0;bottom:0;justify-content:flex-end;padding:clamp(7px,1.5vw,18px);}
+.wu-cover-live-preview:not(.mobile) .wu-cover-preview-copy strong {font-size:clamp(12px,1.7vw,23px);}
+.wu-cover-live-preview:not(.mobile) .wu-cover-preview-copy span {font-size:clamp(9px,1vw,12px);}
+.wu-cover-live-preview .wu-cover-preview-copy {gap:3px;}
