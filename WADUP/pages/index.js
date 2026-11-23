@@ -1128,7 +1128,20 @@ export default function WadUp() {
       <div class="gm-iw">
         <div class="popup-name">${escapeHtml(v.name)}</div>
         ${eventPopupHtml}
-        <div class="popup-type">${escapeHtml(popupVenueEmoji(v))} ${escapeHtml(cats.map(popupCategoryText).join(' · '))}${v.subcategory ? ' · ' + escapeHtml(v.subcategory) : ''}</div>
+        <div class="popup-category-rows">${cats.map(cat => {
+          const subs = (Array.isArray(v.subcategories) && v.subcategories.length ? v.subcategories : [v.subcategory].filter(Boolean))
+            .filter(sub => CATEGORY_CHIPS.some(ch => ch.id === (cat === 'nightlife' ? 'bars' : cat) && ch.subcategories.some(x => x.id === sub)));
+          const emoji = cat === 'nightlife' ? (String(v.category) === 'nightlife' ? popupVenueEmoji(v) : (() => {
+            const type = String(subs[0] || '').toLowerCase();
+            if (/sports bar/.test(type)) { const m = new Date().getMonth() + 1; return m >= 9 || m === 1 ? '🏈' : m <= 3 ? '🏀' : '⚾'; }
+            if (/social bar/.test(type)) return '🎯';
+            if (/brewery/.test(type)) return '🍺';
+            if (/pool hall/.test(type)) return '🎱';
+            return '🍺';
+          })()) : cat === 'restaurant' ? restaurantFoodIcon(v) : ({activities:'🎳',outdoors:'🌳',coffee:'☕',shopping:'🛍️',sports:'🏟️',events:'🎟️'}[cat] || popupVenueEmoji(v));
+          const emojiMarkup = emoji === 'winged-burger' ? '<img src="/icons/winged-burger.svg" alt="Burger" width="25" height="23"/>' : escapeHtml(emoji);
+          return `<div class="popup-category-row"><span class="popup-category-badge">${emojiMarkup} ${escapeHtml(popupCategoryText(cat))}</span><span class="popup-category-subs">${escapeHtml(subs.join(' · '))}</span></div>`;
+        }).join('')}</div>
         ${ratingHtml}
         ${badgesHtml}
         <div class="popup-address">📍 ${escapeHtml(v.address)}</div>
