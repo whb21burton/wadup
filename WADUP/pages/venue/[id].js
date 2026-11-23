@@ -152,7 +152,7 @@ export default function VenuePage() {
   const coverImageRef=useRef(null);
   const openCoverEditor=()=>{
     setCoverSource('');setCoverSources({desktop:'',mobile:''});setCoverSettings({desktop:{x:venue?.cover_position_x??50,y:venue?.cover_position_y??50,zoom:Number(venue?.cover_zoom)||1},mobile:{x:venue?.cover_mobile_position_x??50,y:venue?.cover_mobile_position_y??50,zoom:Number(venue?.cover_mobile_zoom)||1}});setCoverX(typeof window!=='undefined'&&window.innerWidth<=600?(venue?.cover_mobile_position_x??50):(venue?.cover_position_x??50));setCoverY(typeof window!=='undefined'&&window.innerWidth<=600?(venue?.cover_mobile_position_y??50):(venue?.cover_position_y??50));setCoverZoom(Number((typeof window!=='undefined'&&window.innerWidth<=600?venue?.cover_mobile_zoom:venue?.cover_zoom))||1);
-    setCoverPreviewMode(typeof window!=='undefined'&&window.innerWidth<=600?'mobile':'desktop');setEditError('');setCoverEditorOpen(true);
+    setCoverPreviewMode('desktop');setEditError('');setCoverEditorOpen(true);
   };
   const chooseCover=(event)=>{
     const file=event.target.files?.[0];
@@ -720,7 +720,6 @@ export default function VenuePage() {
             <p>Drag the actual picture to position it. Zoom out or in, then save.</p>
             <div className="wu-cover-inline-actions">
               <label className="wu-cover-choose">📷 {coverSource?'Change':'Upload'} {coverPreviewMode==='mobile'?'map & phone':'desktop cover'} photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseCover} style={{display:'none'}}/></label>
-              <button type="button" className="wu-cover-device-switch" onClick={()=>switchCoverDevice(coverPreviewMode==='desktop'?'mobile':'desktop')}>{coverPreviewMode==='desktop'?'Desktop cover':'Map & phone photo'} ↔</button>
             </div>
             <label>Zoom <span>{Math.round(coverZoom*100)}%</span><input type="range" min="0.5" max="3" step="0.05" value={coverZoom} onChange={e=>setCoverZoom(Number(e.target.value))}/></label>
             <label>Left / right<input type="range" min="0" max="100" value={coverX} onChange={e=>setCoverX(Number(e.target.value))}/></label>
