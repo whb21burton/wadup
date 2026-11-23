@@ -1724,9 +1724,10 @@ export default function WadUp() {
 
     // A single map pin represents one production at one venue; each
     // Ticketmaster performance retains its own date, time and ticket URL.
-    const performances = (ev.showings || [ev]).filter(show =>
-      isTMEventVisibleForDay(show, activeDateRef.current || todayIsoStr())
-    ).sort((a,b) => (a.dateStr + 'T' + (a.timeStr || '')).localeCompare(b.dateStr + 'T' + (b.timeStr || '')));
+    // The date picker decides whether a production's pin is visible.
+    // Once opened, list ALL upcoming performances, not just the selected day.
+    const performances = [...(ev.showings || [ev])]
+      .sort((a,b) => (a.dateStr + 'T' + (a.timeStr || '')).localeCompare(b.dateStr + 'T' + (b.timeStr || '')));
     const showingRows = performances.map(show => {
       const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
       const ticketLink = show.url?.startsWith('http') ? withTMAffiliateTracking(show.url) : null;
@@ -1850,7 +1851,8 @@ export default function WadUp() {
         // Same title + venue + selected day = one pin, multiple showtimes.
         // Coordinates alone are insufficient: unrelated events can share a venue.
         const groupKey = [norm.name.trim().toLowerCase().replace(/\\s+/g, ' '),
-          norm.address.trim().toLowerCase(), norm.lat, norm.lng, norm.dateStr].join('|');
+          norm.address.trim().toLowerCase(), norm.city.trim().toLowerCase(),
+          norm.state.trim().toLowerCase(), Number(norm.lat).toFixed(4), Number(norm.lng).toFixed(4)].join('|');
         if (!groupedShows.has(groupKey)) groupedShows.set(groupKey, []);
         groupedShows.get(groupKey).push(norm);
       });
