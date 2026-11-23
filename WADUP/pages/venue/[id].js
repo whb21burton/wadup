@@ -164,6 +164,7 @@ export default function VenuePage() {
     event.target.value='';
   };
   const switchCoverDevice=(device)=>{
+    if(device==='desktop'&&typeof window!=='undefined'&&window.innerWidth<=600)return;
     setCoverSettings(prev=>({...prev,[coverPreviewMode]:{x:coverX,y:coverY,zoom:coverZoom}}));
     const current=coverSettings[device];
     setCoverPreviewMode(device);setCoverX(current.x);setCoverY(current.y);setCoverZoom(current.zoom);
@@ -200,7 +201,8 @@ export default function VenuePage() {
     try{
       const settings={...coverSettings,[coverPreviewMode]:{x:coverX,y:coverY,zoom:coverZoom}};
       let latest=venue;
-      for(const device of ['desktop','mobile']){
+      for(const device of ['mobile','desktop']){
+        if(device==='desktop'&&typeof window!=='undefined'&&window.innerWidth<=600)continue;
         const source=coverSources[device];
         const {x,y,zoom}=settings[device];
         if(source){
@@ -717,8 +719,8 @@ export default function VenuePage() {
             <div className="wu-cover-inline-top"><strong>📷 Edit cover on profile</strong><button type="button" onClick={()=>setCoverEditorOpen(false)} aria-label="Close cover editor">✕</button></div>
             <p>Drag the actual picture to position it. Zoom out or in, then save.</p>
             <div className="wu-cover-inline-actions">
-              <label className="wu-cover-choose">📷 {coverSource?'Change':'Upload'} {coverPreviewMode} photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseCover} style={{display:'none'}}/></label>
-              <button type="button" onClick={()=>switchCoverDevice(coverPreviewMode==='desktop'?'mobile':'desktop')}>Editing: {coverPreviewMode==='desktop'?'Desktop':'Phone'} ↔</button>
+              <label className="wu-cover-choose">📷 {coverSource?'Change':'Upload'} {coverPreviewMode==='mobile'?'map & phone':'desktop cover'} photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseCover} style={{display:'none'}}/></label>
+              <button type="button" className="wu-cover-device-switch" onClick={()=>switchCoverDevice(coverPreviewMode==='desktop'?'mobile':'desktop')}>{coverPreviewMode==='desktop'?'Desktop cover':'Map & phone photo'} ↔</button>
             </div>
             <label>Zoom <span>{Math.round(coverZoom*100)}%</span><input type="range" min="0.5" max="3" step="0.05" value={coverZoom} onChange={e=>setCoverZoom(Number(e.target.value))}/></label>
             <label>Left / right<input type="range" min="0" max="100" value={coverX} onChange={e=>setCoverX(Number(e.target.value))}/></label>
