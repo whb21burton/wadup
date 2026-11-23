@@ -3863,3 +3863,23 @@ html, body {
 
 /* Map card subcategories should read as important venue details. */
 .gm-iw .popup-category-subs {font-weight:800;color:#394651;}
+
+/* Correct earlier oversized cover-image hack: let the photo fit the actual
+   desktop/mobile hero viewport, rather than cropping an artificially enlarged
+   image and emphasizing the roof instead of the storefront. */
+.venue-header .venue-cover {overflow:hidden;}
+.venue-header .wu-cover-hero-image {
+  inset:0!important;
+  left:0!important;
+  top:0!important;
+  width:100%!important;
+  height:100%!important;
+  max-width:100%!important;
+  object-fit:cover;
+}
+@media(max-width:600px){
+ .venue-header .wu-cover-hero-image {
+   inset:0!important;left:0!important;top:0!important;
+   width:100%!important;height:100%!important;
+ }
+}
