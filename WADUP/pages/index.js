@@ -2484,10 +2484,43 @@ export default function WadUp() {
       // Re-rank only when the map settles. bounds_changed fires repeatedly
       // during pan/zoom and rebuilding every pin while tiles load can make
       // Google Maps feel slow or unresponsive.
-      map.addListener('bounds_changed', () => { map.__wadupMoving = true; });
+      // Opt-in diagnostics, no network requests or persistent telemetry.
+      const perfEnabled = new URLSearchParams(window.location.search).get('perf') === '1';
+      if (perfEnabled) map.__wadupPerf = { labelMs: 0, rankMs: 0, frames: [], moving: false };
+      map.addListener('bounds_changed', () => {
+        map.__wadupMoving = true;
+        const p = map.__wadupPerf;
+        if (!p || p.moving) return;
+        p.moving = true;
+        p.frames = [];
+        let previous = performance.now();
+        const sample = now => {
+          if (!p.moving) return;
+          if (p.frames.length < 1800) p.frames.push(now - previous);
+          previous = now;
+          requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
       map.addListener('idle', () => {
         map.__wadupMoving = false;
+        const p = map.__wadupPerf;
+        const start = performance.now();
         updateAreaRanks();
+        if (p) {
+          p.rankMs = performance.now() - start;
+          p.moving = false;
+          const frames = p.frames.slice(1).sort((a,b) => a-b);
+          if (frames.length) {
+            const mean = frames.reduce((a,b) => a+b,0) / frames.length;
+            console.info('[WADUP performance]', {
+              fps: Math.round(1000/mean), p95FrameMs: frames[Math.floor((frames.length-1)*.95)],
+              samples: frames.length, rankMs: p.rankMs, previousLabelMs: p.labelMs,
+              venuePins: Object.keys(mapMarkers.current).length, eventPins: Object.keys(tmMarkers.current).length,
+              renderer: map.getRenderingType?.()
+            });
+          }
+        }
         queueMapLabelLayout(map);
         loadVenuesFromSupabase();
         setFeedRevision(v => v + 1);
