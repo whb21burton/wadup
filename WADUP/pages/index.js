@@ -1,3 +1,4 @@
+import { matchEventVenue } from '../lib/event-venues';
 import { ticketFallback, ticketStatus, ticketQuality, preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
@@ -157,6 +158,8 @@ function eventKind(ev) {
   if (/theat|theater|theatre|broadway|musical|opera|ballet|dance performance|performing arts|play\b/.test(all)) return 'Theater';
   if (/festival|farmers.market|market|fair\b|expo|parade|food.truck|craft.show|art.show/.test(all)) return 'Festivals & Markets';
   if (/music|concert|live_music|dj|band|singer|karaoke|rock|country|hip.hop|jazz|blues|pop\b/.test(all)) return 'Music';
+  if (ev.venueType === 'theater') return 'Theater';
+  if (ev.venueType === 'music') return 'Music';
   return 'Festivals & Markets';
 }
 function specificEventEmoji(ev) {
@@ -1756,7 +1759,7 @@ export default function WadUp() {
       .sort((a,b) => ((a.dateStr || '') + 'T' + (a.timeStr || '')).localeCompare((b.dateStr || '') + 'T' + (b.timeStr || '')));
     const showingRows = performances.map(show => {
       const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
-      const fallback = ticketFallback(show);
+      const fallback = ticketFallback(show) || (show.venueWebsite ? {url:show.venueWebsite,label:'Check with '+show.venueName} : null);
       const ticketLink = ticketStatus(show) !== 'dead' && ticketQuality(show.url) ? withTMAffiliateTracking(show.url) : null;
       return `<div style="padding:10px 0;border-top:1px solid #e4e7eb">
         <div class="popup-row"><span class="popup-stat">📅 ${escapeHtml(day)} · ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : 'Time TBD')}</span>
@@ -1844,9 +1847,11 @@ export default function WadUp() {
       tmEventsRef.current = [];
       const groupedShows = new Map();
       suppressTicketDuplicates(events || []).forEach((ev) => {
+        const venue = matchEventVenue(ev);
         const norm = {
           id: 'tm_' + ev.tm_id, _isTM: true,
           name: ev.name, cat: 'events',
+          venueId: venue?.id, venueType: venue?.type, venueWebsite: venue?.website, venueName: venue?.name || ev.venue_name,
           segment: ev.segment, genre: ev.genre, subGenre: ev.sub_genre,
           sportEmoji: ev.sport_emoji || undefined,
           address: ev.address || '',
@@ -1863,6 +1868,7 @@ export default function WadUp() {
         if (!groupedShows.has(key)) groupedShows.set(key, []);
         const productions = groupedShows.get(key);
         const sameVenue = other => {
+          if (norm.venueId && other.venueId) return norm.venueId === other.venueId;
           const distance = Math.hypot((Number(norm.lat)-Number(other.lat))*111320,
             (Number(norm.lng)-Number(other.lng))*111320*Math.cos(Number(norm.lat)*Math.PI/180));
           return distance <= 80 || (canonical(norm.address) && canonical(norm.address) === canonical(other.address));
