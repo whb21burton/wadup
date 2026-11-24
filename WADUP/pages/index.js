@@ -1725,9 +1725,11 @@ export default function WadUp() {
     // A single map pin represents one production at one venue; each
     // Ticketmaster performance retains its own date, time and ticket URL.
     // The date picker decides whether a production's pin is visible.
-    // Once opened, list ALL upcoming performances, not just the selected day.
+    // Build popup at click time using the currently selected calendar day.
+    const buildTMPopup = () => {
+    const selectedDay = activeDateRef.current || todayIsoStr();
     const performances = (Array.isArray(ev.showings) && ev.showings.length ? ev.showings : [ev])
-      .filter(Boolean)
+      .filter(show => show && show.dateStr === selectedDay)
       .sort((a,b) => ((a.dateStr || '') + 'T' + (a.timeStr || '')).localeCompare((b.dateStr || '') + 'T' + (b.timeStr || '')));
     const showingRows = performances.map(show => {
       const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
@@ -1739,13 +1741,14 @@ export default function WadUp() {
       </div>`;
     }).join('');
 
-    const iwHtml = `
+    return `
       <div class="gm-iw">
         <div class="popup-name">${icon} ${escapeHtml(ev.name)}</div>
         <div class="popup-type">${escapeHtml(CATEGORY_LABELS[ev.cat] || ev.cat)}${ev.city ? ' · ' + escapeHtml(ev.city) + ', ' + escapeHtml(ev.state) : ''}</div>
-        <div class="tm-showtimes" style="max-height:300px;overflow-y:auto;overscroll-behavior:contain">${showingRows || '<div style="padding:10px 0">Performance details are currently unavailable.</div>'}</div>
+        <div class="tm-showtimes" style="max-height:300px;overflow-y:auto;overscroll-behavior:contain">${showingRows || '<div style="padding:10px 0">No performances scheduled for this day.</div>'}</div>
         <div class="popup-source">via Ticketmaster</div>
       </div>`;
+    };
 
     const offsetPos = getOffsetPosition(ev.lat, ev.lng);
     const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
@@ -1760,7 +1763,7 @@ export default function WadUp() {
     // Keep name, pointer and event emoji in one OverlayView, with one hit area.
 
     const openPopup = () => {
-      infoWindow.current.setContent(iwHtml);
+      infoWindow.current.setContent(buildTMPopup());
       infoWindow.current.open(map, marker);
     };
 
@@ -2533,6 +2536,9 @@ export default function WadUp() {
   const onDayClick = (iso) => {
     activeDateRef.current = iso;
     setActiveDate(iso);
+    // Close the old event popup so it cannot display the previous day's shows.
+    const selected = pinRegistry.current.get(mapObj.current?.__wadupSelectedVenueId);
+    if (selected?.type === 'tm') infoWindow.current?.close();
     filterPins();
   };
 
