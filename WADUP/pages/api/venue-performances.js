@@ -10,7 +10,7 @@ export default async function handler(req,res){
  const venues=new Map(EVENT_VENUES.map(v=>[v.id,v]));
  const performances=(data||[]).flatMap(r=>{
  const v=venues.get(r.venue_id);if(!v)return [];
- return [{venueId:v.id,venueName:v.name,venueType:v.type,venueWebsite:v.website,city:v.city,state:v.state,name:r.name,dateStr:r.local_date,timeStr:r.local_time,officialUrl:r.official_url}];
+ return [{venueId:v.id,venueName:v.name,venueType:v.type,venueWebsite:v.website,location:v.location||null,city:v.city,state:v.state,name:r.name,dateStr:r.local_date,timeStr:r.local_time,officialUrl:r.official_url}];
  });
  res.setHeader('Cache-Control','public, s-maxage=300, stale-while-revalidate=600');
  return res.status(200).json({performances,enabled:true});
