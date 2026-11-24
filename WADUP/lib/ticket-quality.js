@@ -1,18 +1,22 @@
 // Structural validation only; never request ticket pages during map rendering.
 const rejectedEventIds = new Set(['Z7r9jZ1A7Pv4y','Z7r9jZ1A70gug']);
+const ticketHosts = new Set(['www.ticketmaster.com','ticketmaster.com','www.ticketmaster.ca','ticketmaster.ca','www.livenation.com','livenation.com','www.ticketweb.com','ticketweb.com','www.ticketweb.ca','ticketweb.ca','www.universe.com','universe.com','www.etix.com','www.axs.com','seatgeek.com','www.gofevo.com']);
 export function ticketDestination(url) {
-  try { let u = new URL(url); if (u.hostname === 'ticketmaster.evyy.net') u = new URL(u.searchParams.get('u')); if (u.protocol !== 'https:' || u.username || u.password || u.port || !['www.ticketmaster.com','ticketmaster.com','www.livenation.com','livenation.com'].includes(u.hostname)) return null; if (!/\/event\/[a-z0-9_-]+(?:\/|$)/i.test(u.pathname)) return null; u.search=''; u.hash=''; return u.href; } catch { return null; }
+  try {
+    let u=new URL(url);
+    if(u.hostname==='ticketmaster.evyy.net')u=new URL(u.searchParams.get('u'));
+    if(u.protocol!=='https:'||u.username||u.password||u.port||!ticketHosts.has(u.hostname)||u.pathname.length<=1)return null;
+    if(/^(www\.)?(ticketmaster|livenation)\./.test(u.hostname)&&!/\/event\/[a-z0-9_-]+(?:\/|$)/i.test(u.pathname))return null;
+    // Preserve provider-specific query parameters; some identify the performance.
+    u.hash='';
+    return u.href;
+  }catch{return null;}
 }
 export function ticketStatus(e) { if (rejectedEventIds.has(String(e.tm_id||e.id||'').replace(/^tm_/,''))) return 'dead'; const v=e.ticket_verification; return v?.url === ticketDestination(e.url) && Date.parse(v.expires_at)>Date.now() ? v.status : 'unknown'; }
 export function ticketQuality(url) {
-  try {
-    let u=new URL(url);
-    if(u.hostname==='ticketmaster.evyy.net') u=new URL(u.searchParams.get('u'));
-    if(u.protocol!=='https:' || u.username || u.password || u.port) return 0;
-    if(rejectedEventIds.has(u.pathname.split('/').filter(Boolean).pop())) return 0;
-    const hosts=['www.ticketmaster.com','ticketmaster.com','www.ticketmaster.ca','ticketmaster.ca','www.livenation.com','livenation.com','www.ticketweb.com','ticketweb.com','www.ticketweb.ca','ticketweb.ca','www.universe.com','universe.com','www.etix.com','www.axs.com','seatgeek.com','www.gofevo.com'];
-    return hosts.includes(u.hostname) && u.pathname.length>1 ? 2 : 0;
-  } catch { return 0; }
+ const destination=ticketDestination(url);
+ if(!destination)return 0;
+ return rejectedEventIds.has(new URL(destination).pathname.split('/').filter(Boolean).pop())?0:2;
 }
 export function preferredTicketRecord(a,b) {
   const score = e => (ticketStatus(e)==='working'?1000:ticketStatus(e)==='dead'?-1000:0) + ticketQuality(e.url)*100 + (e.price ? 10 : 0) + (e.address ? 4 : 0) + ((e.img || e.image_url) ? 1 : 0);
