@@ -1,4 +1,4 @@
-import { ticketStatus, ticketQuality, preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
+import { ticketFallback, ticketStatus, ticketQuality, preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -1756,11 +1756,12 @@ export default function WadUp() {
       .sort((a,b) => ((a.dateStr || '') + 'T' + (a.timeStr || '')).localeCompare((b.dateStr || '') + 'T' + (b.timeStr || '')));
     const showingRows = performances.map(show => {
       const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
+      const fallback = ticketFallback(show);
       const ticketLink = ticketStatus(show) !== 'dead' && ticketQuality(show.url) ? withTMAffiliateTracking(show.url) : null;
       return `<div style="padding:10px 0;border-top:1px solid #e4e7eb">
         <div class="popup-row"><span class="popup-stat">📅 ${escapeHtml(day)} · ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : 'Time TBD')}</span>
         ${show.price ? `<span class="popup-stat popup-price">${escapeHtml(show.price)}</span>` : ''}</div>
-        ${ticketLink ? `<a class="popup-link" href="${escapeHtml(ticketLink)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets for ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : day)} →</a>` : `<span style="color:#777">Ticket purchase link not confirmed.</span> <a class="popup-link" href="https://www.google.com/search?q=${encodeURIComponent([ev.name,show.city,show.dateStr,'official tickets'].join(' '))}" target="_blank" rel="noopener noreferrer">Find official tickets →</a>`}
+        ${ticketLink ? `<a class="popup-link" href="${escapeHtml(ticketLink)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets for ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : day)} →</a>` : fallback ? `<a class="popup-link" href="${escapeHtml(fallback.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(fallback.label)} →</a>` : `<span style="color:#777">Ticket purchase link not confirmed.</span> <a class="popup-link" href="https://www.google.com/search?q=${encodeURIComponent([ev.name,show.city,show.dateStr,'official tickets'].join(' '))}" target="_blank" rel="noopener noreferrer">Find official tickets →</a>`}
       </div>`;
     }).join('');
 
