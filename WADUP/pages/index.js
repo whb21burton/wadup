@@ -2327,6 +2327,9 @@ export default function WadUp() {
         zoom: 13,
         disableDefaultUI: true,
         gestureHandling: 'greedy',
+        // Opt-in GPU experiment; default preview retains existing rendering.
+        ...(new URLSearchParams(window.location.search).get('vector') === '1'
+          ? { renderingType: window.google.maps.RenderingType?.VECTOR || 'VECTOR' } : {}),
         clickableIcons: false,
         styles: [
           { featureType: 'poi', stylers: [{ visibility: 'off' }] },
