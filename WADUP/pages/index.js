@@ -172,14 +172,14 @@ function specificEventEmoji(ev) {
     [/rodeo/, '🤠'], [/pickleball/, '🏓'],
     [/farmers.market|farmers market/, '🥕'], [/food festival|food.truck/, '🍔'],
     [/art festival|art fair|craft fair/, '🎨'], [/holiday market|christmas market/, '🎄'],
-    [/comedy|comedian|stand.up|improv/, '🎤'],
+    [/comedy|comedian|stand.up|improv/, '😂'],
     [/opera/, '🎼'], [/ballet/, '🩰'], [/theat|theater|theatre|broadway|musical|stage play/, '🎭'],
     // Consistent music pins: genre-specific microphones/instruments looked
     // like unrelated categories. Every Ticketmaster music event uses 🎵.
     [/jazz|rock concert|rock music|dj\b|electronic|edm|country music|country concert|hip.hop|rap concert|concert|live.music|live music|music|band|singer/, '🎵'],
     [/festival|fair\b|market|expo/, '🎪'],
   ];
-  return icons.find(([re]) => re.test(all))?.[1] || ({ Sports:'🏆', Music:'🎵', Theater:'🎭', Comedy:'🎤', 'Festivals & Markets':'🎪' }[eventKind(ev)] || '🎟️');
+  return icons.find(([re]) => re.test(all))?.[1] || ({ Sports:'🏆', Music:'🎵', Theater:'🎭', Comedy:'😂', 'Festivals & Markets':'🎪' }[eventKind(ev)] || '🎟️');
 }
 function matchesEventSubcategories(ev, selected) {
   return !selected?.length || selected.some(s => s.toLowerCase() === eventKind(ev).toLowerCase());
@@ -260,7 +260,7 @@ function getRankStyle(rank) {
   return { bg: '#fff', color: '#171717', shadow: '0 2px 8px rgba(0,0,0,0.18)', prefix: `#${rank}` };
 }
 
-const EVENT_TYPE_ICON  = { live_music: '🎵', trivia: '🧠', happy_hour: '⏰', specials: '🏷️', activities: '🎳', sports_game: '🏟️', event: '🎫', dj: '🎧', comedy: '🎤', karaoke: '🎙️', other: '🎉' };
+const EVENT_TYPE_ICON  = { live_music: '🎵', trivia: '🧠', happy_hour: '⏰', specials: '🏷️', activities: '🎳', sports_game: '🏟️', event: '🎫', dj: '🎧', comedy: '😂', karaoke: '🎙️', other: '🎉' };
 const EVENT_TYPE_LABEL = { live_music: 'Live Music', trivia: 'Trivia', happy_hour: 'Happy Hour', specials: 'Specials', activities: 'Activities', sports_game: 'Game', event: 'Event', dj: 'DJ', comedy: 'Comedy', karaoke: 'Karaoke', other: 'Event' };
 
 function timeToMinsLocal(t) {
@@ -1431,6 +1431,7 @@ export default function WadUp() {
     if (/dance club|nightclub/.test(type)) return '🪩';
     if (/brewery/.test(type)) return '🍺';
     if (/dive bar/.test(type)) return '🍻';
+    if (/comedy|comedian|stand.up|improv/.test(type)) return '😂';
     if (/karaoke/.test(type)) return '🎤';
     if (/rooftop/.test(type)) return '🌃';
     if (/pool hall|billiard/.test(type)) return '🎱';
