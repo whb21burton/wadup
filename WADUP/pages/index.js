@@ -866,10 +866,10 @@ export default function WadUp() {
     }
   }
   function queueMapLabelLayout(map) {
-    if (map.__wadupLabelFrame) return;
+    if (map.__wadupMoving || map.__wadupLabelFrame) return;
     map.__wadupLabelFrame = requestAnimationFrame(() => {
       map.__wadupLabelFrame = null;
-      layoutMapLabels(map);
+      if (!map.__wadupMoving) layoutMapLabels(map);
     });
   }
 
@@ -2399,7 +2399,13 @@ export default function WadUp() {
       // Re-rank only when the map settles. bounds_changed fires repeatedly
       // during pan/zoom and rebuilding every pin while tiles load can make
       // Google Maps feel slow or unresponsive.
-      map.addListener('idle', () => { updateAreaRanks(); setFeedRevision(v => v + 1); });
+      map.addListener('bounds_changed', () => { map.__wadupMoving = true; });
+      map.addListener('idle', () => {
+        map.__wadupMoving = false;
+        updateAreaRanks();
+        queueMapLabelLayout(map);
+        setFeedRevision(v => v + 1);
+      });
 
       setMapReady(true);
 
