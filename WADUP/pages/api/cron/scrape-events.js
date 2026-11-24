@@ -83,7 +83,7 @@ Today's date: ${todayIso}
 Website text:
 ${text}
 
-Only include FUTURE events (strictly after today's date). If a date can't be determined, use null for event_date rather than guessing. If no events are found, return an empty events array.`,
+Only include FUTURE events (strictly after today's date). If a date can't be determined, use null for event_date rather than guessing. Use the actual performance start time, not doors opening time. If the performance time cannot be determined, return null for event_time; never guess. If no events are found, return an empty events array.`,
         }],
         output_config: { format: zodOutputFormat(EventsSchema) },
       });
@@ -94,14 +94,14 @@ Only include FUTURE events (strictly after today's date). If a date can't be det
         if (!ev.event_date || !DATE_RE.test(ev.event_date) || ev.event_date <= todayIso) continue;
         const validTime = ev.event_time && TIME_RE.test(ev.event_time) ? ev.event_time : null;
 
-        if (ev.confidence >= 80) {
+        if (ev.confidence >= 80 && validTime) {
           const { error } = await supabaseAdmin.from('venue_events').upsert({
             venue_id: venue.id,
             title: ev.event_name || ev.performer || 'Event',
             description: ev.description || '',
             event_type: ev.event_type,
             performer: ev.performer || null,
-            start_time: `${ev.event_date}T${validTime || '20:00'}:00`,
+            start_time: `${ev.event_date}T${validTime}:00`,
             is_free: false,
             source: 'scraped',
           }, { onConflict: 'venue_id,start_time' });
