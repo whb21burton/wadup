@@ -607,13 +607,7 @@ export default function WadUp() {
       if (overlay) overlay.setMap(show ? map : null);
     });
 
-    Object.entries(tmMarkers.current).forEach(([id, entry]) => {
-      const ev = tmEventsRef.current.find(e => e.id === id);
-      if (!ev) return;
-      const show = matchesSelectedTM(ev, date || todayIsoStr());
-      entry.marker.setMap(show ? map : null);
-      if (entry.overlay) entry.overlay.setMap(show ? map : null);
-    });
+    // Ticketmaster visibility is reconciled by updateAreaRanks.
 
     updateAreaRanks();
   }, []);
@@ -732,6 +726,20 @@ export default function WadUp() {
           })
           .map(ev => ({ ...ev, _type: 'tm' }))
       : [];
+
+    // Keep only selected-day events near the viewport mounted.
+    const wantedTM = new Set(tmInBounds.map(ev => ev.id));
+    for (const [id, entry] of Object.entries(tmMarkers.current)) {
+      if (!wantedTM.has(id)) {
+        entry.marker.setMap(null);
+        entry.overlay?.setMap(null);
+        delete tmMarkers.current[id];
+        pinRegistry.current.delete(id);
+      }
+    }
+    for (const ev of tmInBounds) {
+      if (!tmMarkers.current[ev.id]) dropTMPin(ev);
+    }
 
     let combined;
     if (selected.length === 1 && selected[0] === 'events') {
@@ -1037,11 +1045,23 @@ export default function WadUp() {
   // status + a compact beer-icon pin outside the top ranks — everything else
   // keeps the standard rank pill/discovery dot (dropVenuePin).
   function dropPinForVenue(v, areaRank) {
+    const map = mapObj.current;
+    const chip = activeCategoryRef.current;
+    const day = activeDateRef.current || todayIsoStr();
+    const event = getVenueEventForDay(v.id, day);
+    const signature = JSON.stringify([v, areaRank, chip, day, event, isEventLive(event),
+      adminRoleRef.current, sessionRef.current?.user?.id,
+      trendingVenueIds.current.has(v.id), bestRatedVenueIds.current.has(v.id),
+      eventVenueIdsTodayRef.current.has(v.id), map?.getZoom()]);
+    const existing = pinRegistry.current.get(v.id);
+    if (existing?.renderSignature === signature && existing.overlay?.getMap() === map) return;
     if (venueCategories(v).includes('nightlife') && !venueCategories(v).includes('restaurant')) {
       dropBarPinRef.current?.(v, areaRank);
     } else {
       dropVenuePinRef.current?.(v, areaRank);
     }
+    const created = pinRegistry.current.get(v.id);
+    if (created) created.renderSignature = signature;
   }
 
   // Smooth, zoom-aware discovery markers: small at regional scale, gradually
@@ -1864,7 +1884,7 @@ export default function WadUp() {
         shows.sort((a,b) => (a.timeStr || '').localeCompare(b.timeStr || ''));
         const representative = { ...shows[0], showings: shows };
         tmEventsRef.current.push(representative);
-        dropTMPin(representative);
+        // Create overlays lazily in updateAreaRanks, not for the entire cache.
       }
 
       filterPins();
