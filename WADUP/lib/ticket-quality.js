@@ -3,7 +3,7 @@ const rejectedEventIds = new Set(['Z7r9jZ1A7Pv4y']);
 export function ticketDestination(url) {
   try { let u = new URL(url); if (u.hostname === 'ticketmaster.evyy.net') u = new URL(u.searchParams.get('u')); if (u.protocol !== 'https:' || u.username || u.password || u.port || !['www.ticketmaster.com','ticketmaster.com','www.livenation.com','livenation.com'].includes(u.hostname)) return null; if (!/\/event\/[a-z0-9_-]+(?:\/|$)/i.test(u.pathname)) return null; u.search=''; u.hash=''; return u.href; } catch { return null; }
 }
-export function ticketStatus(e) { const v=e.ticket_verification; return v?.url === ticketDestination(e.url) && Date.parse(v.expires_at)>Date.now() ? v.status : 'unknown'; }
+export function ticketStatus(e) { if (rejectedEventIds.has(String(e.tm_id||e.id||'').replace(/^tm_/,''))) return 'dead'; const v=e.ticket_verification; return v?.url === ticketDestination(e.url) && Date.parse(v.expires_at)>Date.now() ? v.status : 'unknown'; }
 export function ticketQuality(url) {
   try {
     let u=new URL(url);
@@ -22,10 +22,8 @@ export function suppressTicketDuplicates(rows) {
   const groups = new Map();
   const norm = s => String(s||'').normalize('NFKC').toLowerCase().replace(/&/g,' and ').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
   for (const e of rows) {
-    if (rejectedEventIds.has(String(e.tm_id || e.id || '').replace(/^tm_/,''))) continue;
-    try { let u = new URL(e.url); if (u.hostname === 'ticketmaster.evyy.net') u = new URL(u.searchParams.get('u')); if (rejectedEventIds.has(u.pathname.split('/').filter(Boolean).pop())) continue; } catch {}
     const date=e.dateStr||e.date_str, time=e.timeStr||e.time_str;
-    const key = date && time && e.city ? [norm(e.name),norm(e.city),norm(e.state),date,time.slice(0,5)].join('|') : 'id:'+ (e.id||e.tm_id);
+    const key = date && time && e.city && e.address ? [norm(e.name),norm(e.city),norm(e.state),norm(e.address),date,time.slice(0,5)].join('|') : 'id:'+ (e.id||e.tm_id);
     if (!groups.has(key)) groups.set(key,[]);
     groups.get(key).push(e);
   }
