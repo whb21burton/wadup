@@ -1,5 +1,5 @@
 // Structural validation only; never request ticket pages during map rendering.
-const rejectedEventIds = new Set(['Z7r9jZ1A7Pv4y']);
+const rejectedEventIds = new Set(['Z7r9jZ1A7Pv4y','Z7r9jZ1A70gug']);
 export function ticketDestination(url) {
   try { let u = new URL(url); if (u.hostname === 'ticketmaster.evyy.net') u = new URL(u.searchParams.get('u')); if (u.protocol !== 'https:' || u.username || u.password || u.port || !['www.ticketmaster.com','ticketmaster.com','www.livenation.com','livenation.com'].includes(u.hostname)) return null; if (!/\/event\/[a-z0-9_-]+(?:\/|$)/i.test(u.pathname)) return null; u.search=''; u.hash=''; return u.href; } catch { return null; }
 }
@@ -33,4 +33,11 @@ export function suppressTicketDuplicates(rows) {
     const working = group.filter(e => ticketStatus(e)==='working');
     return working.length ? group.filter(e=>ticketStatus(e)!=='dead') : group;
   });
+}
+
+// Explicitly reported broken destinations; retain the event and offer a venue fallback.
+export function ticketFallback(e) {
+  const id=String(e.tm_id||e.id||'').replace(/^tm_/,'');
+  if(id==='Z7r9jZ1A70gug') return {url:'https://www.alliancetheatre.org/',label:'Check with Alliance Theatre'};
+  return null;
 }
