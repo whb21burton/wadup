@@ -1243,6 +1243,7 @@ export default function WadUp() {
         ${todayEvent.performer ? `<div class="popup-performer">${isLiveEvent ? '<span class="wu-live-music-note">🎵</span>' : getEventIcon(todayEvent.event_type)} ${escapeHtml(todayEvent.performer)}</div>` : ''}
         ${todayEvent.title ? `<div class="popup-event-name">${escapeHtml(todayEvent.title)}</div>` : ''}
         <div class="popup-event-time">${isLiveEvent ? '<span class="live-now-text">🔴 LIVE NOW</span>' : `🕐 ${escapeHtml(formatTime((todayEvent.start_time || '').slice(11, 16)))}`}</div>
+        ${/^https:\/\//i.test(todayEvent.ticket_url || '') ? `<a class="popup-link" href="${escapeHtml(todayEvent.ticket_url)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets →</a>` : ''}
       ` : '';
 
     const canEditPhoto = Boolean(adminRoleRef.current || (sessionRef.current?.user?.id && v.owner_id === sessionRef.current.user.id));
@@ -1594,6 +1595,7 @@ export default function WadUp() {
         ${todayEvent.performer ? `<div class="popup-performer">${isLiveEvent ? '<span class="wu-live-music-note">🎵</span>' : getEventIcon(todayEvent.event_type)} ${escapeHtml(todayEvent.performer)}</div>` : ''}
         ${todayEvent.title ? `<div class="popup-event-name">${escapeHtml(todayEvent.title)}</div>` : ''}
         <div class="popup-event-time">${isLiveEvent ? '<span class="live-now-text">🔴 LIVE NOW</span>' : `🕐 ${escapeHtml(formatTime((todayEvent.start_time || '').slice(11, 16)))}`}</div>
+        ${/^https:\/\//i.test(todayEvent.ticket_url || '') ? `<a class="popup-link" href="${escapeHtml(todayEvent.ticket_url)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets →</a>` : ''}
       ` : '';
 
     const iwHtml = `
@@ -2141,7 +2143,7 @@ export default function WadUp() {
     for (let offset = 0; offset < ids.length; offset += 100) {
       for (let from = 0; ; from += 1000) {
         const { data: page, error } = await supabase.from('venue_events')
-          .select('venue_id, title, event_type, performer, start_time, end_time')
+          .select('venue_id, title, event_type, performer, start_time, end_time, ticket_url')
           .in('venue_id', ids.slice(offset, offset + 100))
           .gte('start_time', asNaive(dayStart)).lte('start_time', asNaive(rangeEnd))
           .order('start_time').order('venue_id').range(from, from + 999);
