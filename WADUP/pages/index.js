@@ -1858,8 +1858,8 @@ export default function WadUp() {
             const matches=venueRows.filter(e=>normalize(e.name)===normalize(p.name)&&e.date_str===p.dateStr&&String(e.time_str||'').slice(0,5)===String(p.timeStr||'').slice(0,5));
             if(matches.length){matches.forEach(e=>{e.official_url=p.officialUrl;});continue;}
             // Do not invent coordinates for venues without a source location.
-            const loc=venueRows.find(e=>Number.isFinite(Number(e.lat))&&Number.isFinite(Number(e.lng))&&e.lat!=null&&e.lng!=null);
-            if(!loc)continue;
+            const loc=p.location || venueRows.find(e=>Number.isFinite(Number(e.lat))&&Number.isFinite(Number(e.lng))&&e.lat!=null&&e.lng!=null);
+            if(!loc || loc.lat<area.s || loc.lat>area.n || (view.w<=view.e && (loc.lng<area.w || loc.lng>area.e)))continue;
             events.push({tm_id:'official_'+[p.venueId,p.name,p.dateStr,p.timeStr].map(encodeURIComponent).join('_'),name:p.name,venue_name:p.venueName,city:p.city,state:p.state,lat:loc.lat,lng:loc.lng,address:loc.address,date_str:p.dateStr,time_str:p.timeStr,segment:p.venueType==='theater'?'Theater':'Music',official_url:p.officialUrl,url:''});
           }
         }
@@ -1869,15 +1869,16 @@ export default function WadUp() {
       const groupedShows = new Map();
       suppressTicketDuplicates(events || []).forEach((ev) => {
         const venue = matchEventVenue(ev);
+        const location = venue?.location;
         const norm = {
           id: 'tm_' + ev.tm_id, _isTM: true,
           name: ev.name, cat: 'events',
           venueId: venue?.id, venueType: venue?.type, venueWebsite: ev.official_url || venue?.website, venueName: venue?.name || ev.venue_name,
           segment: ev.segment, genre: ev.genre, subGenre: ev.sub_genre,
           sportEmoji: ev.sport_emoji || undefined,
-          address: ev.address || '',
+          address: location?.address || ev.address || '',
           city: ev.city || '', state: ev.state || '',
-          lng: ev.lng, lat: ev.lat,
+          lng: location?.lng ?? ev.lng, lat: location?.lat ?? ev.lat,
           dateStr: ev.date_str || '', timeStr: ev.time_str || '',
           price: ev.price || '', img: ev.image_url || '', url: ev.url || '',
           live: true, ticket_verification: ev.ticket_verification || null,
