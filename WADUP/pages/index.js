@@ -1990,12 +1990,18 @@ export default function WadUp() {
       Number(Boolean(b.google_rating)) - Number(Boolean(a.google_rating)) ||
       Number(b.review_count || 0) - Number(a.review_count || 0));
     const retained = [];
+    // Latitude buckets preserve the original 80m duplicate predicate,
+    // including at high latitudes, without scanning distant venues.
+    const buckets = new Map();
+    const bucketFor = v => Math.floor(Number(v.lat) / .001);
     for (const venue of preferred) {
       if (!Number.isFinite(Number(venue.lat)) || !Number.isFinite(Number(venue.lng))) {
         retained.push(venue); continue;
       }
       const name = normalized(venue.name);
-      const duplicate = retained.some(other => {
+      const bucket = bucketFor(venue);
+      const nearby = [-1,0,1].flatMap(offset => buckets.get(bucket + offset) || []);
+      const duplicate = nearby.some(other => {
         if (!Number.isFinite(Number(other.lat)) || !Number.isFinite(Number(other.lng)) ||
             distanceM(venue, other) > 80) return false;
         if (venue.google_place_id && other.google_place_id &&
@@ -2013,7 +2019,11 @@ export default function WadUp() {
         return (addr && otherAddr && addr === otherAddr) ||
           distanceM(venue, other) <= 35;
       });
-      if (!duplicate) retained.push(venue);
+      if (!duplicate) {
+        retained.push(venue);
+        if (!buckets.has(bucket)) buckets.set(bucket, []);
+        buckets.get(bucket).push(venue);
+      }
     }
     return retained;
   }
