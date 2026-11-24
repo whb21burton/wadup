@@ -2026,15 +2026,43 @@ export default function WadUp() {
   }
 
   // ── Load real Chattanooga venues from Supabase (Google Places-sourced) ──
-  const loadVenuesFromSupabase = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('venues')
-      .select('*')
-      .eq('is_hidden', false)
-      .order('google_rating', { ascending: false });
-    if (error || !data) {
-      console.error('Wadup venue load failed:', error || 'No venue rows returned');
-      return;
+  const venueAreaCache = useRef(null);
+  const venueAreaRequest = useRef(0);
+  const loadVenuesFromSupabase = useCallback(async (force = false) => {
+    const bounds = mapObj.current?.getBounds();
+    if (!bounds) return;
+    const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+    const view = { s: sw.lat(), n: ne.lat(), w: sw.lng(), e: ne.lng() };
+    const cached = venueAreaCache.current;
+    if (!force && cached && Date.now() - cached.at < 300000 &&
+        view.s >= cached.s && view.n <= cached.n &&
+        view.w >= cached.w && view.e <= cached.e && view.w <= view.e) return;
+    const latPad = Math.max(.03, (view.n - view.s) * .5);
+    const lngPad = Math.max(.03, (view.e - view.w) * .5);
+    const area = { s: Math.max(-90, view.s-latPad), n: Math.min(90, view.n+latPad),
+      w: Math.max(-180, view.w-lngPad), e: Math.min(180, view.e+lngPad) };
+    const request = ++venueAreaRequest.current;
+    let data = [];
+    for (let from = 0; ; from += 1000) {
+      let query = supabase.from('venues').select('*').eq('is_hidden', false)
+        .gte('lat', area.s).lte('lat', area.n);
+      if (view.w <= view.e) query = query.gte('lng', area.w).lte('lng', area.e);
+      const { data: page, error } = await query.order('id').range(from, from+999);
+      if (request !== venueAreaRequest.current) return;
+      if (error || !page) { console.error('Wadup venue load failed:', error); return; }
+      data.push(...page);
+      if (page.length < 1000) break;
+    }
+    if (request !== venueAreaRequest.current) return;
+    venueAreaCache.current = { ...area, at: Date.now() };
+    const retainedIds = new Set(data.map(v => v.id));
+    for (const [id, entry] of Object.entries(mapMarkers.current)) {
+      if (retainedIds.has(id) || mapObj.current?.__wadupSelectedVenueId === id) continue;
+      entry.marker.setMap(null);
+      overlays.current[id]?.setMap(null);
+      delete mapMarkers.current[id];
+      delete overlays.current[id];
+      pinRegistry.current.delete(id);
     }
 
     // The rest of this file was written against the earlier mock venue shape
@@ -2068,6 +2096,7 @@ export default function WadUp() {
       .select('venue_id, title, event_type, performer, start_time, end_time')
       .gte('start_time', asNaive(dayStart))
       .lte('start_time', asNaive(rangeEnd));
+    if (request !== venueAreaRequest.current) return;
     if (eventsError) console.error('venue_events load failed:', eventsError.message);
     venueEventsRef.current = eventRows || [];
     setFeedRevision(v => v + 1);
@@ -2149,7 +2178,7 @@ export default function WadUp() {
       const now = Date.now();
       if (now - lastRefresh < 1500) return;
       lastRefresh = now;
-      loadVenuesFromSupabase();
+      loadVenuesFromSupabase(true);
     };
     window.addEventListener('pageshow', refreshOnReturn);
     window.addEventListener('focus', refreshOnReturn);
@@ -2433,6 +2462,7 @@ export default function WadUp() {
         map.__wadupMoving = false;
         updateAreaRanks();
         queueMapLabelLayout(map);
+        loadVenuesFromSupabase();
         setFeedRevision(v => v + 1);
       });
 
@@ -2441,7 +2471,7 @@ export default function WadUp() {
       // Real Chattanooga venues (Google Places-sourced, see pages/api/places/sync.js)
       // load asynchronously — pins get dropped once the fetch resolves, same
       // fire-and-forget pattern as fetchTM() below.
-      loadVenuesFromSupabase();
+      loadVenuesFromSupabase(true);
 
       // Fetch TM events
       setTimeout(() => fetchTM(), 300);
