@@ -11,7 +11,11 @@ export function parseVenueSchedule(html, venue) {
    const matchingLocation=!venue.sharedSchedule || venue.aliases.some(alias=>alias.toLowerCase()===locationName);
    if(m && matchingLocation && !String(node.eventStatus||'').endsWith('EventCancelled')) {
     let officialUrl=venue.website;
-    try {const u=new URL(node.url||venue.website,venue.website);if(u.protocol==='https:'&&u.hostname===new URL(venue.website).hostname)officialUrl=u.href;}catch{}
+    try {
+     const u=new URL(node.url||venue.website,venue.website);
+     const eventTicket=u.hostname===venue.ticketHost && /\/event\/[A-Z0-9]+\/?$/i.test(u.pathname);
+     if(u.protocol==='https:'&&!u.username&&!u.password&&(u.hostname===new URL(venue.website).hostname||eventTicket))officialUrl=u.href;
+    }catch{}
     rows.push({venueId:venue.id,name:node.name,dateStr:m[1],timeStr:m[2]+':00',officialUrl,source:'official-venue'});
    }
   }

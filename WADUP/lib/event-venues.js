@@ -7,7 +7,7 @@ export const EVENT_VENUES = [
 {"id":"chattanooga-walker","name":"Walker Theatre","city":"Chattanooga","state":"TN","type":"theater","emoji":"🎭","website":"https://tivolichattanooga.com/","sharedSchedule":true,"aliases":["Walker Theatre","The Walker Theatre"],"location":{"lat":35.048049,"lng":-85.305659,"address":"399 McCallie Avenue","status":"source-consensus"}},
 {"id":"chattanooga-songbirds","name":"Songbirds","city":"Chattanooga","state":"TN","type":"music","emoji":"🎵","website":"https://venue.songbirds.org/","scheduleUrl":"https://venue.songbirds.org/concert-schedule/","aliases":["Songbirds","Songbirds Guitar Museum"]},
 {"id":"atlanta-fox","name":"Fox Theatre","city":"Atlanta","state":"GA","type":"theater","emoji":"🎭","website":"https://www.foxtheatre.org/","aliases":["Fox Theatre","Fox Theatre Atlanta","Fox Theatre - Atlanta"]},
-{"id":"atlanta-tabernacle","name":"Tabernacle","city":"Atlanta","state":"GA","type":"music","emoji":"🎵","website":"https://www.tabernacleatl.com/","aliases":["Tabernacle","The Tabernacle","Tabernacle Presented by iTHINK Financial"]},
+{"id":"atlanta-tabernacle","name":"Tabernacle","city":"Atlanta","state":"GA","type":"music","emoji":"🎵","website":"https://www.tabernacleatl.com/","ticketHost":"www.ticketmaster.com","aliases":["Tabernacle","The Tabernacle","Tabernacle Presented by iTHINK Financial"]},
 {"id":"atlanta-eastern","name":"The Eastern","city":"Atlanta","state":"GA","type":"music","emoji":"🎵","website":"https://www.easternatl.com/","aliases":["The Eastern","The Eastern-GA"]}
 ];
 const normalize=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();

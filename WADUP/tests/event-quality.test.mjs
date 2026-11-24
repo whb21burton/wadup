@@ -35,6 +35,14 @@ test('shared calendars only attribute performances to the listed theater',()=>{
  const events=[base,{...base,location:{name:'Tivoli Theatre'}},{...base,location:{name:'The Walker Theatre'}}];
  assert.equal(parseVenueSchedule('<script type="application/ld+json">'+JSON.stringify(events)+'</script>',venue).length,1);
 });
+test('Tabernacle uses the exact Ticketmaster event URL published by the venue',()=>{
+ const venue=matchEventVenue({venue_name:'Tabernacle',city:'Atlanta',state:'GA'});
+ const tickets='https://www.ticketmaster.com/example/event/0E00652BADD4C700';
+ const data={'@type':'MusicEvent',name:'Show',startDate:'2026-11-24T20:00:00',url:tickets};
+ const parse=node=>parseVenueSchedule('<script type="application/ld+json">'+JSON.stringify(node)+'</script>',venue)[0].officialUrl;
+ assert.equal(parse(data),tickets);
+ assert.equal(parse({...data,url:tickets.replace('.com/','.com.example/')}),venue.website);
+});
 test('Songbirds retains each official start and its ticket link across calendar pages',async()=>{
  const base={status:'publish',timezone:'America/New_York',all_day:false,title:'Show',url:'https://venue.songbirds.org/event/show/'};
  const fetcher=async url=>{
