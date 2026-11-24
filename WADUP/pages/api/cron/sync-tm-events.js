@@ -1,3 +1,4 @@
+import { suppressTicketDuplicates } from '../../../lib/ticket-quality';
 // pages/api/cron/sync-tm-events.js — runs every 2 hours (see vercel.json),
 // fetches Ticketmaster events across every TM_REGIONS city, and replaces
 // the contents of tm_events_cache. pages/index.js reads THAT table instead
@@ -118,8 +119,9 @@ export default async function handler(req, res) {
   // this loop safe to re-run/retry with no cache-clearing step at all, so a
   // failed run just leaves the previous cycle's data in place instead of
   // nothing.
-  for (let i = 0; i < allEvents.length; i += 500) {
-    const batch = allEvents.slice(i, i + 500);
+  const filteredEvents = suppressTicketDuplicates(allEvents);
+  for (let i = 0; i < filteredEvents.length; i += 500) {
+    const batch = filteredEvents.slice(i, i + 500);
     const { error: insertError } = await supabaseAdmin
       .from('tm_events_cache')
       .upsert(batch, { onConflict: 'tm_id' });
@@ -174,7 +176,8 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     success: true,
-    total: allEvents.length,
+    total: filteredEvents.length,
+    duplicatesSuppressed: allEvents.length - filteredEvents.length,
     pruned,
     prunedPast,
     regions: TM_REGIONS.length,
