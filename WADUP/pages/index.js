@@ -332,6 +332,7 @@ export default function WadUp() {
   // the day-strip (activeDateRef), the same "load once, filter per day"
   // pattern fetchTM already uses for tm_events_cache below.
   const venueEventsRef = useRef([]);
+  const venueEventsById = useRef(new Map());
   const mapInitStarted = useRef(false);
   const filterPinsRef = useRef(null);
   // updateAreaRanks (defined earlier in this component than dropVenuePin)
@@ -368,7 +369,7 @@ export default function WadUp() {
   const matchesSelectedVenue = (venue, date) => {
     const chip = activeCategoryRef.current;
     return chip === 'wadup'
-      ? venueEventsRef.current.some(e => e.venue_id === venue.id && (e.start_time || '').slice(0, 10) === date && !['happy_hour', 'specials'].includes(e.event_type) && (date !== localIsoDate() || !e.end_time || new Date(e.end_time.replace(' ', 'T')).getTime() >= Date.now()))
+      ? (venueEventsById.current.get(venue.id) || []).some(e => (e.start_time || '').slice(0, 10) === date && !['happy_hour', 'specials'].includes(e.event_type) && (date !== localIsoDate() || !e.end_time || new Date(e.end_time.replace(' ', 'T')).getTime() >= Date.now()))
       : venueMatchesChip(chip, venue, chip === 'events' ? [] : (activeSubcategoryRef.current[chip] || [])) &&
         (chip !== 'events' || (() => { const event = getVenueEventForDay(venue.id, date); return !!event && matchesEventSubcategories({ ...event, name: event.name || event.title || venue.name }, activeSubcategoryRef.current.events || []); })());
   };
@@ -976,8 +977,8 @@ export default function WadUp() {
   // browsed via the day-strip isn't evaluated against "right now" at all.
   // Prefers whichever entry is live right now; otherwise the day's earliest.
   function getVenueEventForDay(venueId, dayIso) {
-    const rows = venueEventsRef.current.filter(
-      e => e.venue_id === venueId && (e.start_time || '').slice(0, 10) === dayIso
+    const rows = (venueEventsById.current.get(venueId) || []).filter(
+      e => (e.start_time || '').slice(0, 10) === dayIso
     );
     if (!rows.length) return null;
     if (dayIso !== todayIsoStr()) {
@@ -2113,6 +2114,12 @@ export default function WadUp() {
     }
     if (request !== venueAreaRequest.current) return;
     venueEventsRef.current = eventRows;
+    const byVenue = new Map();
+    for (const event of eventRows) {
+      if (!byVenue.has(event.venue_id)) byVenue.set(event.venue_id, []);
+      byVenue.get(event.venue_id).push(event);
+    }
+    venueEventsById.current = byVenue;
     setFeedRevision(v => v + 1);
 
     const todayIso = localIsoDate(now);
