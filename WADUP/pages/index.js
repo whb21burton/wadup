@@ -1815,54 +1815,34 @@ export default function WadUp() {
   // pages/api/cron/sync-tm-events.js (a 2-hourly Vercel Cron job — see
   // vercel.json), not fetched live per pageview. cat/sportEmoji are already
   // computed at cache-write time, so no classification-parsing happens here.
+  const tmAreaCache = useRef(null);
+  const tmAreaPending = useRef(null);
+  const tmAreaRequest = useRef(0);
   const fetchTM = useCallback(async () => {
+    const bounds = mapObj.current?.getBounds();
+    if (!bounds) return;
+    const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+    const view = {s:sw.lat(), n:ne.lat(), w:sw.lng(), e:ne.lng()};
+    const todayStr = localIsoDate();
+    const covers = a => a && a.day === todayStr && view.s >= a.s && view.n <= a.n && view.w >= a.w && view.e <= a.e && view.w <= view.e;
+    if (covers(tmAreaPending.current) || (covers(tmAreaCache.current) && Date.now()-tmAreaCache.current.at < 300000)) return;
+    const dy = Math.max(.05,(view.n-view.s)*.5), dx = Math.max(.05,(view.e-view.w)*.5);
+    const area = {s:Math.max(-90,view.s-dy),n:Math.min(90,view.n+dy),w:Math.max(-180,view.w-dx),e:Math.min(180,view.e+dx),day:todayStr};
+    const request = ++tmAreaRequest.current;
+    tmAreaPending.current = area;
     try {
-      // tm_events_cache is a NATIONWIDE cache (see sync-tm-events.js's
-      // TM_REGIONS — ~43 metro areas, not just this city) shared across
-      // whatever cities WadUp eventually covers; this map only ever shows
-      // Chattanooga, so an unscoped query pulls in every other region's
-      // events too. A 150-mile box previously fixed the 1000-row-cap bug
-      // (2026-09-11 alone had 1218 unfiltered rows, almost all irrelevant),
-      // but panning/zooming out further than that legitimately wants to see
-      // more than just the immediate metro area — so this is widened to
-      // 500 miles instead of dropped entirely: dropTMPin creates a real,
-      // fairly expensive OverlayView DOM element per event immediately
-      // (visibility toggling for the viewport happens afterward, in
-      // filterPins), so loading the full ~5,900-row nationwide cache as
-      // live pins on every page load isn't free — at 500mi (~2,400 rows,
-      // still over the 1000-row cap) this pages through with .range()
-      // instead of just raising .limit() past the cap.
-      const CHATT_LAT = 35.0456, CHATT_LNG = -85.3096;
-      const LAT_SPAN = 7.25, LNG_SPAN = 8.85; // ~500 miles
-      // Local date, not UTC — tm_events_cache.date_str is Ticketmaster's
-      // localDate, and a UTC "today" is already tomorrow from 8pm Eastern
-      // onward, which excluded every one of today's rows from this query
-      // during exactly the hours the Events chip matters most.
-      const todayStr = localIsoDate();
-      const PAGE_SIZE = 1000;
-      let events = [];
-      for (let from = 0; ; from += PAGE_SIZE) {
-        const { data: page, error } = await supabase
-          .from('tm_events_cache')
-          .select('*')
-          .gte('date_str', todayStr) // only future events
-          .gte('lat', CHATT_LAT - LAT_SPAN).lte('lat', CHATT_LAT + LAT_SPAN)
-          .gte('lng', CHATT_LNG - LNG_SPAN).lte('lng', CHATT_LNG + LNG_SPAN)
-          .order('date_str', { ascending: true })
-          .range(from, from + PAGE_SIZE - 1);
+      const events = [];
+      for (let from=0;;from+=1000) {
+        let query = supabase.from('tm_events_cache').select('*').gte('date_str',todayStr).gte('lat',area.s).lte('lat',area.n);
+        if (view.w <= view.e) query = query.gte('lng',area.w).lte('lng',area.e);
+        const {data:page,error} = await query.order('date_str').order('tm_id').range(from,from+999);
+        if (request !== tmAreaRequest.current) return;
         if (error) throw error;
-        events = events.concat(page || []);
-        if (!page || page.length < PAGE_SIZE) break;
+        events.push(...(page || []));
+        if (!page || page.length < 1000) break;
       }
-
-      Object.entries(tmMarkers.current).forEach(([id, entry]) => {
-        entry.marker.setMap(null);
-        if (entry.overlay) entry.overlay.setMap(null);
-        pinRegistry.current.delete(id);
-      });
-      tmMarkers.current = {};
+      if (request !== tmAreaRequest.current) return;
       tmEventsRef.current = [];
-
       const groupedShows = new Map();
       (events || []).forEach((ev) => {
         const norm = {
@@ -1886,18 +1866,28 @@ export default function WadUp() {
         groupedShows.get(groupKey).push(norm);
       });
       for (const shows of groupedShows.values()) {
-        shows.sort((a,b) => (a.timeStr || '').localeCompare(b.timeStr || ''));
+        shows.sort((a,b) => a.dateStr.localeCompare(b.dateStr) || (a.timeStr || '').localeCompare(b.timeStr || '') || a.id.localeCompare(b.id));
         const representative = { ...shows[0], showings: shows };
         tmEventsRef.current.push(representative);
         // Create overlays lazily in updateAreaRanks, not for the entire cache.
       }
 
+      tmAreaCache.current = {...area,at:Date.now()};
+      tmAreaPending.current = null;
+      // Refresh retained popup data when the cache changes.
+      for (const [id,entry] of Object.entries(tmMarkers.current)) {
+        entry.marker.setMap(null);
+        entry.overlay?.setMap(null);
+        pinRegistry.current.delete(id);
+      }
+      tmMarkers.current = {};
       filterPins();
       setFeedRevision(v => v + 1);
     } catch (e) {
       // Leave whatever was showing, but don't swallow this silently — an
       // empty Events chip with a clean console is indistinguishable from
       // "there genuinely are no events today", which cost real debugging time.
+      if (request === tmAreaRequest.current) tmAreaPending.current = null;
       console.error('Ticketmaster cache read failed:', e.message || e);
     }
   }, [dropTMPin, filterPins]);
@@ -2523,6 +2513,7 @@ export default function WadUp() {
         }
         queueMapLabelLayout(map);
         loadVenuesFromSupabase();
+        fetchTM();
         setFeedRevision(v => v + 1);
       });
 
