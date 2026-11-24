@@ -108,8 +108,10 @@ function isLiveNow(ev) {
 function formatEventTime(ev) {
   if (!ev.start_time) return 'Date TBD';
   const start = parseUtcTimestamp(ev.start_time);
-  const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const timeStr = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  // Scraped starts are stored as the venue's published wall-clock time.
+  const options = ev.source === 'scraped' ? { timeZone: 'UTC' } : {};
+  const dateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...options });
+  const timeStr = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', ...options });
   return `${dateStr} · ${timeStr}`;
 }
 
@@ -386,7 +388,9 @@ export default function VenuePage() {
       // progress (its start_time is necessarily in the past), which would
       // make the "🔴 Live Now" badge structurally unreachable. Filter on
       // end_time instead so ongoing events stay included until they're over.
-      supabase.from('venue_events').select('*').eq('venue_id', id).gte('end_time', new Date().toISOString()).order('start_time', { ascending: true }),
+      supabase.from('venue_events').select('*').eq('venue_id', id)
+        .or(`end_time.gte.${new Date().toISOString()},and(end_time.is.null,start_time.gte.${todayIso})`)
+        .order('start_time', { ascending: true }),
       supabase.from('venue_schedule').select('*').eq('venue_id', id).order('day_of_week', { ascending: true }),
       supabase.from('venue_flames').select('id').eq('venue_id', id).eq('vote_date', todayIso),
     ]);

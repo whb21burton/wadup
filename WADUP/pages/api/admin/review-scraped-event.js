@@ -26,13 +26,16 @@ export default async function handler(req, res) {
   if (fetchError || !pending) return res.status(404).json({ error: 'Scraped event not found' });
 
   if (action === 'approve') {
+    if (!pending.event_time || !/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(pending.event_time)) {
+      return res.status(422).json({ error: 'A verified event start time is required to approve this event' });
+    }
     const { error: insertError } = await supabaseAdmin.from('venue_events').upsert({
       venue_id: pending.venue_id,
       title: pending.event_name,
       description: pending.description || '',
       event_type: pending.event_type || 'other',
       performer: pending.performer || null,
-      start_time: `${pending.event_date}T${pending.event_time || '20:00:00'}`,
+      start_time: `${pending.event_date}T${pending.event_time}`,
       is_free: false,
       source: 'scraped',
     }, { onConflict: 'venue_id,start_time' });

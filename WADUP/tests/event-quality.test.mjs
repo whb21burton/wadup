@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {ticketDestination,ticketStatus,suppressTicketDuplicates} from '../lib/ticket-quality.js';
 import {parseVenueSchedule,matchPerformance} from '../lib/venue-schedule.js';
 import {matchEventVenue} from '../lib/event-venues.js';
+import {fetchSongbirdsEvents} from '../lib/songbirdsEvents.mjs';
 test('reported Lupita duplicate is suppressed only when replacement exists',()=>{
  const bad={tm_id:'Z7r9jZ1A7Pv4y'},good={tm_id:'rZ7HnEZ1Afr3OS'};
  assert.deepEqual(suppressTicketDuplicates([bad,good]),[good]);
@@ -27,4 +28,22 @@ test('official calendar retains distinct performances and excludes canceled ones
 test('venue aliases resolve to same identity',()=>{
  const base={city:'Chattanooga',state:'TN'};
  assert.equal(matchEventVenue({...base,venue_name:'The Signal'}).id,matchEventVenue({...base,venue_name:'The Signal - Concert Hall'}).id);
+});
+test('shared calendars only attribute performances to the listed theater',()=>{
+ const venue={id:'walker',website:'https://tivolichattanooga.com/',sharedSchedule:true,aliases:['Walker Theatre','The Walker Theatre']};
+ const base={'@type':'TheaterEvent',name:'Show',startDate:'2026-12-01T19:00:00-05:00'};
+ const events=[base,{...base,location:{name:'Tivoli Theatre'}},{...base,location:{name:'The Walker Theatre'}}];
+ assert.equal(parseVenueSchedule('<script type="application/ld+json">'+JSON.stringify(events)+'</script>',venue).length,1);
+});
+test('Songbirds retains each official start and its ticket link across calendar pages',async()=>{
+ const base={status:'publish',timezone:'America/New_York',all_day:false,title:'Show',url:'https://venue.songbirds.org/event/show/'};
+ const fetcher=async url=>{
+  const page=new URL(url).searchParams.get('page');
+  const event={...base,start_date:`2026-12-04 ${page==='1'?'14':'19'}:00:00`,website:`https://eventim.us/show-${page}`};
+  return Response.json({total_pages:2,events:[event,{...event,title:'No start',start_date:null},{...event,title:'All day',all_day:true}]});
+ };
+ const rows=await fetchSongbirdsEvents('songbirds',fetcher,new Date('2026-11-24T13:00:00Z'));
+ assert.deepEqual(rows.map(row=>[row.timeStr,row.officialUrl]),[
+  ['14:00:00','https://eventim.us/show-1'],['19:00:00','https://eventim.us/show-2'],
+ ]);
 });
