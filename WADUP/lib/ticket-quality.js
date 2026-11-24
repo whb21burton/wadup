@@ -20,10 +20,14 @@ export function preferredTicketRecord(a,b) {
 }
 export function suppressTicketDuplicates(rows) {
   const groups = new Map();
+  const knownReplacement = new Map([['Z7r9jZ1A7Pv4y','rZ7HnEZ1Afr3OS']]);
+  const ids = new Set(rows.map(e=>String(e.tm_id||e.id||'').replace(/^tm_/,'')));
   const norm = s => String(s||'').normalize('NFKC').toLowerCase().replace(/&/g,' and ').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
   for (const e of rows) {
+    const replacement=knownReplacement.get(String(e.tm_id||e.id||'').replace(/^tm_/,''));
+    if(replacement && ids.has(replacement)) continue;
     const date=e.dateStr||e.date_str, time=e.timeStr||e.time_str;
-    const key = date && time && e.city && e.address ? [norm(e.name),norm(e.city),norm(e.state),norm(e.address),date,time.slice(0,5)].join('|') : 'id:'+ (e.id||e.tm_id);
+    const key = date && time && e.city && e.address ? [norm(e.name),norm(e.city),norm(e.state),norm(e.address).replace(/\bavenue\b/g,'ave').replace(/\bstreet\b/g,'st').replace(/\broad\b/g,'rd').replace(/\bboulevard\b/g,'blvd'),date,time.slice(0,5)].join('|') : 'id:'+ (e.id||e.tm_id);
     if (!groups.has(key)) groups.set(key,[]);
     groups.get(key).push(e);
   }
