@@ -45,8 +45,10 @@ function withTMAffiliateTracking(ticketUrl) {
       url = new URL(inner);
     }
 
-    if (!url.hostname.includes('ticketmaster') && !url.hostname.includes('livenation')) {
-      return url.toString();
+    if (!ticketQuality(url.toString())) return null;
+    // Keep the provider's original affiliate redirect for partner ticketing sites.
+    if (!['www.ticketmaster.com','ticketmaster.com','www.livenation.com','livenation.com'].includes(url.hostname)) {
+      return new URL(ticketUrl).hostname === 'ticketmaster.evyy.net' ? ticketUrl : url.toString();
     }
 
     return `https://ticketmaster.evyy.net/c/${TM_AFFILIATE_ID}/${TM_CAMPAIGN_ID}/${TM_ADVERTISER_ID}?u=${encodeURIComponent(url.toString())}`;
@@ -1758,7 +1760,7 @@ export default function WadUp() {
       return `<div style="padding:10px 0;border-top:1px solid #e4e7eb">
         <div class="popup-row"><span class="popup-stat">📅 ${escapeHtml(day)} · ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : 'Time TBD')}</span>
         ${show.price ? `<span class="popup-stat popup-price">${escapeHtml(show.price)}</span>` : ''}</div>
-        ${ticketLink ? `<a class="popup-link" href="${escapeHtml(ticketLink)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets for ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : day)} →</a>` : '<span style="color:#777">Tickets unavailable</span>'}
+        ${ticketLink ? `<a class="popup-link" href="${escapeHtml(ticketLink)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets for ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : day)} →</a>` : `<span style="color:#777">Ticket purchase link not confirmed.</span> <a class="popup-link" href="https://www.google.com/search?q=${encodeURIComponent([ev.name,show.city,show.dateStr,'official tickets'].join(' '))}" target="_blank" rel="noopener noreferrer">Find official tickets →</a>`}
       </div>`;
     }).join('');
 
@@ -1867,7 +1869,7 @@ export default function WadUp() {
         let shows = productions.find(group => sameVenue(group[0]));
         if (!shows) { shows = []; productions.push(shows); }
         const duplicate = shows.findIndex(show => show.id === norm.id ||
-          (show.dateStr === norm.dateStr && show.timeStr && show.timeStr === norm.timeStr));
+          (show.dateStr === norm.dateStr && show.timeStr && show.timeStr === norm.timeStr && show.url === norm.url));
         if (duplicate < 0) shows.push(norm);
         else shows[duplicate] = preferredTicketRecord(shows[duplicate], norm);
       });
