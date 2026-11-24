@@ -797,11 +797,10 @@ export default function WadUp() {
         offsets.push([Math.round(Math.cos(angle) * ring * 86), Math.round(Math.sin(angle) * ring * 64)]);
       }
     }
-    for (const entry of (staggerEvents ? tmPins : [])) {
-      const el = entry.el;
-      // Measure the unshifted whole pin, not just its text label.
-      el.style.translate = 'none';
-      const base = el.getBoundingClientRect();
+    const tmLayout = staggerEvents ? tmPins : [];
+    for (const entry of tmLayout) entry.el.style.translate = 'none';
+    const tmMeasurements = tmLayout.map(entry => ({ el: entry.el, base: entry.el.getBoundingClientRect() }));
+    for (const {el, base} of tmMeasurements) {
       if (!base.width || !base.height) continue;
       let chosen = offsets[0], best = Infinity;
       for (const [dx, dy] of offsets) {
@@ -851,10 +850,9 @@ export default function WadUp() {
       .sort((a,b) => (b.__labelPriority || 0) - (a.__labelPriority || 0) || String(a.__labelId).localeCompare(String(b.__labelId)));
     const occupied = [];
     const candidates = [0,-24,24,-48,48,-72,72,-96,96];
-    for (const o of items) {
-      const label = o.__labelEl;
-      label.style.translate = 'none';
-      const r = label.getBoundingClientRect();
+    for (const o of items) o.__labelEl.style.translate = 'none';
+    const measurements = items.map(o => ({label:o.__labelEl, r:o.__labelEl.getBoundingClientRect()}));
+    for (const {label,r} of measurements) {
       if (!r.width || !r.height) continue;
       let best = { x:0, y:0, score:Infinity };
       for (const y of candidates) {
@@ -880,7 +878,11 @@ export default function WadUp() {
     if (map.__wadupMoving || map.__wadupLabelFrame) return;
     map.__wadupLabelFrame = requestAnimationFrame(() => {
       map.__wadupLabelFrame = null;
-      if (!map.__wadupMoving) layoutMapLabels(map);
+      if (!map.__wadupMoving) {
+        const start = performance.now();
+        layoutMapLabels(map);
+        if (map.__wadupPerf) map.__wadupPerf.labelMs = performance.now() - start;
+      }
     });
   }
 
