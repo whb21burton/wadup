@@ -1054,7 +1054,8 @@ export default function WadUp() {
     const chip = activeCategoryRef.current;
     const day = activeDateRef.current || todayIsoStr();
     const event = getVenueEventForDay(v.id, day);
-    const signature = JSON.stringify([v, areaRank, chip, day, event, isEventLive(event),
+    const { _areaRank, _todayEvent, _isLive, ...venueData } = v;
+    const signature = JSON.stringify([venueData, areaRank > 10 ? 11 : areaRank, chip, day, event, isEventLive(event),
       adminRoleRef.current, sessionRef.current?.user?.id,
       trendingVenueIds.current.has(v.id), bestRatedVenueIds.current.has(v.id),
       eventVenueIdsTodayRef.current.has(v.id), map?.getZoom()]);
@@ -2581,6 +2582,38 @@ export default function WadUp() {
       });
       locationWatchRef.current = watchId;
     }
+    return () => {
+      if (locationWatchRef.current != null) navigator.geolocation?.clearWatch(locationWatchRef.current);
+      locationWatchRef.current = null;
+      const map = mapObj.current;
+      if (map) {
+        if (map.__wadupPerf) map.__wadupPerf.moving = false;
+        map.__wadupMoving = true;
+        if (map.__wadupZoomFrame) cancelAnimationFrame(map.__wadupZoomFrame);
+        if (map.__wadupLabelFrame) cancelAnimationFrame(map.__wadupLabelFrame);
+        window.google.maps.event.clearInstanceListeners(map);
+        infoWindow.current?.close();
+        for (const entry of pinRegistry.current.values()) {
+          entry.marker?.setMap(null);
+          entry.overlay?.setMap(null);
+        }
+        userLocationMarkerRef.current?.setMap(null);
+      }
+      ++venueAreaRequest.current;
+      ++tmAreaRequest.current;
+      venueAreaPending.current = null;
+      tmAreaPending.current = null;
+      venueAreaCache.current = null;
+      tmAreaCache.current = null;
+      pinRegistry.current.clear();
+      mapMarkers.current = {};
+      overlays.current = {};
+      tmMarkers.current = {};
+      mapObj.current = null;
+      userLocationMarkerRef.current = null;
+      mapInitStarted.current = false;
+      if (window.__wadupMapInit === initMap) delete window.__wadupMapInit;
+    };
   }, []);  // eslint-disable-line
 
   // ── Keep the map correctly sized when the sidebar / viewport changes ──
