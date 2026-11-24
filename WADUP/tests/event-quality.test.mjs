@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ticketDestination,ticketStatus,suppressTicketDuplicates} from '../lib/ticket-quality.js';
-import {parseVenueSchedule,matchPerformance} from '../lib/venue-schedule.js';
+import {parseFoxShowings,parseVenueSchedule,matchPerformance} from '../lib/venue-schedule.js';
 import {matchEventVenue} from '../lib/event-venues.js';
 import {fetchSongbirdsEvents} from '../lib/songbirdsEvents.mjs';
 test('reported Lupita duplicate is suppressed only when replacement exists',()=>{
@@ -42,6 +42,15 @@ test('Tabernacle uses the exact Ticketmaster event URL published by the venue',(
  const parse=node=>parseVenueSchedule('<script type="application/ld+json">'+JSON.stringify(node)+'</script>',venue)[0].officialUrl;
  assert.equal(parse(data),tickets);
  assert.equal(parse({...data,url:tickets.replace('.com/','.com.example/')}),venue.website);
+});
+test('Fox Theatre pairs each showing with its own published link',()=>{
+ const html='<meta property="og:title" content="Show | Fox Theatre" />'+
+  '<a href="https://foxtheatre.evenue.net/events/MAT" title="Buy Tickets for December 4 2026 at 2:00 PM">Buy Tickets</a>'+
+  '<a href="https://foxtheatre.evenue.net/events/EVE" title="Buy Tickets for December 4 2026 at 7:30 PM">Buy Tickets</a>';
+ assert.deepEqual(parseFoxShowings(html,'atlanta-fox').map(row=>[row.dateStr,row.timeStr,row.officialUrl]),[
+  ['2026-12-04','14:00:00','https://foxtheatre.evenue.net/events/MAT'],
+  ['2026-12-04','19:30:00','https://foxtheatre.evenue.net/events/EVE'],
+ ]);
 });
 test('Songbirds retains each official start and its ticket link across calendar pages',async()=>{
  const base={status:'publish',timezone:'America/New_York',all_day:false,title:'Show',url:'https://venue.songbirds.org/event/show/'};

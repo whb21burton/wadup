@@ -45,3 +45,16 @@ export function parseSignalSchedule(html, venue) {
  }
  return rows;
 }
+
+export function parseFoxShowings(html, venueId) {
+ const name=html.match(/<meta\b[^>]*property="og:title"\s+content="([^"]+)"/i)?.[1]?.replace(/\s*\|\s*Fox Theatre\s*$/i,'').trim();
+ if(!name || /\b(?:canceled|cancelled|postponed)\b/i.test(name))return [];
+ const rows=[];
+ for(const [,url,month,day,year,hour,minute,period] of html.matchAll(/<a\b[^>]*href="(https:\/\/foxtheatre\.evenue\.net\/[^"]+)"[^>]*title="Buy Tickets for ([A-Za-z]+) (\d{1,2}) (\d{4}) at (1[0-2]|[1-9]):([0-5]\d) ([AP]M)"/gi)) {
+  const date=new Date(`${month} ${day}, ${year} UTC`);
+  if(!Number.isFinite(date.getTime()))continue;
+  const hour24=Number(hour)%12+(period.toUpperCase()==='PM'?12:0);
+  rows.push({venueId,name,dateStr:date.toISOString().slice(0,10),timeStr:`${String(hour24).padStart(2,'0')}:${minute}:00`,officialUrl:url.replace(/&amp;/g,'&'),source:'official-venue'});
+ }
+ return rows;
+}

@@ -1,8 +1,22 @@
 import { EVENT_VENUES } from './event-venues.js';
-import { parseSignalSchedule, parseVenueSchedule } from './venue-schedule.js';
+import { parseFoxShowings, parseSignalSchedule, parseVenueSchedule } from './venue-schedule.js';
 import { fetchSongbirdsEvents, usesSongbirdsFeed } from './songbirdsEvents.mjs';
 
 const EASTERN_FEED = 'https://aegwebprod.blob.core.windows.net/json/events/127/events.json';
+
+async function fetchFoxShowings(html, venue, fetcher) {
+ const paths=[...new Set([...html.matchAll(/href="(?:https:\/\/www\.foxtheatre\.org)?(\/events\/detail\/[\w%-]+)"/gi)].map(match=>match[1]))].slice(0,50);
+ const rows=[];
+ const signal=AbortSignal.timeout(8000);
+ for(let i=0;i<paths.length&&!signal.aborted;i+=5){
+  const batch=await Promise.allSettled(paths.slice(i,i+5).map(async path=>{
+   const response=await fetcher(new URL(path,venue.website).href,{redirect:'error',signal});
+   return response.ok ? parseFoxShowings(await response.text(),venue.id) : [];
+  }));
+  for(const result of batch)if(result.status==='fulfilled')rows.push(...result.value);
+ }
+ return rows;
+}
 
 async function fetchEasternEvents(venueId, fetcher) {
  const response=await fetcher(EASTERN_FEED,{redirect:'error',signal:AbortSignal.timeout(8000)});
@@ -43,8 +57,11 @@ export async function fetchOfficialSchedule(venueId, fetcher=fetch) {
    html+=decoder.decode();
   } finally {await reader.cancel().catch(()=>{});}
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/New_York'}).format(new Date());
-  const rows=(venue.id==='chattanooga-the-signal' ? parseSignalSchedule(html,venue) : parseVenueSchedule(html,venue))
-   .filter(row=>row.dateStr>=today);
+  let performances;
+  if(venue.id==='chattanooga-the-signal') performances=parseSignalSchedule(html,venue);
+  else if(venue.id==='atlanta-fox') performances=await fetchFoxShowings(html,venue,fetcher);
+  else performances=parseVenueSchedule(html,venue);
+  const rows=performances.filter(row=>row.dateStr>=today);
   return {venueId,status:rows.length?'parsed':'unknown',reason:rows.length?null:'no structured performances found',rows,checkedAt:new Date().toISOString()};
  }catch{return {venueId,status:'unknown',reason:'fetch failed',rows:[]};}
 }
