@@ -781,12 +781,35 @@ export default function WadUp() {
     const tmPins = [...pinRegistry.current.values()]
       .filter(e => e.type === 'tm' && e.overlay?.getMap?.() === map && e.el?.isConnected)
       .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-    // At city/regional zoom, events must remain at their real map positions.
-    // Stagger whole event pins only at neighborhood/street zoom, as with
-    // restaurant labels; reset previous shifts when zooming back out.
-    const staggerEvents = (map.getZoom() || 0) >= 17;
+    const zoom = map.getZoom() || 0;
+    const staggerEvents = zoom >= 17;
+    const stackEvents = zoom >= 15 && zoom < 17;
     if (!staggerEvents) {
       for (const entry of tmPins) entry.el.style.translate = 'none';
+    }
+    if (stackEvents) {
+      const groups = new Map();
+      const day = activeDateRef.current || todayIsoStr();
+      const firstTime = entry => (entry.event.showings || [entry.event])
+        .filter(show => show.dateStr === day && show.timeStr)
+        .map(show => show.timeStr).sort()[0] || '99:99';
+      for (const entry of tmPins) {
+        const key = Number(entry.lat).toFixed(5) + ':' + Number(entry.lng).toFixed(5);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(entry);
+      }
+      const layouts = [];
+      for (const group of groups.values()) {
+        if (group.length < 2) continue;
+        group.sort((a,b) => firstTime(a).localeCompare(firstTime(b)) || String(a.id).localeCompare(String(b.id)));
+        let offset = 0;
+        for (let i = group.length - 1; i >= 0; i--) {
+          const entry = group[i];
+          layouts.push([entry.el, offset]);
+          offset -= entry.el.getBoundingClientRect().height + 3;
+        }
+      }
+      for (const [el, offset] of layouts) el.style.translate = '0px ' + offset + 'px';
     }
     const tmOccupied = [];
     const offsets = [[0,0]];
@@ -1808,7 +1831,7 @@ export default function WadUp() {
 
     tmMarkers.current[ev.id] = { marker, overlay };
 
-    const entry = { id: ev.id, type: 'tm', marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
+    const entry = { id: ev.id, type: 'tm', event: ev, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(ev.id, entry);
   }, [zoomClass]);
 
