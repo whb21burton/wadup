@@ -794,7 +794,7 @@ export default function WadUp() {
         .filter(show => show.dateStr === day && show.timeStr)
         .map(show => show.timeStr).sort()[0] || '99:99';
       for (const entry of tmPins) {
-        const key = Number(entry.lat).toFixed(5) + ':' + Number(entry.lng).toFixed(5);
+        const key = Number(entry.event.lat).toFixed(5) + ':' + Number(entry.event.lng).toFixed(5);
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(entry);
       }
