@@ -19,6 +19,7 @@ const EventSchema = z.object({
   event_date: z.string().nullable(), // YYYY-MM-DD
   event_time: z.string().nullable(), // HH:MM, 24hr
   performer: z.string().nullable(),
+  event_url: z.string().nullable(),
   event_type: z.enum(EVENT_TYPES),
   description: z.string().nullable(),
   confidence: z.number().int().min(0).max(100),
@@ -70,6 +71,8 @@ export default async function handler(req, res) {
         .trim()
         .slice(0, 8000); // keep the request small — this is a cost-bounded bulk cron, not a one-off
 
+      const links = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m => { try { const u = new URL(m[1], venue.scraping_url); return u.protocol === 'https:' && !u.username && !u.password ? u.href : null; } catch { return null; } }).filter(Boolean);
+      const allowedLinks = new Set(links);
       const response = await client.messages.parse({
         model: 'claude-sonnet-5',
         max_tokens: 4096,
@@ -82,6 +85,9 @@ Today's date: ${todayIso}
 
 Website text:
 ${text}
+
+Available page links (select only a matching individual event page; otherwise null):
+${[...allowedLinks].slice(0,200).join('\n').slice(0,12000)}
 
 Only include FUTURE events (strictly after today's date). If a date can't be determined, use null for event_date rather than guessing. Use the actual performance start time, not doors opening time. If the performance time cannot be determined, return null for event_time; never guess. If no events are found, return an empty events array.`,
         }],
@@ -102,6 +108,7 @@ Only include FUTURE events (strictly after today's date). If a date can't be det
             event_type: ev.event_type,
             performer: ev.performer || null,
             start_time: `${ev.event_date}T${validTime}:00`,
+            ticket_url: allowedLinks.has(ev.event_url) ? ev.event_url : venue.scraping_url,
             is_free: false,
             source: 'scraped',
           }, { onConflict: 'venue_id,start_time' });
