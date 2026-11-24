@@ -781,67 +781,35 @@ export default function WadUp() {
     const tmPins = [...pinRegistry.current.values()]
       .filter(e => e.type === 'tm' && e.overlay?.getMap?.() === map && e.el?.isConnected)
       .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    // Stable chronological stacks: use geographic proximity, not changing
+    // screen collision candidates. No event swaps slots during zoom.
     const zoom = map.getZoom() || 0;
-    const staggerEvents = zoom >= 17;
-    const stackEvents = zoom >= 15 && zoom < 17;
-    if (!staggerEvents) {
-      for (const entry of tmPins) entry.el.style.translate = 'none';
-    }
-    if (stackEvents) {
-      const groups = new Map();
+    for (const entry of tmPins) entry.el.style.translate = 'none';
+    if (zoom >= 15) {
       const day = activeDateRef.current || todayIsoStr();
       const firstTime = entry => (entry.event.showings || [entry.event])
         .filter(show => show.dateStr === day && show.timeStr)
         .map(show => show.timeStr).sort()[0] || '99:99';
-      for (const entry of tmPins) {
-        const key = Number(entry.event.lat).toFixed(5) + ':' + Number(entry.event.lng).toFixed(5);
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(entry);
+      const groups = [];
+      const ordered = tmPins.map(entry => ({entry, time:firstTime(entry)}))
+        .sort((a,b) => a.time.localeCompare(b.time) || String(a.entry.id).localeCompare(String(b.entry.id)));
+      for (const {entry} of ordered) {
+        const lat = Number(entry.event.lat), lng = Number(entry.event.lng);
+        const group = groups.find(g => Math.hypot((lat-g.lat)*111320,(lng-g.lng)*111320*Math.cos(lat*Math.PI/180)) <= 12);
+        if (group) group.entries.push(entry);
+        else groups.push({lat,lng,entries:[entry]});
       }
       const layouts = [];
-      for (const group of groups.values()) {
-        if (group.length < 2) continue;
-        group.sort((a,b) => firstTime(a).localeCompare(firstTime(b)) || String(a.id).localeCompare(String(b.id)));
+      for (const group of groups) {
+        if (group.entries.length < 2) continue;
         let offset = 0;
-        for (let i = group.length - 1; i >= 0; i--) {
-          const entry = group[i];
+        for (let i = group.entries.length - 1; i >= 0; i--) {
+          const entry = group.entries[i];
           layouts.push([entry.el, offset]);
-          offset -= entry.el.getBoundingClientRect().height + 3;
+          offset -= entry.el.offsetHeight + 3;
         }
       }
       for (const [el, offset] of layouts) el.style.translate = '0px ' + offset + 'px';
-    }
-    const tmOccupied = [];
-    const offsets = [[0,0]];
-    for (let ring = 1; ring <= 7; ring++) {
-      const n = Math.max(8, ring * 10);
-      for (let i = 0; i < n; i++) {
-        const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
-        offsets.push([Math.round(Math.cos(angle) * ring * 86), Math.round(Math.sin(angle) * ring * 64)]);
-      }
-    }
-    const tmLayout = staggerEvents ? tmPins : [];
-    for (const entry of tmLayout) entry.el.style.translate = 'none';
-    const tmMeasurements = tmLayout.map(entry => ({ el: entry.el, base: entry.el.getBoundingClientRect() }));
-    for (const {el, base} of tmMeasurements) {
-      if (!base.width || !base.height) continue;
-      let chosen = offsets[0], best = Infinity;
-      for (const [dx, dy] of offsets) {
-        const rect = { left:base.left+dx-5, right:base.right+dx+5,
-          top:base.top+dy-5, bottom:base.bottom+dy+5 };
-        let overlap = 0;
-        for (const q of tmOccupied) {
-          overlap += Math.max(0, Math.min(rect.right,q.right)-Math.max(rect.left,q.left))
-            * Math.max(0, Math.min(rect.bottom,q.bottom)-Math.max(rect.top,q.top));
-        }
-        const score = overlap * 10000 + Math.hypot(dx,dy);
-        if (score < best) { best = score; chosen = [dx,dy]; }
-        if (overlap === 0) break;
-      }
-      const [dx,dy] = chosen;
-      el.style.translate = dx + 'px ' + dy + 'px';
-      tmOccupied.push({left:base.left+dx-5,right:base.right+dx+5,
-        top:base.top+dy-5,bottom:base.bottom+dy+5});
     }
     // At very close zoom, spread overlapping ranked restaurant emoji+label pairs together.
     const rankedPairs = [...(pinRegistry.current?.values() || [])].filter(e => e.overlay?.__attachedEmojiShell && e.overlay?.getMap?.() === map);
@@ -1883,13 +1851,23 @@ export default function WadUp() {
         };
         // Same production and venue across dates = one pin, multiple showtimes.
         // Coordinates alone are insufficient: unrelated events can share a venue.
-        const groupKey = [norm.name.trim().toLowerCase().replace(/\\s+/g, ' '),
-          norm.address.trim().toLowerCase(), norm.city.trim().toLowerCase(),
-          norm.state.trim().toLowerCase(), Number(norm.lat).toFixed(4), Number(norm.lng).toFixed(4)].join('|');
-        if (!groupedShows.has(groupKey)) groupedShows.set(groupKey, []);
-        groupedShows.get(groupKey).push(norm);
+        const canonical = value => String(value || '').normalize('NFKC').toLowerCase().replace(/&/g,' and ').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+        const key = [canonical(norm.name),canonical(norm.city),canonical(norm.state)].join('|');
+        if (!groupedShows.has(key)) groupedShows.set(key, []);
+        const productions = groupedShows.get(key);
+        const sameVenue = other => {
+          const distance = Math.hypot((Number(norm.lat)-Number(other.lat))*111320,
+            (Number(norm.lng)-Number(other.lng))*111320*Math.cos(Number(norm.lat)*Math.PI/180));
+          return distance <= 80 || (canonical(norm.address) && canonical(norm.address) === canonical(other.address));
+        };
+        let shows = productions.find(group => sameVenue(group[0]));
+        if (!shows) { shows = []; productions.push(shows); }
+        const duplicate = shows.findIndex(show => show.id === norm.id ||
+          (show.dateStr === norm.dateStr && show.timeStr && show.timeStr === norm.timeStr));
+        if (duplicate < 0) shows.push(norm);
+        else if (!shows[duplicate].url && norm.url) shows[duplicate] = norm;
       });
-      for (const shows of groupedShows.values()) {
+      for (const shows of [...groupedShows.values()].flat()) {
         shows.sort((a,b) => a.dateStr.localeCompare(b.dateStr) || (a.timeStr || '').localeCompare(b.timeStr || '') || a.id.localeCompare(b.id));
         const representative = { ...shows[0], showings: shows };
         tmEventsRef.current.push(representative);
