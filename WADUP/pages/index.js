@@ -173,6 +173,8 @@ function specificEventEmoji(ev) {
     [/farmers.market|farmers market/, '🥕'], [/food festival|food.truck/, '🍔'],
     [/art festival|art fair|craft fair/, '🎨'], [/holiday market|christmas market/, '🎄'],
     [/comedy|comedian|stand.up|improv/, '😂'],
+    [/\b(astronomy|astrophysics|astrophysicist|physics|science|planetarium|cosmology|space exploration|professor brian cox|brian cox)\b/, '🔭'],
+    [/\b(lecture|lectures|seminar|educational|keynote|public talk|speaker series|tedx)\b/, '🎓'],
     [/opera/, '🎼'], [/ballet/, '🩰'], [/theat|theater|theatre|broadway|musical|stage play/, '🎭'],
     // Consistent music pins: genre-specific microphones/instruments looked
     // like unrelated categories. Every Ticketmaster music event uses 🎵.
