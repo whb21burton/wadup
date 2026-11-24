@@ -6,12 +6,12 @@ export function ticketDestination(url) {
 export function ticketStatus(e) { const v=e.ticket_verification; return v?.url === ticketDestination(e.url) && Date.parse(v.expires_at)>Date.now() ? v.status : 'unknown'; }
 export function ticketQuality(url) {
   try {
-    let u = new URL(url);
-    if (u.hostname === 'ticketmaster.evyy.net') u = new URL(u.searchParams.get('u'));
-    if (rejectedEventIds.has(u.pathname.split('/').filter(Boolean).pop())) return 0;
-    if (u.protocol !== 'https:') return 0;
-    if (!/(^|\.)(ticketmaster\.com|livenation\.com)$/.test(u.hostname)) return 0;
-    return /\/event\/[a-z0-9_-]+(?:\/|$)/i.test(u.pathname) ? 2 : 0;
+    let u=new URL(url);
+    if(u.hostname==='ticketmaster.evyy.net') u=new URL(u.searchParams.get('u'));
+    if(u.protocol!=='https:' || u.username || u.password || u.port) return 0;
+    if(rejectedEventIds.has(u.pathname.split('/').filter(Boolean).pop())) return 0;
+    const hosts=['www.ticketmaster.com','ticketmaster.com','www.ticketmaster.ca','ticketmaster.ca','www.livenation.com','livenation.com','www.ticketweb.com','ticketweb.com','www.ticketweb.ca','ticketweb.ca','www.universe.com','universe.com','www.etix.com','www.axs.com','seatgeek.com','www.gofevo.com'];
+    return hosts.includes(u.hostname) && u.pathname.length>1 ? 2 : 0;
   } catch { return 0; }
 }
 export function preferredTicketRecord(a,b) {
