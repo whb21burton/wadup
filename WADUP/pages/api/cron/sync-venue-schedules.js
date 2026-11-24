@@ -4,7 +4,8 @@ import {fetchOfficialSchedule} from '../../../lib/venue-schedule-fetch';
 export const config={maxDuration:60};
 export default async function handler(req,res){
  const secret=process.env.CRON_SECRET;
- if(!secret||req.headers.authorization!=='Bearer '+secret)return res.status(401).end();
+ if(!secret)return res.status(503).json({error:'Server authorization is not configured'});
+ if(req.headers.authorization!=='Bearer '+secret.trim())return res.status(401).json({error:req.headers.authorization?'Authorization does not match server configuration':'Authorization header missing'});
  if(!['GET','POST'].includes(req.method))return res.status(405).end();
  if(process.env.VENUE_SYNC_ENABLED!=='1')return res.status(503).json({error:'Venue staging sync disabled'});
  const results=[];
