@@ -2644,7 +2644,8 @@ export default function WadUp() {
     clearTimeout(searchDebounceRef.current);
     const q = searchQuery.trim().toLowerCase();
     if (!q) { setSearchResults({ places: [], events: [], categories: [] }); return; }
-    searchDebounceRef.current = setTimeout(() => {
+    let cancelled = false;
+    searchDebounceRef.current = setTimeout(async () => {
       const places = venuesRef.current.filter(v =>
         v.live && (
           v.name.toLowerCase().includes(q) ||
@@ -2659,8 +2660,15 @@ export default function WadUp() {
       const categories = CATEGORY_CHIPS.filter(c => c.label.toLowerCase().includes(q));
       setSearchResults({ places, events, categories });
       setActiveResultIndex(0);
+      if (places.length >= 8 || q.length < 2) return;
+      const pattern = '%' + q.replace(/[%_*,()]/g, '') + '%';
+      const { data, error } = await supabase.from('venues').select('*').eq('is_hidden', false).or(`name.ilike.${pattern},city.ilike.${pattern},subcategory.ilike.${pattern}`).limit(30);
+      if (cancelled || error) return;
+      const merged = new Map(places.map(v => [v.id, v]));
+      for (const v of data || []) if (isVenueEligible({...v, live:true}) && !merged.has(v.id)) merged.set(v.id, {...v, live:true});
+      setSearchResults({ places: [...merged.values()].slice(0,8), events, categories });
     }, 300);
-    return () => clearTimeout(searchDebounceRef.current);
+    return () => { cancelled = true; clearTimeout(searchDebounceRef.current); };
   }, [searchQuery]);
 
   // Flattened in Places → Events → Categories order so arrow-key navigation
