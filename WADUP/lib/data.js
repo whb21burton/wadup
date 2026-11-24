@@ -407,7 +407,7 @@ const EVENT_TYPE_ICONS = {
   farmers_market: '🧑‍🌾',
   trivia: '🧠',
   dj: '🎧',
-  comedy: '🎤',
+  comedy: '😂',
   karaoke: '🎤',
   sports: '🏆',
   festival: '🎪',
