@@ -1844,6 +1844,26 @@ export default function WadUp() {
         if (!page || page.length < 1000) break;
       }
       if (request !== tmAreaRequest.current) return;
+      // Merge official performances only where a venue location is available.
+      // Existing Ticketmaster rows remain intact if the official feed fails.
+      try {
+        const day = activeDateRef.current || todayStr;
+        const response = await fetch('/api/venue-performances?date='+encodeURIComponent(day));
+        if(response.ok){
+          const {performances=[]}=await response.json();
+          for(const p of performances){
+            const venueRows=events.filter(e=>matchEventVenue(e)?.id===p.venueId);
+            const normalize=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+            const matches=venueRows.filter(e=>normalize(e.name)===normalize(p.name)&&e.date_str===p.dateStr&&String(e.time_str||'').slice(0,5)===String(p.timeStr||'').slice(0,5));
+            if(matches.length){matches.forEach(e=>{e.official_url=p.officialUrl;});continue;}
+            // Do not invent coordinates for venues without a source location.
+            const loc=venueRows.find(e=>Number.isFinite(Number(e.lat))&&Number.isFinite(Number(e.lng))&&e.lat!=null&&e.lng!=null);
+            if(!loc)continue;
+            events.push({tm_id:'official_'+[p.venueId,p.name,p.dateStr,p.timeStr].map(encodeURIComponent).join('_'),name:p.name,venue_name:p.venueName,city:p.city,state:p.state,lat:loc.lat,lng:loc.lng,address:loc.address,date_str:p.dateStr,time_str:p.timeStr,segment:p.venueType==='theater'?'Theater':'Music',official_url:p.officialUrl,url:''});
+          }
+        }
+      }catch(e){console.warn('Official venue feed unavailable',e);}
+      if(request!==tmAreaRequest.current)return;
       tmEventsRef.current = [];
       const groupedShows = new Map();
       suppressTicketDuplicates(events || []).forEach((ev) => {
@@ -1851,7 +1871,7 @@ export default function WadUp() {
         const norm = {
           id: 'tm_' + ev.tm_id, _isTM: true,
           name: ev.name, cat: 'events',
-          venueId: venue?.id, venueType: venue?.type, venueWebsite: venue?.website, venueName: venue?.name || ev.venue_name,
+          venueId: venue?.id, venueType: venue?.type, venueWebsite: ev.official_url || venue?.website, venueName: venue?.name || ev.venue_name,
           segment: ev.segment, genre: ev.genre, subGenre: ev.sub_genre,
           sportEmoji: ev.sport_emoji || undefined,
           address: ev.address || '',
