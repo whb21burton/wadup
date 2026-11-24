@@ -1,8 +1,10 @@
 // Structural validation only; never request ticket pages during map rendering.
+const rejectedEventIds = new Set(['Z7r9jZ1A7Pv4y']);
 export function ticketQuality(url) {
   try {
     let u = new URL(url);
     if (u.hostname === 'ticketmaster.evyy.net') u = new URL(u.searchParams.get('u'));
+    if (rejectedEventIds.has(u.pathname.split('/').filter(Boolean).pop())) return 0;
     if (u.protocol !== 'https:') return 0;
     if (!/(^|\.)(ticketmaster\.com|livenation\.com)$/.test(u.hostname)) return 0;
     return /\/event\/[a-z0-9_-]+(?:\/|$)/i.test(u.pathname) ? 2 : 0;
@@ -16,18 +18,16 @@ export function suppressTicketDuplicates(rows) {
   const groups = new Map();
   const norm = s => String(s||'').normalize('NFKC').toLowerCase().replace(/&/g,' and ').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
   for (const e of rows) {
+    if (rejectedEventIds.has(String(e.tm_id || e.id || '').replace(/^tm_/,''))) continue;
+    try { let u = new URL(e.url); if (u.hostname === 'ticketmaster.evyy.net') u = new URL(u.searchParams.get('u')); if (rejectedEventIds.has(u.pathname.split('/').filter(Boolean).pop())) continue; } catch {}
     const date=e.dateStr||e.date_str, time=e.timeStr||e.time_str;
     const key = date && time && e.city ? [norm(e.name),norm(e.city),norm(e.state),date,time.slice(0,5)].join('|') : 'id:'+ (e.id||e.tm_id);
     if (!groups.has(key)) groups.set(key,[]);
     groups.get(key).push(e);
   }
   return [...groups.values()].flatMap(group => {
-    const valid=group.filter(e=>ticketQuality(e.url)>0);
-    // Only suppress ambiguous distant listings when a single strong
-    // purchase candidate exists. Preserve distinct valid venues.
-    const priced=valid.filter(e=>e.price);
-    if (valid.length===1) return valid;
-    if (priced.length===1 && group.length>1) return group.filter(e=>e===priced[0] || (ticketQuality(e.url)>0 && e.price));
+    // A plausible URL is not proof that a purchase page works.
+    // Preserve ambiguous records rather than discard a working event.
     return group;
   });
 }
