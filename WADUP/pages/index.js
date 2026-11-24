@@ -584,8 +584,9 @@ export default function WadUp() {
 
     const chip = activeCategoryRef.current;
     const date = activeDateRef.current;
+    const venuesById = new Map(venuesRef.current.map(v => [v.id, v]));
     Object.entries(mapMarkers.current).forEach(([id, entry]) => {
-      const venue = venuesRef.current.find(v => v.id === id);
+      const venue = venuesById.get(id);
       if (!venue) return;
       // Events chip needs the same "category tag alone isn't enough, it
       // needs a real venue_events row for the selected day" rule
@@ -663,7 +664,8 @@ export default function WadUp() {
     const inViewport = eligible.filter(v =>
       v.lat != null && v.lng != null && bounds && bounds.contains(new window.google.maps.LatLng(v.lat, v.lng))
     );
-    const outsideViewport = eligible.filter(v => !inViewport.includes(v));
+    const visibleIds = new Set(inViewport.map(v => v.id));
+    const outsideViewport = eligible.filter(v => !visibleIds.has(v.id));
 
     // Events chip ranks live-right-now venues first, then the rest by the
     // admin's manual event_rank order (see pages/admin/venues.js's Event
@@ -2390,7 +2392,7 @@ export default function WadUp() {
       if (userLocationRef.current) updateUserLocationMarker(userLocationRef.current, map);
 
       // Zoom listener
-      map.addListener('zoom_changed', () => {
+      const refreshZoomVisuals = () => {
         const z = map.getZoom();
         const zc = z < 7 ? 'zoom-far' : z < 11 ? 'zoom-mid' : 'zoom-near';
         setZoomClass(zc);
@@ -2402,6 +2404,13 @@ export default function WadUp() {
         document.querySelectorAll('.wu-pin-discovery').forEach(el => {
           el.style.setProperty('--wu-dot-size', `${discoveryDotSize(z)}px`);
           el.classList.toggle('wu-discovery-named', z >= 16);
+        });
+      };
+      map.addListener('zoom_changed', () => {
+        if (map.__wadupZoomFrame) return;
+        map.__wadupZoomFrame = requestAnimationFrame(() => {
+          map.__wadupZoomFrame = null;
+          refreshZoomVisuals();
         });
       });
 
