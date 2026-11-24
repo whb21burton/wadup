@@ -1,3 +1,4 @@
+import { ticketQuality, preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -1750,7 +1751,7 @@ export default function WadUp() {
       .sort((a,b) => ((a.dateStr || '') + 'T' + (a.timeStr || '')).localeCompare((b.dateStr || '') + 'T' + (b.timeStr || '')));
     const showingRows = performances.map(show => {
       const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
-      const ticketLink = show.url?.startsWith('http') ? withTMAffiliateTracking(show.url) : null;
+      const ticketLink = ticketQuality(show.url) ? withTMAffiliateTracking(show.url) : null;
       return `<div style="padding:10px 0;border-top:1px solid #e4e7eb">
         <div class="popup-row"><span class="popup-stat">📅 ${escapeHtml(day)} · ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : 'Time TBD')}</span>
         ${show.price ? `<span class="popup-stat popup-price">${escapeHtml(show.price)}</span>` : ''}</div>
@@ -1836,7 +1837,7 @@ export default function WadUp() {
       if (request !== tmAreaRequest.current) return;
       tmEventsRef.current = [];
       const groupedShows = new Map();
-      (events || []).forEach((ev) => {
+      suppressTicketDuplicates(events || []).forEach((ev) => {
         const norm = {
           id: 'tm_' + ev.tm_id, _isTM: true,
           name: ev.name, cat: 'events',
@@ -1865,7 +1866,7 @@ export default function WadUp() {
         const duplicate = shows.findIndex(show => show.id === norm.id ||
           (show.dateStr === norm.dateStr && show.timeStr && show.timeStr === norm.timeStr));
         if (duplicate < 0) shows.push(norm);
-        else if (!shows[duplicate].url && norm.url) shows[duplicate] = norm;
+        else shows[duplicate] = preferredTicketRecord(shows[duplicate], norm);
       });
       for (const shows of [...groupedShows.values()].flat()) {
         shows.sort((a,b) => a.dateStr.localeCompare(b.dateStr) || (a.timeStr || '').localeCompare(b.timeStr || '') || a.id.localeCompare(b.id));
