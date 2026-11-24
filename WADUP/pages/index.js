@@ -2028,6 +2028,7 @@ export default function WadUp() {
   // ── Load real Chattanooga venues from Supabase (Google Places-sourced) ──
   const venueAreaCache = useRef(null);
   const venueAreaRequest = useRef(0);
+  const venueAreaPending = useRef(null);
   const loadVenuesFromSupabase = useCallback(async (force = false) => {
     const bounds = mapObj.current?.getBounds();
     if (!bounds) return;
@@ -2041,7 +2042,10 @@ export default function WadUp() {
     const lngPad = Math.max(.03, (view.e - view.w) * .5);
     const area = { s: Math.max(-90, view.s-latPad), n: Math.min(90, view.n+latPad),
       w: Math.max(-180, view.w-lngPad), e: Math.min(180, view.e+lngPad) };
+    const pending = venueAreaPending.current;
+    if (!force && pending && view.s >= pending.s && view.n <= pending.n && view.w >= pending.w && view.e <= pending.e && view.w <= view.e) return;
     const request = ++venueAreaRequest.current;
+    venueAreaPending.current = area;
     let data = [];
     for (let from = 0; ; from += 1000) {
       let query = supabase.from('venues').select('*').eq('is_hidden', false)
@@ -2049,11 +2053,12 @@ export default function WadUp() {
       if (view.w <= view.e) query = query.gte('lng', area.w).lte('lng', area.e);
       const { data: page, error } = await query.order('id').range(from, from+999);
       if (request !== venueAreaRequest.current) return;
-      if (error || !page) { console.error('Wadup venue load failed:', error); return; }
+      if (error || !page) { venueAreaPending.current = null; console.error('Wadup venue load failed:', error); return; }
       data.push(...page);
       if (page.length < 1000) break;
     }
     if (request !== venueAreaRequest.current) return;
+    venueAreaPending.current = null;
     venueAreaCache.current = { ...area, at: Date.now() };
     const retainedIds = new Set(data.map(v => v.id));
     for (const [id, entry] of Object.entries(mapMarkers.current)) {
@@ -2091,14 +2096,23 @@ export default function WadUp() {
     const rangeEnd = new Date(now); rangeEnd.setHours(23, 59, 59, 999); rangeEnd.setDate(rangeEnd.getDate() + 6);
     const pad2 = (n) => String(n).padStart(2, '0');
     const asNaive = (d) => `${localIsoDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-    const { data: eventRows, error: eventsError } = await supabase
-      .from('venue_events')
-      .select('venue_id, title, event_type, performer, start_time, end_time')
-      .gte('start_time', asNaive(dayStart))
-      .lte('start_time', asNaive(rangeEnd));
+    const eventRows = [];
+    const ids = [...new Set(data.map(v => v.id))];
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      for (let from = 0; ; from += 1000) {
+        const { data: page, error } = await supabase.from('venue_events')
+          .select('venue_id, title, event_type, performer, start_time, end_time')
+          .in('venue_id', ids.slice(offset, offset + 100))
+          .gte('start_time', asNaive(dayStart)).lte('start_time', asNaive(rangeEnd))
+          .order('start_time').order('venue_id').range(from, from + 999);
+        if (request !== venueAreaRequest.current) return;
+        if (error) { venueAreaCache.current = null; console.error('venue_events load failed:', error.message); return; }
+        eventRows.push(...(page || []));
+        if (!page || page.length < 1000) break;
+      }
+    }
     if (request !== venueAreaRequest.current) return;
-    if (eventsError) console.error('venue_events load failed:', eventsError.message);
-    venueEventsRef.current = eventRows || [];
+    venueEventsRef.current = eventRows;
     setFeedRevision(v => v + 1);
 
     const todayIso = localIsoDate(now);
@@ -2143,6 +2157,7 @@ export default function WadUp() {
     const citiesOnMap = [...new Set(venuesRef.current.map(v => v.city).filter(Boolean))];
     Promise.all(citiesOnMap.map(city => Promise.all([getLiveTrendingVenueIds(supabase, city), getBestRated(city, 10)])))
       .then(perCityResults => {
+        if (request !== venueAreaRequest.current) return;
         let changed = false;
         perCityResults.forEach(([liveTrendingIds, ratedList]) => {
           liveTrendingIds.forEach(id => { if (!trendingVenueIds.current.has(id)) { trendingVenueIds.current.add(id); changed = true; } });
