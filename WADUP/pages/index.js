@@ -1826,10 +1826,11 @@ export default function WadUp() {
     const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
     const view = {s:sw.lat(), n:ne.lat(), w:sw.lng(), e:ne.lng()};
     const todayStr = localIsoDate();
-    const covers = a => a && a.day === todayStr && view.s >= a.s && view.n <= a.n && view.w >= a.w && view.e <= a.e && view.w <= view.e;
+    const selectedDay = activeDateRef.current || todayStr;
+    const covers = a => a && a.day === todayStr && a.selectedDay === selectedDay && view.s >= a.s && view.n <= a.n && view.w >= a.w && view.e <= a.e && view.w <= view.e;
     if (covers(tmAreaPending.current) || (covers(tmAreaCache.current) && Date.now()-tmAreaCache.current.at < 300000)) return;
     const dy = Math.max(.05,(view.n-view.s)*.5), dx = Math.max(.05,(view.e-view.w)*.5);
-    const area = {s:Math.max(-90,view.s-dy),n:Math.min(90,view.n+dy),w:Math.max(-180,view.w-dx),e:Math.min(180,view.e+dx),day:todayStr};
+    const area = {s:Math.max(-90,view.s-dy),n:Math.min(90,view.n+dy),w:Math.max(-180,view.w-dx),e:Math.min(180,view.e+dx),day:todayStr,selectedDay};
     const request = ++tmAreaRequest.current;
     tmAreaPending.current = area;
     try {
@@ -1847,7 +1848,7 @@ export default function WadUp() {
       // Merge official performances only where a venue location is available.
       // Existing Ticketmaster rows remain intact if the official feed fails.
       try {
-        const day = activeDateRef.current || todayStr;
+        const day = selectedDay;
         const response = await fetch('/api/venue-performances?date='+encodeURIComponent(day));
         if(response.ok){
           const {performances=[]}=await response.json();
@@ -2733,6 +2734,7 @@ export default function WadUp() {
     const selected = pinRegistry.current.get(mapObj.current?.__wadupSelectedVenueId);
     if (selected?.type === 'tm') infoWindow.current?.close();
     filterPins();
+    fetchTM();
   };
 
   // ── Fly to venue ──
