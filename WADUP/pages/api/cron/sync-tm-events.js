@@ -1,4 +1,4 @@
-import { suppressTicketDuplicates } from '../../../lib/ticket-quality';
+import { verifyTicket } from '../../../lib/ticket-verifier';
 // pages/api/cron/sync-tm-events.js — runs every 2 hours (see vercel.json),
 // fetches Ticketmaster events across every TM_REGIONS city, and replaces
 // the contents of tm_events_cache. pages/index.js reads THAT table instead
@@ -119,7 +119,23 @@ export default async function handler(req, res) {
   // this loop safe to re-run/retry with no cache-clearing step at all, so a
   // failed run just leaves the previous cycle's data in place instead of
   // nothing.
-  const filteredEvents = suppressTicketDuplicates(allEvents);
+  // Preserve all raw records. Verification is opt-in until the database
+  // column has been provisioned and the preview has been tested.
+  const filteredEvents = allEvents;
+  if (process.env.TICKET_VERIFY_ENABLED === '1') {
+    const horizon = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+    const upcoming = allEvents.filter(e=>e.date_str<=horizon);
+    const {data:old,error:readError}=await supabaseAdmin.from('tm_events_cache')
+      .select('tm_id,ticket_verification').gte('date_str',now.toISOString().slice(0,10)).lte('date_str',horizon).limit(10000);
+    if (!readError) {
+      const prior=new Map((old||[]).map(e=>[e.tm_id,e.ticket_verification]));
+      for (const e of allEvents) if(prior.has(e.tm_id)) e.ticket_verification=prior.get(e.tm_id);
+      const candidates=upcoming.filter(e=>!e.ticket_verification || Date.parse(e.ticket_verification.expires_at)<=Date.now()).slice(0,12);
+      for(let i=0;i<candidates.length;i+=4) await Promise.all(candidates.slice(i,i+4).map(async e=>{
+        e.ticket_verification=await verifyTicket(e,prior.get(e.tm_id));
+      }));
+    } else errors.push('Ticket verification unavailable: '+readError.message);
+  }
   for (let i = 0; i < filteredEvents.length; i += 500) {
     const batch = filteredEvents.slice(i, i + 500);
     const { error: insertError } = await supabaseAdmin
