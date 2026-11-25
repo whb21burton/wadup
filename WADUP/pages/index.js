@@ -1021,6 +1021,7 @@ export default function WadUp() {
     if (!entry) return;
     const map = mapObj.current;
     if (map) {
+      map.__wadupCloseEventHover?.();
       // Selection belongs to the venue ID, not the transient overlay DOM node.
       const previous = map.__wadupSelectedPin;
       if (previous && previous !== entry.el) {
@@ -1801,6 +1802,39 @@ export default function WadUp() {
     el.addEventListener('pointerenter', syncEventStack);
     el.addEventListener('pointerleave', syncEventStack);
     el.addEventListener('wadup-restack', syncEventStack);
+    if (ev.venueId === 'chattanooga-songbirds') {
+      let closeTimer;
+      const cancelClose = () => clearTimeout(closeTimer);
+      const scheduleClose = () => {
+        cancelClose();
+        closeTimer = setTimeout(() => {
+          if (map.__wadupHoveredEvent === ev.id) map.__wadupCloseEventHover?.();
+        }, 350);
+      };
+      el.addEventListener('pointerenter', event => {
+        if (event.pointerType !== 'mouse' || map.__wadupSelectedPin || map.__wadupMoving) return;
+        if (map.__wadupHoveredEvent === ev.id) { cancelClose(); return; }
+        map.__wadupCloseEventHover?.();
+        const popup = new window.google.maps.InfoWindow({maxWidth:240,disableAutoPan:true});
+        map.__wadupHoveredEvent = ev.id;
+        map.__wadupCloseEventHover = () => {
+          cancelClose();
+          popup.close();
+          map.__wadupHoveredEvent = null;
+          map.__wadupCloseEventHover = null;
+        };
+        const content = document.createElement('div');
+        content.innerHTML = buildTMPopup();
+        content.addEventListener('pointerenter', cancelClose);
+        content.addEventListener('pointerleave', scheduleClose);
+        popup.setContent(content);
+        popup.open(map, marker);
+        popup.addListener('closeclick', () => {
+          if (map.__wadupHoveredEvent === ev.id) map.__wadupCloseEventHover?.();
+        });
+      });
+      el.addEventListener('pointerleave', scheduleClose);
+    }
 
     tmMarkers.current[ev.id] = { marker, overlay };
 
@@ -2634,6 +2668,7 @@ export default function WadUp() {
       const map = mapObj.current;
       if (map) {
         if (map.__wadupPerf) map.__wadupPerf.moving = false;
+        map.__wadupCloseEventHover?.();
         map.__wadupMoving = true;
         if (map.__wadupZoomFrame) cancelAnimationFrame(map.__wadupZoomFrame);
         if (map.__wadupLabelFrame) cancelAnimationFrame(map.__wadupLabelFrame);
@@ -2741,6 +2776,7 @@ export default function WadUp() {
   const onDayClick = (iso) => {
     activeDateRef.current = iso;
     setActiveDate(iso);
+    mapObj.current?.__wadupCloseEventHover?.();
     // Close the old event popup so it cannot display the previous day's shows.
     const selected = pinRegistry.current.get(mapObj.current?.__wadupSelectedVenueId);
     if (selected?.type === 'tm') infoWindow.current?.close();
