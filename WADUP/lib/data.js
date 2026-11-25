@@ -33,6 +33,7 @@ export const CATEGORY_CHIPS = [
     { id: 'Brewery', label: 'Brewery' },
     { id: 'Dive Bar', label: 'Dive Bar' },
     { id: 'Karaoke Bar', label: 'Karaoke Bar' },
+    { id: 'Pool Hall', label: 'Pool Hall' },
     { id: 'Rooftop Bar', label: 'Rooftop Bar' },
     { id: 'Social Bar', label: 'Social Bar' },
   ]},

@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { canRunLegacyCron, loadCronDatabase } from '../../../lib/cron-auth';
-import { usesSongbirdsFeed } from '../../../lib/songbirdsEvents.mjs';
+import { matchEventVenue } from '../../../lib/event-venues';
 
 const EVENT_TYPES = ['live_music', 'trivia', 'dj', 'comedy', 'karaoke', 'other'];
 
@@ -56,7 +56,7 @@ export default async function handler(req, res) {
   const results = { scraped: 0, events_found: 0, saved_live: 0, saved_pending: 0, errors: [] };
 
   for (const venue of venues) {
-    if (process.env.VENUE_SYNC_ENABLED === '1' && usesSongbirdsFeed(venue.scraping_url)) continue;
+    if (process.env.VENUE_SYNC_ENABLED === '1' && matchEventVenue({...venue, venue_name:venue.name})) continue;
     try {
       const pageRes = await fetch(venue.scraping_url, {
         headers: { 'User-Agent': 'WadUp Event Bot/1.0' },

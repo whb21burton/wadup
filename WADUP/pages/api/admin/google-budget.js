@@ -8,7 +8,7 @@ export default async function handler(req, res) {
       req.headers.authorization !== 'Bearer ' + process.env.ADMIN_SYNC_PASSWORD)
     return res.status(401).json({ error: 'Unauthorized' });
   const now = new Date();
-  const month = now.toISOString().slice(0, 7);
+  const month = new Intl.DateTimeFormat('sv-SE', {timeZone:'America/Los_Angeles'}).format(now).slice(0, 7);
   const [{ data: snapshots, error: e1 }, { data: runs, error: e2 }, { count: queued, error: e3 }] = await Promise.all([
     supabaseAdmin.from('google_api_budget_snapshots').select('*').eq('month_utc', month)
       .eq('sku', 'nearby_search_pro').eq('source', 'google_cloud')
@@ -19,8 +19,9 @@ export default async function handler(req, res) {
   ]);
   if (e1 || e2 || e3) return res.status(503).json({ error: e1?.message || e2?.message || e3?.message });
   const snapshot = snapshots?.[0] || null;
-  const fresh = !!snapshot && now.getTime() - new Date(snapshot.captured_at).getTime() < 6 * 3600000;
-  const pending = (runs || []).filter(r => !snapshot || new Date(r.started_at) > new Date(snapshot.captured_at))
+  const age = now.getTime() - Date.parse(snapshot?.captured_at);
+  const fresh = Number.isFinite(age) && age >= 0 && age < 6 * 3600000;
+  const pending = (runs || []).filter(r => !snapshot || Date.parse(r.started_at) >= Date.parse(snapshot.captured_at))
     .reduce((sum, r) => sum + (r.api_calls || 0), 0);
   const estimated = snapshot ? snapshot.requests + pending : null;
   const remaining = estimated == null ? null : Math.max(0, TARGET - estimated);
@@ -28,7 +29,7 @@ export default async function handler(req, res) {
     operational_target: TARGET, safety_reserve: FREE_CAP - TARGET,
     verified_sku_snapshot: fresh, snapshot_at: snapshot?.captured_at || null,
     estimated_monthly_requests: estimated, remaining_to_target: remaining,
-    queued_tiles: queued, discovery_enabled: fresh && process.env.GOOGLE_PLACES_FREE_BUDGET_VERIFIED === 'true',
+    queued_tiles: queued, discovery_enabled: fresh && remaining > 0 && process.env.GOOGLE_PLACES_FREE_BUDGET_VERIFIED === 'true',
     pricing: { currency: 'USD', extra_requests_per_1000: PRICE_PER_1000,
       examples: [{ additional_calls: 1000, estimated_cost: 32 },
         { additional_calls: 5000, estimated_cost: 160 },

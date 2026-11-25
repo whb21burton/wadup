@@ -36,3 +36,27 @@ revoke all on function public.write_official_venue_snapshot(text,timestamptz,tex
   from public, anon, authenticated;
 grant execute on function public.write_official_venue_snapshot(text,timestamptz,text,text,jsonb,boolean)
   to service_role;
+
+create index if not exists official_venue_performances_date_cursor_idx
+  on public.official_venue_performances (local_date, venue_id, performance_key);
+
+create or replace function public.read_official_venue_performances(
+  p_date date, p_after_venue text default '', p_after_key text default ''
+) returns table (venue_id text, performance_key text, name text, local_date date,
+  local_time time, official_url text, last_seen_at timestamptz)
+language sql stable set search_path = '' as $$
+  select p.venue_id, p.performance_key, p.name, p.local_date, p.local_time, p.official_url, p.last_seen_at
+  from public.official_venue_performances p
+  left join public.official_venue_sync_status s on s.venue_id = p.venue_id
+  where p.local_date = p_date
+    and (p.venue_id, p.performance_key) > (p_after_venue, p_after_key)
+    and p.last_seen_at >= now() - interval '7 days'
+    and (s.last_complete_at is null or p.last_seen_at >= s.last_complete_at)
+  order by p.venue_id, p.performance_key
+  limit 250;
+$$;
+
+revoke all on function public.read_official_venue_performances(date,text,text)
+  from public, anon, authenticated;
+grant execute on function public.read_official_venue_performances(date,text,text)
+  to service_role;

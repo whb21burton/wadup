@@ -6,6 +6,7 @@ import {reconcileVenuePerformances} from '../lib/reconcile-venue-performances.js
 import {canRunLegacyCron} from '../lib/cron-auth.js';
 import {CATEGORY_CHIPS,venueMatchesChip} from '../lib/data.js';
 import {verifyTicket} from '../lib/ticket-verifier.js';
+import {renderEventPopup} from '../lib/event-popup.js';
 import {matchEventVenue} from '../lib/event-venues.js';
 import {fetchSongbirdsEvents} from '../lib/songbirdsEvents.mjs';
 test('reported Lupita duplicate is suppressed only when replacement exists',()=>{
@@ -141,4 +142,32 @@ test('ticket verification treats access blocks and temporary failures as inconcl
  assert.equal(first.status,'unknown');
  assert.equal(second.status,'dead');
  assert.equal((await verifyTicket({url},{...second,expires_at:'2000-01-01'},failure(403))).status,'dead');
+});
+test('same provider performance ID reconciles a title variation only at the exact venue and showtime',()=>{
+ const official={name:'Venue title',venueId:'walker',dateStr:'2026-12-03',timeStr:'19:00:00',officialUrl:'https://www.ticketmaster.com/event/ABCD?brand=walker'};
+ const url='https://ticketmaster.com/provider-title/event/ABCD';
+ const ticket={...official,name:'Provider title',url,ticket_verification:{url,status:'working',expires_at:'2099-01-01'}};
+ const unmatched={...ticket,timeStr:'14:00:00'};
+ const result=reconcileVenuePerformances([official],[ticket,unmatched]);
+ assert.equal(result.performances[0].purchaseUrl,url);
+ assert.deepEqual(result.unmatchedTicketRows,[unmatched]);
+});
+test('rendered event popup orders links by showtime and labels official selectors',()=>{
+ const dateStr='2026-12-04';
+ const alliance='https://my.alliancetheatre.org/1/2';
+ const selector='https://foxtheatre.evenue.net/cgi-bin/ncommerce3/SEGetGroupList?groupCode=SHOW';
+ const affiliate='https://www.ticketmaster.com/event/ABCD?brand=walker';
+ const html=renderEventPopup({name:'<Test>',cat:'events',showings:[
+  {dateStr,timeStr:'19:00:00',officialUrl:selector},
+  {dateStr:'2026-12-05',timeStr:'16:00:00',officialUrl:'https://example.org/wrong-day'},
+  {dateStr,timeStr:'14:00:00',officialUrl:alliance},
+  {dateStr,timeStr:'17:00:00',officialUrl:affiliate},
+ ]},dateStr,'🎭','test');
+ const hrefs=[...html.matchAll(/href="([^"]+)"/g)].map(link=>link[1]);
+ assert.equal(hrefs.length,3);
+ assert.equal(hrefs[0],alliance);
+ assert.equal(ticketDestination(hrefs[1]),affiliate);
+ assert.equal(hrefs[2],selector);
+ assert.match(html,/Choose a performance on the official site/);
+ assert.match(html,/&lt;Test&gt;/);
 });

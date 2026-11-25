@@ -27,6 +27,20 @@ export function affiliateTicketUrl(ticketUrl, account) {
  }
  return `https://ticketmaster.evyy.net/c/${encodeURIComponent(account)}/264167/4272?u=${encodeURIComponent(destination)}`;
 }
+export function officialTicketLink(officialUrl, venueWebsite, affiliateAccount) {
+ try {
+  const url=new URL(officialUrl);
+  if(url.protocol!=='https:'||url.username||url.password||url.port)return null;
+  if(ticketDestination(url.href)&&!ticketQuality(url.href))return null;
+  if(url.href===venueWebsite||url.pathname==='/')return null;
+  let label='View official event';
+  if(url.hostname==='foxtheatre.evenue.net'&&/SEGet(?:Group|Event)List/i.test(url.pathname))label='Choose a performance on the official site';
+  else if(ticketDestination(url.href)||url.hostname==='eventim.us'||
+    (url.hostname==='my.alliancetheatre.org'&&/^\/\d+\/\d+\/?$/.test(url.pathname))||
+    (url.hostname==='foxtheatre.evenue.net'&&/^\/events\/[^/]+\/?$/.test(url.pathname)))label='Get Tickets';
+  return {url:affiliateTicketUrl(url.href,affiliateAccount)||url.href,label};
+ }catch{return null;}
+}
 export function preferredTicketRecord(a,b) {
   const score = e => (ticketStatus(e)==='working'?1000:ticketStatus(e)==='dead'?-1000:0) + ticketQuality(e.url)*100 + (e.price ? 10 : 0) + (e.address ? 4 : 0) + ((e.img || e.image_url) ? 1 : 0);
   return score(b)>score(a) ? b : a;

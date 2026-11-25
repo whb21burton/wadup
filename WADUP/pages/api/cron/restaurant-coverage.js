@@ -6,8 +6,6 @@ import { searchNearby, mapPlaceToRow, isChain, isBlockedPrimaryType } from '../.
 
 export const config = { maxDuration: 60 };
 const CENTER = { lat: 35.0456, lng: -85.3096 };
-const MONTHLY_LIMIT = 250;
-const DAILY_LIMIT = 8;
 const TYPES = [
   { type: 'restaurant', category: 'restaurant' },
   { type: 'bar', category: 'nightlife' },
@@ -103,37 +101,8 @@ export default async function handler(req, res) {
   catch (error) { sportsBarAudit = { error: String(error.message).slice(0, 180) }; }
 
   const now = new Date();
-  const month = now.toISOString().slice(0, 7);
-  const monthStart = `${month}-01T00:00:00.000Z`;
   if (process.env.GOOGLE_PLACES_FREE_BUDGET_VERIFIED !== 'true')
     return res.json({ status: 'google_budget_not_verified', sportsBarAudit });
-  const { data: snapshot, error: snapshotError } = await supabaseAdmin.from('google_api_budget_snapshots')
-    .select('requests,captured_at').eq('month_utc', month).eq('sku', 'nearby_search_pro')
-    .eq('source', 'google_cloud').order('captured_at', { ascending: false }).limit(1).maybeSingle();
-  const snapshotTime = Date.parse(snapshot?.captured_at);
-  if (snapshotError || !Number.isFinite(snapshotTime) || snapshotTime > now.getTime() ||
-      now.getTime() - snapshotTime >= 6 * 3600000 || !Number.isSafeInteger(snapshot?.requests) || snapshot.requests < 0)
-    return res.json({ status: 'google_budget_snapshot_unavailable', sportsBarAudit });
-  const dayStart = new Date(now);
-  dayStart.setUTCHours(0, 0, 0, 0);
-  // Track our own API requests. This is a usage limit, NOT a guarantee of
-  // zero Google Cloud charges (other clients can share the same API key).
-  const [monthResult, dayResult] = await Promise.all([
-    supabaseAdmin.from('restaurant_coverage_runs').select('api_calls,started_at').gte('started_at', monthStart),
-    supabaseAdmin.from('restaurant_coverage_runs').select('api_calls').gte('started_at', dayStart.toISOString()),
-  ]);
-  if (monthResult.error || dayResult.error)
-    return res.status(503).json({ status: 'usage_counter_unavailable' });
-  const monthCalls = (monthResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
-  const dayCalls = (dayResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
-  const sinceSnapshot = (monthResult.data || []).filter(run => Date.parse(run.started_at) > snapshotTime)
-    .reduce((sum, run) => sum + (run.api_calls || 0), 0);
-  if (snapshot.requests + sinceSnapshot >= 4500)
-    return res.json({ status: 'google_budget_target_reached', sportsBarAudit });
-  if (monthCalls >= MONTHLY_LIMIT)
-    return res.json({ status: 'monthly_limit_reached', monthlyLimit: MONTHLY_LIMIT, sportsBarAudit });
-  if (dayCalls >= DAILY_LIMIT)
-    return res.json({ status: 'daily_limit_reached', dailyLimit: DAILY_LIMIT, sportsBarAudit });
 
   // Recover stale interrupted tiles; attempts is the next category cursor (0..7).
   await supabaseAdmin.from('restaurant_coverage_tiles').update({ status: 'queued' })
@@ -146,18 +115,9 @@ export default async function handler(req, res) {
   if (!tile) return res.json({ status: 'all_tiles_processed', sportsBarAudit });
   const cursor = Math.min(Number(tile.attempts || 0), TYPES.length - 1);
   const task = TYPES[cursor];
-  const { data: claimed, error: claimError } = await supabaseAdmin
-    .from('restaurant_coverage_tiles').update({ status: 'running', started_at: now.toISOString() })
-    .eq('id', tile.id).eq('status', 'queued').select('id');
-  if (claimError || !claimed?.length) return res.status(409).json({ status: 'tile_already_claimed' });
-  // Reserve one API call before issuing it, including if Google later errors.
-  const { data: run, error: runError } = await supabaseAdmin
-    .from('restaurant_coverage_runs').insert({ tile_id: tile.id, api_calls: 1 })
-    .select('id').single();
-  if (runError) {
-    await supabaseAdmin.from('restaurant_coverage_tiles').update({ status: 'queued' }).eq('id', tile.id);
-    return res.status(503).json({ status: 'usage_reservation_failed' });
-  }
+  const { data: run, error: runError } = await supabaseAdmin.rpc('reserve_places_discovery', { p_tile_id: tile.id });
+  if (runError || !run) return res.status(503).json({ status: 'usage_reservation_failed' });
+  if (run.status !== 'reserved') return res.json({ status: run.status, sportsBarAudit });
   try {
     const places = await searchNearby([task.type],
       { lat: Number(tile.lat), lng: Number(tile.lng), radius: Number(tile.radius_m) },

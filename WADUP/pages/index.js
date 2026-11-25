@@ -1,7 +1,8 @@
 import { EVENT_VENUES, matchEventVenue } from '../lib/event-venues';
 import { reconcileVenuePerformances } from '../lib/reconcile-venue-performances';
 import { matchPerformance } from '../lib/venue-schedule';
-import { affiliateTicketUrl, ticketDestination, ticketFallback, ticketQuality, ticketStatus, preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
+import { preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
+import { escapeHtml, renderEventPopup } from '../lib/event-popup';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -20,7 +21,7 @@ import MapCoverEditor from '../components/MapCoverEditor';
 
 
 
-const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY || 'AIzaSyBoXf6UAa_SckH9gxfbiOK9OPpaySNH76w';
+const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY;
 // Falls back to the real Impact affiliate ID (not a placeholder) so this
 // works today even before NEXT_PUBLIC_TM_AFFILIATE_ID is set on Vercel.
 const TM_AFFILIATE_ID = process.env.NEXT_PUBLIC_TM_AFFILIATE_ID || '7691820';
@@ -173,17 +174,6 @@ function tmMatchesSportFilter(ev, selected) {
 }
 
 
-// Popups are built as raw HTML strings for Google's InfoWindow — escape any
-// text that ultimately comes from an API response or (eventually) user input.
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 // ── Day strip helpers ──
 function buildDays() {
@@ -375,7 +365,6 @@ export default function WadUp() {
     try { if (window.sessionStorage.getItem('wadup_map_state')) setShowSplash(false); } catch (e) { /* storage unavailable */ }
   }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [wadupFeedExpanded, setWadupFeedExpanded] = useState(true);
   const [zoomClass,      setZoomClass]      = useState('zoom-near');
   const [showAddBanner,  setShowAddBanner]  = useState(false);
   const [sheetExpanded,  setSheetExpanded]  = useState(false);
@@ -1745,33 +1734,7 @@ export default function WadUp() {
     // Ticketmaster performance retains its own date, time and ticket URL.
     // The date picker decides whether a production's pin is visible.
     // Build popup at click time using the currently selected calendar day.
-    const buildTMPopup = () => {
-    const selectedDay = activeDateRef.current || todayIsoStr();
-    const performances = (Array.isArray(ev.showings) && ev.showings.length ? ev.showings : [ev])
-      .filter(show => show && show.dateStr === selectedDay)
-      .sort((a,b) => ((a.dateStr || '') + 'T' + (a.timeStr || '')).localeCompare((b.dateStr || '') + 'T' + (b.timeStr || '')));
-    const showingRows = performances.map(show => {
-      const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
-      const official = show.officialUrl && /^https:\/\//i.test(show.officialUrl) && show.officialUrl !== show.venueWebsite &&
-        (!ticketDestination(show.officialUrl) || ticketQuality(show.officialUrl));
-      const fallback = (official ? {url:affiliateTicketUrl(show.officialUrl, TM_AFFILIATE_ID) || show.officialUrl,label:'Official event and ticket information'} : null) || ticketFallback(show) ||
-        (show.venueWebsite ? {url:show.venueWebsite,label:'View venue schedule'} : null);
-      const ticketLink = ticketStatus(show) !== 'dead' ? affiliateTicketUrl(show.url, TM_AFFILIATE_ID) : null;
-      return `<div style="padding:10px 0;border-top:1px solid #e4e7eb">
-        <div class="popup-row"><span class="popup-stat">📅 ${escapeHtml(day)} · ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : 'Time TBD')}</span>
-        ${show.price ? `<span class="popup-stat popup-price">${escapeHtml(show.price)}</span>` : ''}</div>
-        ${ticketLink ? `<a class="popup-link" href="${escapeHtml(ticketLink)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets for ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : day)} →</a>` : fallback ? `<a class="popup-link" href="${escapeHtml(fallback.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(fallback.label)} →</a>` : `<span style="color:#777">Ticket purchase link not confirmed.</span> <a class="popup-link" href="https://www.google.com/search?q=${encodeURIComponent([ev.name,show.city,show.dateStr,'official tickets'].join(' '))}" target="_blank" rel="noopener noreferrer">Find official tickets →</a>`}
-      </div>`;
-    }).join('');
-
-    return `
-      <div class="gm-iw">
-        <div class="popup-name">${icon} ${escapeHtml(ev.name)}</div>
-        <div class="popup-type">${escapeHtml(CATEGORY_LABELS[ev.cat] || ev.cat)}${ev.city ? ' · ' + escapeHtml(ev.city) + ', ' + escapeHtml(ev.state) : ''}</div>
-        <div class="tm-showtimes" style="max-height:300px;overflow-y:auto;overscroll-behavior:contain">${showingRows || '<div style="padding:10px 0">No performances scheduled for this day.</div>'}</div>
-        <div class="popup-source">${performances.some(show => show.officialUrl) ? 'Official venue schedule' : 'via Ticketmaster'}</div>
-      </div>`;
-    };
+    const buildTMPopup = () => renderEventPopup(ev, activeDateRef.current || todayIsoStr(), icon, TM_AFFILIATE_ID);
 
     const offsetPos = getOffsetPosition(ev.lat, ev.lng);
     const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
@@ -2624,6 +2587,9 @@ export default function WadUp() {
     // second copy (which can invalidate the callback and break the map).
     if (window.google?.maps?.Map) {
       initMap();
+    } else if (!GMAPS_KEY) {
+      setMapLoadError('Google Maps is not configured for this deployment.');
+      setShowSplash(false);
     } else {
       window.__wadupMapInit = initMap;
       window.gm_authFailure = () => {
@@ -3310,10 +3276,10 @@ export default function WadUp() {
 
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}>
             {renderDayStrip('sidebar-days')}
-            <button type="button" onClick={() => { if (activeChip === 'wadup') { setWadupFeedExpanded(v => !v); } else { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); setWadupFeedExpanded(true); setOpenDropdown(null); filterPins(); } }}
+            <button type="button" onClick={() => { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); setOpenDropdown(null); filterPins(); }}
               aria-label="WADUP happenings" aria-pressed={activeChip === 'wadup'}
               style={{ display: 'block', width: '100%', textAlign: 'center', border: 0, background: 'radial-gradient(ellipse at 50% 100%, #055b70 0%, #00313e 42%, #00101b 80%)', padding: '15px 12px 18px', cursor: 'pointer', color: '#e9ffff', fontSize: 46, letterSpacing: 3, fontWeight: 1000, lineHeight: 1.2, textShadow: '0 0 6px #3ef5ff, 0 0 18px #00d9f5, 0 0 32px #00b7dc', fontFamily: 'Impact, Arial Narrow, sans-serif' }}>WADUP</button>
-            {activeChip === 'wadup' && wadupFeedExpanded && renderWadupFeed()}
+            {activeChip === 'wadup' && renderWadupFeed()}
             {renderDesktopCategoryList()}
           </div>
         </aside>
