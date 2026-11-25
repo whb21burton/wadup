@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ticketDestination,ticketStatus,suppressTicketDuplicates} from '../lib/ticket-quality.js';
-import {parseFoxShowings,parseVenueSchedule,matchPerformance} from '../lib/venue-schedule.js';
+import {affiliateTicketUrl,ticketDestination,ticketFallback,ticketStatus,suppressTicketDuplicates} from '../lib/ticket-quality.js';
+import {allianceProduction,parseAllianceShowtimes,parseFoxShowings,parseTivoliSchedule,parseVenueSchedule,matchPerformance} from '../lib/venue-schedule.js';
+import {reconcileVenuePerformances} from '../lib/reconcile-venue-performances.js';
+import {canRunLegacyCron} from '../lib/cron-auth.js';
+import {CATEGORY_CHIPS,venueMatchesChip} from '../lib/data.js';
 import {matchEventVenue} from '../lib/event-venues.js';
 import {fetchSongbirdsEvents} from '../lib/songbirdsEvents.mjs';
 test('reported Lupita duplicate is suppressed only when replacement exists',()=>{
@@ -63,4 +66,60 @@ test('Songbirds retains each official start and its ticket link across calendar 
  assert.deepEqual(rows.map(row=>[row.timeStr,row.officialUrl]),[
   ['14:00:00','https://eventim.us/show-1'],['19:00:00','https://eventim.us/show-2'],
  ]);
+});
+test('cron authentication requires a configured matching secret',()=>{
+ assert.equal(canRunLegacyCron({},{}),false);
+ assert.equal(canRunLegacyCron({authorization:'Bearer undefined'},{}),false);
+ assert.equal(canRunLegacyCron({authorization:'Bearer secret'},{CRON_SECRET:'secret'}),true);
+ assert.equal(canRunLegacyCron({'x-admin-password':'password'},{ADMIN_SYNC_PASSWORD:'password'}),true);
+});
+test('affiliate links preserve the exact destination, including performance parameters',()=>{
+ const url='https://www.ticketmaster.com/event/1B00655CBAEA15B4?brand=walker';
+ const tracked=affiliateTicketUrl(affiliateTicketUrl(url,'APP'),'test');
+ assert.equal(ticketDestination(tracked),url);
+ assert.match(tracked,/^https:\/\/ticketmaster\.evyy\.net\/c\/test\//);
+ const partner='https://www.ticketweb.com/event/artist/123?pl=abc';
+ const linked=`https://ticketmaster.evyy.net/c/APP/264167/4272?u=${encodeURIComponent(partner)}`;
+ assert.equal(affiliateTicketUrl(linked,'test'),linked);
+});
+test('reconciliation matches accent variations but preserves individual Alliance showtimes',()=>{
+ const base={venueId:'alliance',name:'A Christmas Carol',dateStr:'2026-12-04',officialUrl:'https://www.alliancetheatre.org/production/christmas-carol/'};
+ const rows=['14:00:00','17:00:00','19:00:00'].map(timeStr=>({...base,timeStr}));
+ const url='https://www.ticketmaster.com/event/AB0123';
+ const tickets=[{...rows[0],name:'A Chrístmas Carol',url,ticket_verification:{url,status:'working',expires_at:'2099-01-01'}},
+  {...rows[1],tm_id:'Z7r9jZ1A70gug',url}, {...rows[2],dateStr:'2026-12-05',url}];
+ const result=reconcileVenuePerformances(rows,tickets);
+ assert.deepEqual(result.performances.map(p=>[p.timeStr,p.purchaseUrl]),[
+  ['14:00:00',url],['17:00:00',base.officialUrl],['19:00:00',base.officialUrl],
+ ]);
+ assert.equal(result.unmatchedTicketRows[0].dateStr,'2026-12-05');
+ assert.equal(ticketStatus(tickets[1]),'dead');
+ assert.match(ticketFallback(tickets[1]).url,/alliancetheatre\.org/);
+});
+test('serialized Tivoli calendar preserves Walker venue attribution and Eastern showtime',()=>{
+ const html='<script>window.__NUXT__=(function(a,b,c,d){return {events:[{id:"walker",title:a,is_addon:b,venue_name:c,buy_tickets_link:"https://www.ticketmaster.com/event/ABC?brand=walker",effective_datetime:"2026-12-12T14:00:00.000-05:00",main_venue_event_id:d}]}}("Elf",false,"The Walker Theatre",null));</script>';
+ assert.deepEqual(parseTivoliSchedule(html,{id:'tivoli',aliases:['Tivoli Theatre']}),[]);
+ const rows=parseTivoliSchedule(html,{id:'walker',aliases:['Walker Theatre','The Walker Theatre']});
+ assert.equal(rows[0]?.timeStr,'14:00:00');
+ assert.equal(rows[0]?.officialUrl,'https://www.ticketmaster.com/event/ABC?brand=walker');
+});
+test('Alliance binds showtime to the exact link and derives the year from the official run',()=>{
+ const page='https://www.alliancetheatre.org/production/2026-27/show/';
+ const widget='<div class="js-tnew-buy-tickets-widget-injection" data-ajax-post-id="1" data-production-seasons-id="2"></div>';
+ const metadata={name:'Show',startDate:'2026-12-18T00:00:00+0000',endDate:'1/4/2027'};
+ const production=allianceProduction(widget+`<script type="application/ld+json">${JSON.stringify(metadata)}</script>`,page);
+ const showing=(id,date,time)=>`<a href="https://my.alliancetheatre.org/2/${id}" aria-label="Buy Tickets for the performance on ${date} at ${time}">${time}</a>`;
+ const rows=parseAllianceShowtimes(showing(11,'Jan 2','2:00 PM')+showing(12,'Jan 2','7:00 PM')+showing(13,'Feb 2','7:00 PM'),production,'alliance');
+ assert.deepEqual(rows.map(row=>[row.dateStr,row.timeStr,row.officialUrl]),[
+  ['2027-01-02','14:00:00','https://my.alliancetheatre.org/2/11'],['2027-01-02','19:00:00','https://my.alliancetheatre.org/2/12'],
+ ]);
+});
+test('coffee and shopping filters reuse existing categories and exclude incompatible listings',()=>{
+ const coffee=CATEGORY_CHIPS.find(chip=>chip.id==='coffee');
+ assert.deepEqual(coffee.subcategories.map(filter=>filter.id),['Local','Chain']);
+ assert.equal(venueMatchesChip('coffee',{category:'coffee',name:'Starbucks'},'Chain'),true);
+ assert.equal(venueMatchesChip('coffee',{category:'coffee',name:'Local Coffee'},'Local'),true);
+ assert.equal(venueMatchesChip('coffee',{category:'coffee',subcategory:'gas station'}),false);
+ assert.equal(venueMatchesChip('shopping',{category:'shopping',name:'Walgreens'}),false);
+ assert.equal(venueMatchesChip('shopping',{category:'shopping',subcategory:'clothing store',name:'Vintage Boutique'}),true);
 });

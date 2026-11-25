@@ -7,6 +7,8 @@ import { supabaseAdmin } from '../supabase-admin';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { canRunLegacyCron } from '../../../lib/cron-auth';
+import { usesSongbirdsFeed } from '../../../lib/songbirdsEvents.mjs';
 
 const EVENT_TYPES = ['live_music', 'trivia', 'dj', 'comedy', 'karaoke', 'other'];
 
@@ -30,9 +32,7 @@ const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default async function handler(req, res) {
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` &&
-      req.headers['x-admin-password'] !== process.env.ADMIN_SYNC_PASSWORD) {
+  if (!canRunLegacyCron(req.headers)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -55,6 +55,7 @@ export default async function handler(req, res) {
   const results = { scraped: 0, events_found: 0, saved_live: 0, saved_pending: 0, errors: [] };
 
   for (const venue of venues) {
+    if (process.env.VENUE_SYNC_ENABLED === '1' && usesSongbirdsFeed(venue.scraping_url)) continue;
     try {
       const pageRes = await fetch(venue.scraping_url, {
         headers: { 'User-Agent': 'WadUp Event Bot/1.0' },

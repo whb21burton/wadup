@@ -3,7 +3,7 @@
 // Updating these fingerprints to silence a failed check is NOT authorization.
 const fs = require('node:fs');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'data.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'data.js'), 'utf8').replace(/\r\n/g, '\n');
 const ranges = [
   ['CATEGORY_CHIPS', 'export const CATEGORY_CHIPS = [', '\n// Legacy values', '26030ed3'],
   ['SUBCATEGORY_ALIASES', 'const SUBCATEGORY_ALIASES = {', '\nfunction normalizeSubcategory', 'a6f687cc'],

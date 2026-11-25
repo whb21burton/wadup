@@ -18,6 +18,15 @@ export function ticketQuality(url) {
  if(!destination)return 0;
  return rejectedEventIds.has(new URL(destination).pathname.split('/').filter(Boolean).pop())?0:2;
 }
+export function affiliateTicketUrl(ticketUrl, account) {
+ const destination=ticketDestination(ticketUrl);
+ if(!destination||!ticketQuality(destination))return null;
+ const provider=new URL(destination);
+ if(!['www.ticketmaster.com','ticketmaster.com','www.livenation.com','livenation.com'].includes(provider.hostname)) {
+  return new URL(ticketUrl).hostname==='ticketmaster.evyy.net' ? ticketUrl : destination;
+ }
+ return `https://ticketmaster.evyy.net/c/${encodeURIComponent(account)}/264167/4272?u=${encodeURIComponent(destination)}`;
+}
 export function preferredTicketRecord(a,b) {
   const score = e => (ticketStatus(e)==='working'?1000:ticketStatus(e)==='dead'?-1000:0) + ticketQuality(e.url)*100 + (e.price ? 10 : 0) + (e.address ? 4 : 0) + ((e.img || e.image_url) ? 1 : 0);
   return score(b)>score(a) ? b : a;

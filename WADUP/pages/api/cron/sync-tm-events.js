@@ -1,4 +1,5 @@
 import { verifyTicket } from '../../../lib/ticket-verifier';
+import { canRunLegacyCron } from '../../../lib/cron-auth';
 // pages/api/cron/sync-tm-events.js — runs every 2 hours (see vercel.json),
 // fetches Ticketmaster events across every TM_REGIONS city, and replaces
 // the contents of tm_events_cache. pages/index.js reads THAT table instead
@@ -10,16 +11,12 @@ import { supabaseAdmin } from '../supabase-admin';
 import { TM_REGIONS, tmSegmentToCat, tmSportEmoji } from '../../../lib/data';
 
 export default async function handler(req, res) {
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` &&
-      req.headers['x-admin-password'] !== process.env.ADMIN_SYNC_PASSWORD) {
+  if (!canRunLegacyCron(req.headers)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Same key pages/api/tm.js already uses in production (TM_KEY was never
-  // actually set as an env var there either — this fallback literal IS the
-  // real, currently-working key, not a placeholder).
-  const TM_KEY = process.env.TM_KEY || 'Ahrx6q7enx8cRnx2Vm12Z1Gj1UaDsTeH';
+  const TM_KEY = process.env.TM_KEY;
+  if (!TM_KEY) return res.status(503).json({ error: 'Ticketmaster synchronization is not configured' });
   const now = new Date();
   const future = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000); // 6 months
   const startDT = now.toISOString().replace(/\.\d{3}Z$/, 'Z');

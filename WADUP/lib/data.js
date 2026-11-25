@@ -60,10 +60,14 @@ export const CATEGORY_CHIPS = [
     { id: 'Rock Climbing', label: '🧗 Outdoor Climbing' },
   ]},
   { id: 'must-see', label: '⭐ Must-See', subcategories: [] },
+  { id: 'coffee', label: '☕ Coffee', subcategories: [
+    { id: 'Local', label: 'Local' },
+    { id: 'Chain', label: 'Chain' },
+  ]},
+  { id: 'shopping', label: '🛍️ Shopping', subcategories: [] },
   { id: 'activities', label: '🎳 Activities', subcategories: [
     { id: 'Bowling', label: '🎳 Bowling' },
     { id: 'Golf', label: '⛳ Golf Courses' },
-    { id: 'Disc Golf', label: '🥏 Disc Golf' },
     { id: 'Pickleball', label: '🏓 Pickleball Courts' },
     { id: 'Games & Entertainment', label: '🎮 Games & Entertainment' },
   ]},
@@ -136,6 +140,8 @@ export const CATEGORY_LABELS = {
   sports: '🏟️ Sports',
   outdoors: '🌳 Outdoors',
   activities: '🎳 Activities',
+  coffee: '☕ Coffee',
+  shopping: '🛍️ Shopping',
   'must-see': '⭐ Must-See',
 };
 
@@ -205,9 +211,17 @@ export function venueMatchesChip(chip, venue, subcategory) {
     : cats.includes(chip);
   if (!chipMatches) return false;
   const selected = Array.isArray(subcategory) ? subcategory : (subcategory ? [subcategory] : []);
+  const types = venueSubcategories(venue);
+  if (chip === 'coffee') {
+    if (types.some(type => /gas station|convenience store/.test(normalizeSubcategory(type)))) return false;
+    const classification = isChain(venue.name) ? 'chain' : 'local';
+    return selected.length === 0 || selected.some(value => normalizeSubcategory(value) === classification);
+  }
+  if (chip === 'shopping' && (types.some(type => /gas station|convenience store|drugstore|pharmacy|dollar store|big box/.test(normalizeSubcategory(type))) ||
+      /^(?:walmart|target|costco|sam's club|dollar general|dollar tree|family dollar|cvs|walgreens)\b/i.test(venue.name || ''))) return false;
   if (selected.length) {
     const wants = new Set(selected.map(s => String(s).trim().toLowerCase()));
-    return venueSubcategories(venue).some(s => [...wants].some(w => subcategoryMatches(s, w)));
+    return types.some(s => [...wants].some(w => subcategoryMatches(s, w)));
   }
   return true;
 }

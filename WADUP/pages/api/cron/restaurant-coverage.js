@@ -103,18 +103,31 @@ export default async function handler(req, res) {
   const now = new Date();
   const month = now.toISOString().slice(0, 7);
   const monthStart = `${month}-01T00:00:00.000Z`;
+  if (process.env.GOOGLE_PLACES_FREE_BUDGET_VERIFIED !== 'true')
+    return res.json({ status: 'google_budget_not_verified', sportsBarAudit });
+  const { data: snapshot, error: snapshotError } = await supabaseAdmin.from('google_api_budget_snapshots')
+    .select('requests,captured_at').eq('month_utc', month).eq('sku', 'nearby_search_pro')
+    .eq('source', 'google_cloud').order('captured_at', { ascending: false }).limit(1).maybeSingle();
+  const snapshotTime = Date.parse(snapshot?.captured_at);
+  if (snapshotError || !Number.isFinite(snapshotTime) || snapshotTime > now.getTime() ||
+      now.getTime() - snapshotTime >= 6 * 3600000 || !Number.isSafeInteger(snapshot?.requests) || snapshot.requests < 0)
+    return res.json({ status: 'google_budget_snapshot_unavailable', sportsBarAudit });
   const dayStart = new Date(now);
   dayStart.setUTCHours(0, 0, 0, 0);
   // Track our own API requests. This is a usage limit, NOT a guarantee of
   // zero Google Cloud charges (other clients can share the same API key).
   const [monthResult, dayResult] = await Promise.all([
-    supabaseAdmin.from('restaurant_coverage_runs').select('api_calls').gte('started_at', monthStart),
+    supabaseAdmin.from('restaurant_coverage_runs').select('api_calls,started_at').gte('started_at', monthStart),
     supabaseAdmin.from('restaurant_coverage_runs').select('api_calls').gte('started_at', dayStart.toISOString()),
   ]);
   if (monthResult.error || dayResult.error)
     return res.status(503).json({ status: 'usage_counter_unavailable' });
   const monthCalls = (monthResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
   const dayCalls = (dayResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
+  const sinceSnapshot = (monthResult.data || []).filter(run => Date.parse(run.started_at) > snapshotTime)
+    .reduce((sum, run) => sum + (run.api_calls || 0), 0);
+  if (snapshot.requests + sinceSnapshot >= 4500)
+    return res.json({ status: 'google_budget_target_reached', sportsBarAudit });
   if (monthCalls >= MONTHLY_LIMIT)
     return res.json({ status: 'monthly_limit_reached', monthlyLimit: MONTHLY_LIMIT, sportsBarAudit });
   if (dayCalls >= DAILY_LIMIT)

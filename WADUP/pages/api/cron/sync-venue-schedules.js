@@ -10,17 +10,19 @@ export default async function handler(req,res){
  if(process.env.VENUE_SYNC_ENABLED!=='1')return res.status(503).json({error:'Venue staging sync disabled'});
  const results=[];
  for(let i=0;i<EVENT_VENUES.length;i+=2){
+  const checkedAt=new Date().toISOString();
   const batch=await Promise.all(EVENT_VENUES.slice(i,i+2).map(v=>fetchOfficialSchedule(v.id)));
-  for(const result of batch){
-   const checked=new Date().toISOString();
-   let status=result.status,reason=result.reason;
-   if(result.rows.length){
-    const rows=result.rows.map(e=>({venue_id:e.venueId,performance_key:JSON.stringify([e.name.normalize('NFKC').toLowerCase().trim(),e.dateStr,e.timeStr]),name:e.name,local_date:e.dateStr,local_time:e.timeStr,official_url:e.officialUrl,last_seen_at:checked}));
-    const {error}=await supabaseAdmin.from('official_venue_performances').upsert(rows,{onConflict:'venue_id,performance_key'});
-    if(error){status='error';reason=error.message;}
+  for(const {venueId,status,reason,rows,complete} of batch){
+   const unique=new Map();
+   for(const row of rows){
+    const key=JSON.stringify([row.name.normalize('NFKC').toLowerCase().trim(),row.dateStr,row.timeStr]);
+    if(!unique.has(key))unique.set(key,{performance_key:key,name:row.name,local_date:row.dateStr,local_time:row.timeStr,official_url:row.officialUrl});
    }
-   const {error}=await supabaseAdmin.from('official_venue_sync_status').upsert({venue_id:result.venueId,status,reason,checked_at:checked,performance_count:result.rows.length},{onConflict:'venue_id'});
-   results.push({venue:result.venueId,status,reason,count:result.rows.length,storageError:error?.message});
+   const {error}=await supabaseAdmin.rpc('write_official_venue_snapshot',{
+    p_venue:venueId,p_checked_at:checkedAt,p_status:status,p_reason:reason,
+    p_rows:[...unique.values()],p_complete:complete===true,
+   });
+   results.push({venue:venueId,status,reason,count:unique.size,storageError:error?.message});
   }
  }
  return res.status(results.some(r=>r.storageError||r.status==='error')?500:200).json({results});

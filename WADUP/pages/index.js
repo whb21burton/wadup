@@ -1,5 +1,7 @@
-import { matchEventVenue } from '../lib/event-venues';
-import { ticketFallback, ticketStatus, ticketQuality, preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
+import { EVENT_VENUES, matchEventVenue } from '../lib/event-venues';
+import { reconcileVenuePerformances } from '../lib/reconcile-venue-performances';
+import { matchPerformance } from '../lib/venue-schedule';
+import { affiliateTicketUrl, ticketFallback, ticketStatus, preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -22,40 +24,12 @@ const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY || 'AIzaSyBoXf6UAa_SckH9gxfb
 // Falls back to the real Impact affiliate ID (not a placeholder) so this
 // works today even before NEXT_PUBLIC_TM_AFFILIATE_ID is set on Vercel.
 const TM_AFFILIATE_ID = process.env.NEXT_PUBLIC_TM_AFFILIATE_ID || '7691820';
-const TM_CAMPAIGN_ID = '264167';
-const TM_ADVERTISER_ID = '4272';
 
 // ── Wrap an outbound Ticketmaster URL in Impact's affiliate tracking link
 // (replaces the old ?camefrom= param, which didn't actually attribute
 // clicks/commissions through Impact) ──
 function withTMAffiliateTracking(ticketUrl) {
-  if (!ticketUrl) return null;
-  try {
-    let url = new URL(ticketUrl);
-
-    // Ticketmaster's Discovery API — for an API key tied to an approved
-    // affiliate account, which ours is — already returns event.url values
-    // PRE-WRAPPED in Impact's evyy.net redirect format (generic "APP"
-    // affiliate id, but the same real campaign/advertiser ids as below).
-    // Wrapping that again nests one Impact redirect inside another, which
-    // is exactly what produced the "malformed link" error: unwrap to the
-    // real ticketmaster.com destination first when that's what we're given.
-    if (url.hostname === 'ticketmaster.evyy.net') {
-      const inner = url.searchParams.get('u');
-      if (!inner) return null;
-      url = new URL(inner);
-    }
-
-    if (!ticketQuality(url.toString())) return null;
-    // Keep the provider's original affiliate redirect for partner ticketing sites.
-    if (!['www.ticketmaster.com','ticketmaster.com','www.livenation.com','livenation.com'].includes(url.hostname)) {
-      return new URL(ticketUrl).hostname === 'ticketmaster.evyy.net' ? ticketUrl : url.toString();
-    }
-
-    return `https://ticketmaster.evyy.net/c/${TM_AFFILIATE_ID}/${TM_CAMPAIGN_ID}/${TM_ADVERTISER_ID}?u=${encodeURIComponent(url.toString())}`;
-  } catch (e) {
-    return null;
-  }
+  return affiliateTicketUrl(ticketUrl, TM_AFFILIATE_ID);
 }
 
 function restaurantFoodIcon(v) {
@@ -451,7 +425,6 @@ export default function WadUp() {
   // triggers a sync if it's been 7+ days, so this is nearly always a no-op
   // network call on page load. ──
   useEffect(() => {
-    fetch('/api/places/auto-sync').catch(() => {});
   }, []);
 
   // ── Add-to-home-screen banner (mobile, not already installed, not dismissed) ──
@@ -793,19 +766,32 @@ export default function WadUp() {
     // screen collision candidates. No event swaps slots during zoom.
     const zoom = map.getZoom() || 0;
     for (const entry of tmPins) entry.el.style.translate = 'none';
-    if (zoom >= 15) {
+    if (zoom >= 17) {
       const day = activeDateRef.current || todayIsoStr();
       const firstTime = entry => (entry.event.showings || [entry.event])
         .filter(show => show.dateStr === day && show.timeStr)
         .map(show => show.timeStr).sort()[0] || '99:99';
       const groups = [];
+      const cells = new Map();
+      const cellSize = 12;
+      const eastScale = 111320 * Math.cos((map.getCenter()?.lat() || 0) * Math.PI / 180);
       const ordered = tmPins.map(entry => ({entry, time:firstTime(entry)}))
         .sort((a,b) => a.time.localeCompare(b.time) || String(a.entry.id).localeCompare(String(b.entry.id)));
       for (const {entry} of ordered) {
         const lat = Number(entry.event.lat), lng = Number(entry.event.lng);
-        const group = groups.find(g => Math.hypot((lat-g.lat)*111320,(lng-g.lng)*111320*Math.cos(lat*Math.PI/180)) <= 12);
+        const x = Math.floor(lng * eastScale / cellSize), y = Math.floor(lat * 111320 / cellSize);
+        let group;
+        for (let dx = -1; dx <= 1 && !group; dx++) for (let dy = -1; dy <= 1 && !group; dy++) {
+          group = cells.get(`${x+dx}:${y+dy}`)?.find(g => Math.hypot((lat-g.lat)*111320,(lng-g.lng)*eastScale) <= cellSize);
+        }
         if (group) group.entries.push(entry);
-        else groups.push({lat,lng,entries:[entry]});
+        else {
+          const cell = `${x}:${y}`;
+          if (!cells.has(cell)) cells.set(cell, []);
+          const newGroup = {lat,lng,entries:[entry]};
+          cells.get(cell).push(newGroup);
+          groups.push(newGroup);
+        }
       }
       const layouts = [];
       for (const group of groups) {
@@ -979,7 +965,7 @@ export default function WadUp() {
   // Prefers whichever entry is live right now; otherwise the day's earliest.
   function getVenueEventForDay(venueId, dayIso) {
     const rows = (venueEventsById.current.get(venueId) || []).filter(
-      e => (e.start_time || '').slice(0, 10) === dayIso
+      e => (e.start_time || '').slice(0, 10) === dayIso && !isReplacedLegacyEvent(e)
     );
     if (!rows.length) return null;
     if (dayIso !== todayIsoStr()) {
@@ -988,6 +974,13 @@ export default function WadUp() {
     const stillOn = rows.filter(e => !isEventOverToday(e));
     if (!stillOn.length) return null;
     return stillOn.find(isEventLive) || stillOn.slice().sort((a, b) => a.start_time.localeCompare(b.start_time))[0];
+  }
+  function isReplacedLegacyEvent(event) {
+    if (event.source !== 'scraped') return false;
+    const venue = EVENT_VENUES.find(v => v.legacyVenueId === event.venue_id);
+    if (!venue) return false;
+    return tmEventsRef.current.some(group => group.venueId === venue.id && group.showings.some(show =>
+      show.officialUrl && matchPerformance(show, {venueId:venue.id,name:event.title,dateStr:event.start_time.slice(0,10),timeStr:show.timeStr})));
   }
   function isEventOverToday(ev) {
     if (!ev.end_time) return false;
@@ -1349,7 +1342,7 @@ export default function WadUp() {
     while (el.firstChild) hoverVisual.appendChild(el.firstChild);
     el.appendChild(hoverVisual);
     const setHoverScale = (hovered) => {
-      hoverVisual.style.transform = hovered ? 'scale(1.18)' : 'scale(1)';
+      hoverVisual.style.transform = hovered ? 'scale(1.12)' : 'scale(1)';
     };
     el.addEventListener('pointerenter', () => setHoverScale(true));
     el.addEventListener('pointerleave', () => setHoverScale(false));
@@ -1655,7 +1648,7 @@ export default function WadUp() {
       const hovered = el.matches(':hover') || el.matches(':focus-within');
       el.style.zIndex = hovered ? '2147483600' : active ? '2147483000' : restingZ;
       el.classList.toggle('wu-pin-front', active || hovered);
-      hoverVisual.style.transform = hovered ? 'scale(1.18)' : 'scale(1)';
+      hoverVisual.style.transform = hovered ? 'scale(1.12)' : 'scale(1)';
     };
     el.addEventListener('pointerenter', syncStack);
     el.addEventListener('pointerleave', syncStack);
@@ -1761,8 +1754,10 @@ export default function WadUp() {
       .sort((a,b) => ((a.dateStr || '') + 'T' + (a.timeStr || '')).localeCompare((b.dateStr || '') + 'T' + (b.timeStr || '')));
     const showingRows = performances.map(show => {
       const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
-      const fallback = ticketFallback(show) || (show.venueWebsite ? {url:show.venueWebsite,label:'Check with '+show.venueName} : null);
-      const ticketLink = ticketStatus(show) !== 'dead' && ticketQuality(show.url) ? withTMAffiliateTracking(show.url) : null;
+      const official = show.officialUrl && /^https:\/\//i.test(show.officialUrl) && show.officialUrl !== show.venueWebsite;
+      const fallback = (official ? {url:show.officialUrl,label:'Official event and ticket information'} : null) || ticketFallback(show) ||
+        (show.venueWebsite ? {url:show.venueWebsite,label:'View venue schedule'} : null);
+      const ticketLink = ticketStatus(show) !== 'dead' ? withTMAffiliateTracking(show.url) : null;
       return `<div style="padding:10px 0;border-top:1px solid #e4e7eb">
         <div class="popup-row"><span class="popup-stat">📅 ${escapeHtml(day)} · ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : 'Time TBD')}</span>
         ${show.price ? `<span class="popup-stat popup-price">${escapeHtml(show.price)}</span>` : ''}</div>
@@ -1775,7 +1770,7 @@ export default function WadUp() {
         <div class="popup-name">${icon} ${escapeHtml(ev.name)}</div>
         <div class="popup-type">${escapeHtml(CATEGORY_LABELS[ev.cat] || ev.cat)}${ev.city ? ' · ' + escapeHtml(ev.city) + ', ' + escapeHtml(ev.state) : ''}</div>
         <div class="tm-showtimes" style="max-height:300px;overflow-y:auto;overscroll-behavior:contain">${showingRows || '<div style="padding:10px 0">No performances scheduled for this day.</div>'}</div>
-        <div class="popup-source">via Ticketmaster</div>
+        <div class="popup-source">${performances.some(show => show.officialUrl) ? 'Official venue schedule' : 'via Ticketmaster'}</div>
       </div>`;
     };
 
@@ -1803,7 +1798,7 @@ export default function WadUp() {
     const syncEventStack = () => {
       const selected = map.__wadupSelectedVenueId === ev.id;
       el.style.zIndex = selected ? '2147483000' : el.matches(':hover') ? '2147482000' : '';
-      contentEl.style.transform = el.matches(':hover') ? 'scale(1.15)' : 'scale(1)';
+      contentEl.style.transform = el.matches(':hover') ? 'scale(1.12)' : 'scale(1)';
     };
     el.addEventListener('pointerenter', syncEventStack);
     el.addEventListener('pointerleave', syncEventStack);
@@ -1836,10 +1831,16 @@ export default function WadUp() {
     const request = ++tmAreaRequest.current;
     tmAreaPending.current = area;
     try {
-      const events = [];
+      let events = [];
+      const canonicalAliases = EVENT_VENUES.filter(({location}) => location &&
+        location.lat >= area.s && location.lat <= area.n &&
+        (view.w > view.e || (location.lng >= area.w && location.lng <= area.e))).flatMap(venue => venue.aliases);
       for (let from=0;;from+=1000) {
-        let query = supabase.from('tm_events_cache').select('*').gte('date_str',todayStr).gte('lat',area.s).lte('lat',area.n);
-        if (view.w <= view.e) query = query.gte('lng',area.w).lte('lng',area.e);
+        const geographic = [`lat.gte.${area.s}`,`lat.lte.${area.n}`];
+        if (view.w <= view.e) geographic.push(`lng.gte.${area.w}`,`lng.lte.${area.e}`);
+        const base = supabase.from('tm_events_cache').select('*').eq('date_str',selectedDay);
+        const query = canonicalAliases.length ? base.or(`and(${geographic.join(',')}),venue_name.in.(${canonicalAliases.map(alias=>JSON.stringify(alias)).join(',')})`) :
+          (view.w <= view.e ? base.gte('lat',area.s).lte('lat',area.n).gte('lng',area.w).lte('lng',area.e) : base.gte('lat',area.s).lte('lat',area.n));
         const {data:page,error} = await query.order('date_str').order('tm_id').range(from,from+999);
         if (request !== tmAreaRequest.current) return;
         if (error) throw error;
@@ -1854,15 +1855,14 @@ export default function WadUp() {
         const response = await fetch('/api/venue-performances?date='+encodeURIComponent(day));
         if(response.ok){
           const {performances=[]}=await response.json();
-          for(const p of performances){
-            const venueRows=events.filter(e=>matchEventVenue(e)?.id===p.venueId);
-            const normalize=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
-            const matches=venueRows.filter(e=>normalize(e.name)===normalize(p.name)&&e.date_str===p.dateStr&&String(e.time_str||'').slice(0,5)===String(p.timeStr||'').slice(0,5));
-            if(matches.length){matches.forEach(e=>{e.official_url=p.officialUrl;});continue;}
+          const tickets=events.map(event=>({...event,venueId:matchEventVenue(event)?.id,dateStr:event.date_str,timeStr:event.time_str}));
+          const reconciled=reconcileVenuePerformances(performances,tickets);
+          events=reconciled.unmatchedTicketRows;
+          for(const p of reconciled.performances){
             // Do not invent coordinates for venues without a source location.
-            const loc=p.location || venueRows.find(e=>Number.isFinite(Number(e.lat))&&Number.isFinite(Number(e.lng))&&e.lat!=null&&e.lng!=null);
+            const loc=p.location || tickets.find(e=>e.venueId===p.venueId&&Number.isFinite(Number(e.lat))&&Number.isFinite(Number(e.lng))&&e.lat!=null&&e.lng!=null);
             if(!loc || loc.lat<area.s || loc.lat>area.n || (view.w<=view.e && (loc.lng<area.w || loc.lng>area.e)))continue;
-            events.push({tm_id:'official_'+[p.venueId,p.name,p.dateStr,p.timeStr].map(encodeURIComponent).join('_'),name:p.name,venue_name:p.venueName,city:p.city,state:p.state,lat:loc.lat,lng:loc.lng,address:loc.address,date_str:p.dateStr,time_str:p.timeStr,segment:p.venueType==='theater'?'Theater':'Music',official_url:p.officialUrl,url:''});
+            events.push({ ...p.preferredTicket, tm_id:p.preferredTicket?.tm_id || 'official_'+[p.venueId,p.name,p.dateStr,p.timeStr].map(encodeURIComponent).join('_'),name:p.name,venue_name:p.venueName,city:p.city,state:p.state,lat:loc.lat,lng:loc.lng,address:loc.address,date_str:p.dateStr,time_str:p.timeStr,segment:p.preferredTicket?.segment || (p.venueType==='theater'?'Theater':'Music'),official_url:p.officialUrl,url:p.preferredTicket?.url || ''});
           }
         }
       }catch(e){console.warn('Official venue feed unavailable',e);}
@@ -1875,7 +1875,7 @@ export default function WadUp() {
         const norm = {
           id: 'tm_' + ev.tm_id, _isTM: true,
           name: ev.name, cat: 'events',
-          venueId: venue?.id, venueType: venue?.type, venueWebsite: ev.official_url || venue?.website, venueName: venue?.name || ev.venue_name,
+          venueId: venue?.id, venueType: venue?.type, venueWebsite: venue?.website, officialUrl: ev.official_url, venueName: venue?.name || ev.venue_name,
           segment: ev.segment, genre: ev.genre, subGenre: ev.sub_genre,
           sportEmoji: ev.sport_emoji || undefined,
           address: location?.address || ev.address || '',
@@ -1885,6 +1885,8 @@ export default function WadUp() {
           price: ev.price || '', img: ev.image_url || '', url: ev.url || '',
           live: true, ticket_verification: ev.ticket_verification || null,
         };
+        if (norm.lat == null || norm.lng == null || norm.lat < area.s || norm.lat > area.n ||
+            (view.w <= view.e && (norm.lng < area.w || norm.lng > area.e))) return;
         // Same production and venue across dates = one pin, multiple showtimes.
         // Coordinates alone are insufficient: unrelated events can share a venue.
         const canonical = value => String(value || '').normalize('NFKC').toLowerCase().replace(/&/g,' and ').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
@@ -2143,7 +2145,7 @@ export default function WadUp() {
     for (let offset = 0; offset < ids.length; offset += 100) {
       for (let from = 0; ; from += 1000) {
         const { data: page, error } = await supabase.from('venue_events')
-          .select('venue_id, title, event_type, performer, start_time, end_time, ticket_url')
+          .select('venue_id, title, event_type, performer, start_time, end_time, ticket_url, source')
           .in('venue_id', ids.slice(offset, offset + 100))
           .gte('start_time', asNaive(dayStart)).lte('start_time', asNaive(rangeEnd))
           .order('start_time').order('venue_id').range(from, from + 999);
@@ -2932,6 +2934,7 @@ export default function WadUp() {
         start, end, icon: ev.cat === 'sports' ? (ev.sportEmoji || '🏟️') : '🎟️', url: ev.url, live: start != null && end != null && start <= now && now <= end && activeDate === today });
     }
     for (const ev of venueEventsRef.current) {
+      if (isReplacedLegacyEvent(ev)) continue;
       if ((ev.start_time || '').slice(0, 10) !== activeDate) continue;
       if (['happy_hour', 'specials'].includes(ev.event_type)) continue;
       const venue = venuesRef.current.find(v => v.id === ev.venue_id);

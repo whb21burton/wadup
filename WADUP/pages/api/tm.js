@@ -2,9 +2,10 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!process.env.TM_KEY) return res.status(503).json({ error: 'Ticketmaster is not configured' });
 
   const params = new URLSearchParams(req.query);
-  params.set('apikey', process.env.TM_KEY || 'Ahrx6q7enx8cRnx2Vm12Z1Gj1UaDsTeH');
+  params.set('apikey', process.env.TM_KEY);
 
   try {
     const tmRes = await fetch(

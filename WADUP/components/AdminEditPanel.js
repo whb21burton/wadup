@@ -345,7 +345,7 @@ export default function AdminEditPanel({
           <select value={categories[0]||''} onChange={e=>setCategories(prev=>[e.target.value,...prev.filter(x=>x!==e.target.value)])}>{PANEL_CATEGORIES.map(cat=><option key={cat.id} value={cat.id}>{cat.label}</option>)}</select>
           <label>Additional categories</label>
           <div className="admin-checkbox-grid">
-            {PANEL_CATEGORIES.map(c => (
+            {PANEL_CATEGORIES.filter(c => ['restaurant', 'nightlife', 'activities'].includes(c.id)).map(c => (
               <label key={c.id} className="admin-checkbox-item">
                 <input
                   type="checkbox"

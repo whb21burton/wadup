@@ -1,8 +1,30 @@
 import { EVENT_VENUES } from './event-venues.js';
-import { parseFoxShowings, parseSignalSchedule, parseVenueSchedule } from './venue-schedule.js';
+import { allianceProduction, parseAllianceShowtimes, parseFoxShowings, parseSignalSchedule, parseTivoliSchedule, parseVenueSchedule } from './venue-schedule.js';
 import { fetchSongbirdsEvents, usesSongbirdsFeed } from './songbirdsEvents.mjs';
 
 const EASTERN_FEED = 'https://aegwebprod.blob.core.windows.net/json/events/127/events.json';
+
+async function fetchAllianceShowings(html, venue, fetcher, today) {
+ const paths=[...new Set([...html.matchAll(/href="(?:https:\/\/www\.alliancetheatre\.org)?(\/production\/\d{4}-\d{2}\/[\w%-]+\/)"/gi)].map(match=>match[1]))].slice(0,35);
+ const rows=[];
+ const signal=AbortSignal.timeout(12500);
+ for(let i=0;i<paths.length&&!signal.aborted;i+=5){
+  const batch=await Promise.allSettled(paths.slice(i,i+5).map(async path=>{
+   const url=new URL(path,venue.website).href;
+   const detail=await fetcher(url,{redirect:'error',signal});
+   if(!detail.ok)return [];
+   const production=allianceProduction(await detail.text(),url);
+   if(!production||production.end<today)return [];
+   const body=new URLSearchParams({action:'oms_productions_ticket_widget_ajax_callback',post_id:production.postId,production_seasons_id:production.seasonsId});
+   const response=await fetcher(new URL('/wp-admin/admin-ajax.php',venue.website).href,{method:'POST',body,redirect:'error',signal});
+   if(!response.ok)return [];
+   const {html:widget}=await response.json();
+   return typeof widget==='string' ? parseAllianceShowtimes(widget,production,venue.id) : [];
+  }));
+  for(const result of batch)if(result.status==='fulfilled')rows.push(...result.value);
+ }
+ return rows;
+}
 
 async function fetchFoxShowings(html, venue, fetcher) {
  const paths=[...new Set([...html.matchAll(/href="(?:https:\/\/www\.foxtheatre\.org)?(\/events\/detail\/[\w%-]+)"/gi)].map(match=>match[1]))].slice(0,50);
@@ -46,20 +68,23 @@ export async function fetchOfficialSchedule(venueId, fetcher=fetch) {
  try {
   if(usesSongbirdsFeed(url.href) || venue.id==='atlanta-eastern') {
    const rows=venue.id==='atlanta-eastern' ? await fetchEasternEvents(venue.id,fetcher) : await fetchSongbirdsEvents(venue.id,fetcher);
-   return {venueId,status:rows.length?'parsed':'unknown',reason:rows.length?null:'no structured performances found',rows,checkedAt:new Date().toISOString()};
+   return {venueId,status:rows.length?'parsed':'unknown',reason:rows.length?null:'no structured performances found',rows,complete:rows.length>0,checkedAt:new Date().toISOString()};
   }
   const response=await fetcher(url.href,{redirect:'manual',signal:AbortSignal.timeout(8000),headers:{Accept:'text/html'}});
   if(!response.ok) return {venueId,status:'unknown',reason:'HTTP '+response.status,rows:[]};
   const reader=response.body.getReader();
   const decoder=new TextDecoder();let html='',bytes=0;
   try {
-   while(true){const {done,value}=await reader.read();if(done)break;bytes+=value.byteLength;if(bytes>2000000)return {venueId,status:'unknown',reason:'response too large',rows:[]};html+=decoder.decode(value,{stream:true});}
+   const byteLimit=venue.sharedSchedule?4000000:2000000;
+   while(true){const {done,value}=await reader.read();if(done)break;bytes+=value.byteLength;if(bytes>byteLimit)return {venueId,status:'unknown',reason:'response too large',rows:[]};html+=decoder.decode(value,{stream:true});}
    html+=decoder.decode();
   } finally {await reader.cancel().catch(()=>{});}
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/New_York'}).format(new Date());
   let performances;
   if(venue.id==='chattanooga-the-signal') performances=parseSignalSchedule(html,venue);
   else if(venue.id==='atlanta-fox') performances=await fetchFoxShowings(html,venue,fetcher);
+  else if(venue.id==='atlanta-alliance-theatre') performances=await fetchAllianceShowings(html,venue,fetcher,today);
+  else if(venue.sharedSchedule) performances=parseTivoliSchedule(html,venue);
   else performances=parseVenueSchedule(html,venue);
   const rows=performances.filter(row=>row.dateStr>=today);
   return {venueId,status:rows.length?'parsed':'unknown',reason:rows.length?null:'no structured performances found',rows,checkedAt:new Date().toISOString()};

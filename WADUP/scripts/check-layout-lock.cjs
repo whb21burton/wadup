@@ -2,7 +2,7 @@
 // Do not update fingerprints merely to silence this check.
 const fs = require('node:fs');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '..', 'pages', 'index.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', 'pages', 'index.js'), 'utf8').replace(/\r\n/g, '\n');
 const checks = [
   ['seven-day calendar', 'function buildDays()', '\n// ── "🔥 Trending Now"', '0bc41a5f'],
   ['desktop WADUP sidebar', '          <div className="sidebar-header">', '        </aside>', '21081b47']
