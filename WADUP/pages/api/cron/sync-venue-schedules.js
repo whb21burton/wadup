@@ -1,4 +1,4 @@
-import {supabaseAdmin} from '../supabase-admin';
+import {loadCronDatabase} from '../../../lib/cron-auth';
 import {EVENT_VENUES} from '../../../lib/event-venues';
 import {fetchOfficialSchedule} from '../../../lib/venue-schedule-fetch';
 export const config={maxDuration:60};
@@ -8,6 +8,8 @@ export default async function handler(req,res){
  if(req.headers.authorization!=='Bearer '+secret.trim())return res.status(401).json({error:req.headers.authorization?'Authorization does not match server configuration':'Authorization header missing'});
  if(!['GET','POST'].includes(req.method))return res.status(405).end();
  if(process.env.VENUE_SYNC_ENABLED!=='1')return res.status(503).json({error:'Venue staging sync disabled'});
+ const supabaseAdmin=await loadCronDatabase();
+ if(!supabaseAdmin)return res.status(503).json({error:'Cron database is not configured for this environment'});
  const results=[];
  for(let i=0;i<EVENT_VENUES.length;i+=2){
   const checkedAt=new Date().toISOString();

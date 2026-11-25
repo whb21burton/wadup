@@ -1,4 +1,4 @@
-import {supabaseAdmin} from '../supabase-admin';
+import {loadCronDatabase} from '../../../lib/cron-auth';
 import {verifyTicket} from '../../../lib/ticket-verifier';
 import {ticketDestination} from '../../../lib/ticket-quality';
 export const config={maxDuration:60};
@@ -7,6 +7,8 @@ export default async function handler(req,res){
  if(!secret||req.headers.authorization!=='Bearer '+secret)return res.status(401).end();
  if(!['GET','POST'].includes(req.method))return res.status(405).end();
  if(process.env.TICKET_VERIFY_ENABLED!=='1')return res.status(503).json({error:'Verification disabled'});
+ const supabaseAdmin=await loadCronDatabase();
+ if(!supabaseAdmin)return res.status(503).json({error:'Cron database is not configured for this environment'});
  const today=new Date().toISOString().slice(0,10);
  const end=new Date(Date.now()+14*86400000).toISOString().slice(0,10);
  const {data,error}=await supabaseAdmin.from('tm_events_cache').select('tm_id,url,ticket_verification').gte('date_str',today).lte('date_str',end).order('date_str').order('tm_id').limit(10000);

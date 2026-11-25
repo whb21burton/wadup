@@ -38,12 +38,13 @@ export function parseSignalSchedule(html, venue) {
  const rows=[];
  for(const [, article] of html.matchAll(/<article\b[^>]*class="[^"]*\beventlist-event\b[^"]*"[^>]*>([\s\S]*?)<\/article>/gi)) {
   const event=article.match(/<a href="(\/tickets\/[\w%-]+)" class="eventlist-title-link">([^<]+)<\/a>/i);
-  const start=article.match(/<time class="event-time-localized-start" datetime="(\d{4}-\d{2}-\d{2})">\s*(1[0-2]|[1-9]):([0-5]\d)\s*([AP]M)\s*<\/time>/i);
+  const start=article.match(/<time class="event-time-localized(?:-start)?" datetime="(\d{4}-\d{2}-\d{2})">\s*(1[0-2]|[1-9]):([0-5]\d)\s*([AP]M)\s*<\/time>/i);
   if(!event || !start || /\b(?:canceled|cancelled|postponed)\b/i.test(event[2]))continue;
   const [,dateStr,hour,minute,period]=start;
   const hour24=Number(hour)%12+(period.toUpperCase()==='PM'?12:0);
   const name=event[2].replace(/&amp;/g,'&').replace(/&#39;/g,"'").trim();
-  rows.push({venueId:venue.id,name,dateStr,timeStr:`${String(hour24).padStart(2,'0')}:${minute}:00`,officialUrl:new URL(event[1],venue.website).href,source:'official-venue'});
+  const tickets=article.match(/href="(https:\/\/www\.axs\.com\/events\/\d+\/[^"]+)"/i)?.[1];
+  rows.push({venueId:venue.id,name,dateStr,timeStr:`${String(hour24).padStart(2,'0')}:${minute}:00`,officialUrl:tickets?.replace(/&amp;/g,'&')||new URL(event[1],venue.website).href,source:'official-venue'});
  }
  return rows;
 }

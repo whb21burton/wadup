@@ -1,7 +1,7 @@
 import { EVENT_VENUES, matchEventVenue } from '../lib/event-venues';
 import { reconcileVenuePerformances } from '../lib/reconcile-venue-performances';
 import { matchPerformance } from '../lib/venue-schedule';
-import { affiliateTicketUrl, ticketFallback, ticketStatus, preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
+import { affiliateTicketUrl, ticketDestination, ticketFallback, ticketQuality, ticketStatus, preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -28,9 +28,6 @@ const TM_AFFILIATE_ID = process.env.NEXT_PUBLIC_TM_AFFILIATE_ID || '7691820';
 // ── Wrap an outbound Ticketmaster URL in Impact's affiliate tracking link
 // (replaces the old ?camefrom= param, which didn't actually attribute
 // clicks/commissions through Impact) ──
-function withTMAffiliateTracking(ticketUrl) {
-  return affiliateTicketUrl(ticketUrl, TM_AFFILIATE_ID);
-}
 
 function restaurantFoodIcon(v) {
   // Only the primary category controls the map icon; a secondary bar tag
@@ -1754,10 +1751,11 @@ export default function WadUp() {
       .sort((a,b) => ((a.dateStr || '') + 'T' + (a.timeStr || '')).localeCompare((b.dateStr || '') + 'T' + (b.timeStr || '')));
     const showingRows = performances.map(show => {
       const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
-      const official = show.officialUrl && /^https:\/\//i.test(show.officialUrl) && show.officialUrl !== show.venueWebsite;
-      const fallback = (official ? {url:show.officialUrl,label:'Official event and ticket information'} : null) || ticketFallback(show) ||
+      const official = show.officialUrl && /^https:\/\//i.test(show.officialUrl) && show.officialUrl !== show.venueWebsite &&
+        (!ticketDestination(show.officialUrl) || ticketQuality(show.officialUrl));
+      const fallback = (official ? {url:affiliateTicketUrl(show.officialUrl, TM_AFFILIATE_ID) || show.officialUrl,label:'Official event and ticket information'} : null) || ticketFallback(show) ||
         (show.venueWebsite ? {url:show.venueWebsite,label:'View venue schedule'} : null);
-      const ticketLink = ticketStatus(show) !== 'dead' ? withTMAffiliateTracking(show.url) : null;
+      const ticketLink = ticketStatus(show) !== 'dead' ? affiliateTicketUrl(show.url, TM_AFFILIATE_ID) : null;
       return `<div style="padding:10px 0;border-top:1px solid #e4e7eb">
         <div class="popup-row"><span class="popup-stat">📅 ${escapeHtml(day)} · ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : 'Time TBD')}</span>
         ${show.price ? `<span class="popup-stat popup-price">${escapeHtml(show.price)}</span>` : ''}</div>

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {affiliateTicketUrl,ticketDestination,ticketFallback,ticketStatus,suppressTicketDuplicates} from '../lib/ticket-quality.js';
-import {allianceProduction,parseAllianceShowtimes,parseFoxShowings,parseTivoliSchedule,parseVenueSchedule,matchPerformance} from '../lib/venue-schedule.js';
+import {allianceProduction,parseAllianceShowtimes,parseFoxShowings,parseSignalSchedule,parseTivoliSchedule,parseVenueSchedule,matchPerformance} from '../lib/venue-schedule.js';
 import {reconcileVenuePerformances} from '../lib/reconcile-venue-performances.js';
 import {canRunLegacyCron} from '../lib/cron-auth.js';
 import {CATEGORY_CHIPS,venueMatchesChip} from '../lib/data.js';
@@ -122,4 +122,11 @@ test('coffee and shopping filters reuse existing categories and exclude incompat
  assert.equal(venueMatchesChip('coffee',{category:'coffee',subcategory:'gas station'}),false);
  assert.equal(venueMatchesChip('shopping',{category:'shopping',name:'Walgreens'}),false);
  assert.equal(venueMatchesChip('shopping',{category:'shopping',subcategory:'clothing store',name:'Vintage Boutique'}),true);
+});
+test('The Signal uses the first published time for a performance crossing midnight',()=>{
+ const html='<article class="eventlist-event"><a href="/tickets/neon-nye-2026" class="eventlist-title-link">Neon Moon</a>'+
+  '<time class="event-time-localized" datetime="2026-12-31">9:00 PM</time>'+
+  '<time class="event-time-localized" datetime="2027-01-01">12:59 PM</time></article>';
+ const [event]=parseSignalSchedule(html,{id:'signal',website:'https://www.thesignaltn.com/'});
+ assert.deepEqual([event.dateStr,event.timeStr,event.officialUrl],['2026-12-31','21:00:00','https://www.thesignaltn.com/tickets/neon-nye-2026']);
 });

@@ -3,11 +3,10 @@
 // upcoming events from the page text. High-confidence events (>=80) go
 // straight into venue_events; everything else lands in
 // scraped_events_pending for an admin to review (see pages/admin/reports.js).
-import { supabaseAdmin } from '../supabase-admin';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import { canRunLegacyCron } from '../../../lib/cron-auth';
+import { canRunLegacyCron, loadCronDatabase } from '../../../lib/cron-auth';
 import { usesSongbirdsFeed } from '../../../lib/songbirdsEvents.mjs';
 
 const EVENT_TYPES = ['live_music', 'trivia', 'dj', 'comedy', 'karaoke', 'other'];
@@ -35,6 +34,8 @@ export default async function handler(req, res) {
   if (!canRunLegacyCron(req.headers)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  const supabaseAdmin = await loadCronDatabase();
+  if (!supabaseAdmin) return res.status(503).json({ error: 'Cron database is not configured for this environment' });
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
   }

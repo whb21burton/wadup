@@ -17,8 +17,7 @@
 // call except the rare one that actually triggers a sync, which can take up
 // to the sync route's own 60s budget — that's fine here, since the CLIENT
 // call in pages/index.js doesn't wait on this response either.
-import { supabaseAdmin } from '../supabase-admin';
-import { canRunLegacyCron } from '../../../lib/cron-auth';
+import { canRunLegacyCron, loadCronDatabase } from '../../../lib/cron-auth';
 
 const SYNC_INTERVAL_DAYS = 7;
 
@@ -37,6 +36,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ message: 'Automatic Places sync is disabled outside production' });
   }
   if (!canRunLegacyCron(req.headers)) return res.status(401).json({ error: 'Unauthorized' });
+  const supabaseAdmin = await loadCronDatabase();
+  if (!supabaseAdmin) return res.status(503).json({ error: 'Cron database is not configured for this environment' });
   const { data, error } = await supabaseAdmin
     .from('venues')
     .select('last_google_sync')

@@ -1,5 +1,5 @@
 import { verifyTicket } from '../../../lib/ticket-verifier';
-import { canRunLegacyCron } from '../../../lib/cron-auth';
+import { canRunLegacyCron, loadCronDatabase } from '../../../lib/cron-auth';
 // pages/api/cron/sync-tm-events.js — runs every 2 hours (see vercel.json),
 // fetches Ticketmaster events across every TM_REGIONS city, and replaces
 // the contents of tm_events_cache. pages/index.js reads THAT table instead
@@ -7,7 +7,6 @@ import { canRunLegacyCron } from '../../../lib/cron-auth';
 // affordable: 43 TM API calls every 2 hours from this one cron run, not 43
 // calls from every single visitor's browser (which is what the coverage
 // expansion would have cost before this).
-import { supabaseAdmin } from '../supabase-admin';
 import { TM_REGIONS, tmSegmentToCat, tmSportEmoji } from '../../../lib/data';
 
 export default async function handler(req, res) {
@@ -17,6 +16,8 @@ export default async function handler(req, res) {
 
   const TM_KEY = process.env.TM_KEY;
   if (!TM_KEY) return res.status(503).json({ error: 'Ticketmaster synchronization is not configured' });
+  const supabaseAdmin = await loadCronDatabase();
+  if (!supabaseAdmin) return res.status(503).json({ error: 'Cron database is not configured for this environment' });
   const now = new Date();
   const future = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000); // 6 months
   const startDT = now.toISOString().replace(/\.\d{3}Z$/, 'Z');

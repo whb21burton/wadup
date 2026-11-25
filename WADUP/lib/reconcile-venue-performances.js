@@ -1,5 +1,5 @@
 import {matchPerformance} from './venue-schedule.js';
-import {ticketStatus,ticketQuality,preferredTicketRecord} from './ticket-quality.js';
+import {ticketDestination,ticketStatus,ticketQuality,preferredTicketRecord} from './ticket-quality.js';
 export function reconcileVenuePerformances(officialRows,ticketRows){
  const consumed=new Set();
  const ticketRowsByVenue=new Map();
@@ -13,8 +13,11 @@ export function reconcileVenuePerformances(officialRows,ticketRows){
   matches.forEach(t=>consumed.add(t));
   const usable=matches.filter(t=>ticketStatus(t)==='working'&&ticketQuality(t.url));
   const preferred=usable.reduce((a,b)=>a?preferredTicketRecord(a,b):b,null);
-  return {...official,ticketCandidates:matches,preferredTicket:preferred,
-   purchaseUrl:preferred?.url||official.officialUrl,
+  const destination=ticketDestination(official.officialUrl);
+  const dead=destination&&matches.some(row=>ticketStatus(row)==='dead'&&ticketDestination(row.url)===destination);
+  const officialUrl=dead ? null : official.officialUrl;
+  return {...official,officialUrl,ticketCandidates:matches,preferredTicket:preferred,
+   purchaseUrl:preferred?.url||officialUrl,
    purchaseSource:preferred?'ticket-provider':'official-venue',
    purchaseStatus:preferred?ticketStatus(preferred):'official-fallback'};
  });
