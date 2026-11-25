@@ -5,6 +5,7 @@
 // save=true stages unmatched places in venues_pending for verification.
 // Google Places bills search requests; 4 per invocation at most.
 import { supabaseAdmin } from '../supabase-admin';
+import { reserveGoogleApiUse } from '../../../lib/google-api-admission';
 import { searchNearby, mapPlaceToRow, isChain, isBlockedPrimaryType } from '../../../lib/placesSync';
 
 export const config = { maxDuration: 60 };
@@ -15,6 +16,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST required' });
   if (!process.env.ADMIN_SYNC_PASSWORD || req.headers['x-admin-password'] !== process.env.ADMIN_SYNC_PASSWORD)
     return res.status(401).json({ error: 'Unauthorized' });
+  if (process.env.GOOGLE_LEGACY_CONTENT_APPROVED !== 'true') return res.status(503).json({error:'Legacy Google import disabled'});
   if (!process.env.GOOGLE_PLACES_KEY) return res.status(500).json({ error: 'Google Places key missing' });
   const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
   const radius = Number(req.body?.radiusMeters ?? 3000);
@@ -24,7 +26,7 @@ export default async function handler(req, res) {
   const byId = new Map(), errors = [];
   for (const type of TYPES) {
     try {
-      const places = await searchNearby([type], { lat, lng, radius });
+      const places = await searchNearby([type], { lat, lng, radius }, {reserve:reserveGoogleApiUse});
       for (const place of places) {
         if (!place.id || !place.location || isChain(place.displayName?.text) ||
             isBlockedPrimaryType(place.primaryType)) continue;

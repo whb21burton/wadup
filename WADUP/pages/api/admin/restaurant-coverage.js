@@ -1,6 +1,19 @@
 import { supabaseAdmin } from '../supabase-admin';
 import { requireAdmin } from './_authAdmin';
 import { isSuperAdmin } from '../../../lib/admin';
+import { readGoogleDiscoveryStatus } from '../../../lib/google-discovery-status';
+
+async function readTiles() {
+  const rows=[];
+  for (let from=0; ; from+=500) {
+    const {data,error}=await supabaseAdmin.from('restaurant_coverage_tiles')
+      .select('id,region,status,attempts,discovered,staged,last_error,completed_at')
+      .order('id').range(from,from+499);
+    if (error) return {error};
+    rows.push(...data);
+    if (data.length<500) return {data:rows};
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
@@ -8,10 +21,8 @@ export default async function handler(req, res) {
   if (!auth || !isSuperAdmin(auth.adminRole))
     return res.status(403).json({ error: 'Super admin access required' });
   res.setHeader('Cache-Control', 'private, no-store');
-  const [tiles, runs, pending, restaurants] = await Promise.all([
-    supabaseAdmin.from('restaurant_coverage_tiles')
-      .select('id,region,status,attempts,discovered,staged,last_error,completed_at,lat,lng')
-      .order('id', { ascending: true }).limit(1500),
+  const [tiles, runs, pending, restaurants, googleUsage] = await Promise.all([
+    readTiles(),
     supabaseAdmin.from('restaurant_coverage_runs')
       .select('id,tile_id,started_at,finished_at,status,api_calls,discovered,staged,error')
       .order('started_at', { ascending: false }).limit(100),
@@ -19,6 +30,7 @@ export default async function handler(req, res) {
       .or('status.eq.pending,status.is.null'),
     supabaseAdmin.from('venues').select('id', { count: 'exact', head: true })
       .eq('category', 'restaurant').eq('is_hidden', false),
+    readGoogleDiscoveryStatus(supabaseAdmin),
   ]);
   const error = [tiles.error, runs.error, pending.error, restaurants.error]
     .find(Boolean);
@@ -43,6 +55,6 @@ export default async function handler(req, res) {
     recentRuns: history.slice(0, 30),
     errors: list.filter(t => t.status === 'error').slice(0, 20)
       .map(t => ({ id: t.id, region: t.region, message: t.last_error })),
-    billingGuard: 'Google Places imports remain disabled until a verified no-charge protection is configured',
+    googleUsage,
   });
 }

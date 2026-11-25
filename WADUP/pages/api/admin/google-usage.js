@@ -30,6 +30,7 @@ export default async function handler(req, res) {
       req.headers.authorization !== 'Bearer ' + process.env.ADMIN_SYNC_PASSWORD) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  if (process.env.GOOGLE_MONITORING_READS_APPROVED !== 'true') return res.status(503).json({error:'Cloud Monitoring reads are disabled'});
   const oidc = req.headers['x-vercel-oidc-token'];
   if (typeof oidc !== 'string' || !oidc) {
     return res.status(503).json({ error: 'No Vercel OIDC token available on this function request' });

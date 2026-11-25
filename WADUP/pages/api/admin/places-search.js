@@ -1,6 +1,7 @@
 // pages/api/admin/places-search.js — Google Places (New) Text Search, used
 // by the Add Venue modal's "Search Google Places" option.
 import { requireAdmin } from './_authAdmin';
+import { reserveGoogleApiUse } from '../../../lib/google-api-admission';
 
 const FIELD_MASK = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.location',
@@ -16,6 +17,8 @@ export default async function handler(req, res) {
 
   const auth = await requireAdmin(req);
   if (!auth) return res.status(403).json({ error: 'Not authorized' });
+  if (process.env.GOOGLE_LEGACY_CONTENT_APPROVED !== 'true' || !await reserveGoogleApiUse('E967-44BC-B44D'))
+    return res.status(503).json({ error:'Google Places search is unavailable' });
 
   if (!process.env.GOOGLE_PLACES_KEY) {
     return res.status(500).json({ error: 'GOOGLE_PLACES_KEY is not configured on the server' });

@@ -12,6 +12,7 @@
 // new places are returned for review — see pages/admin/sync.js and
 // sync-save.js, which writes what gets approved.
 import { requireAdmin } from '../admin/_authAdmin';
+import { reserveGoogleApiUse } from '../../../lib/google-api-admission';
 import { supabaseAdmin } from '../supabase-admin';
 import { SEARCH_GROUPS, runSearchForPreview } from '../../../lib/placesSync';
 
@@ -26,6 +27,7 @@ export default async function handler(req, res) {
   }
 
   const auth = await requireAdmin(req);
+  if (auth && process.env.GOOGLE_LEGACY_CONTENT_APPROVED !== 'true') return res.status(503).json({error:'Legacy Google import disabled'});
   if (!auth) return res.status(403).json({ error: 'Not authorized' });
   if (!process.env.GOOGLE_PLACES_KEY) {
     return res.status(500).json({ error: 'GOOGLE_PLACES_KEY is not configured on the server' });
@@ -39,7 +41,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Unknown category "${category}"` });
   }
 
-  const { rows, errors } = await runSearchForPreview(activeGroups);
+  const { rows, errors } = await runSearchForPreview(activeGroups, reserveGoogleApiUse);
   console.log(`[sync-preview] Google search returned ${rows.length} distinct places for category=${category || 'all'}.`);
 
   if (!rows.length) {

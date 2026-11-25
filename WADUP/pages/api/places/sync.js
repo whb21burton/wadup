@@ -13,6 +13,7 @@
 // Sync Manager's preview-before-save flow) so "what counts as a match"
 // can't drift between the two.
 import { supabaseAdmin } from '../supabase-admin';
+import { reserveGoogleApiUse } from '../../../lib/google-api-admission';
 import {
   SEARCH_GROUPS, runSearch, enrichWithPlaceDetails,
 } from '../../../lib/placesSync';
@@ -38,6 +39,7 @@ export default async function handler(req, res) {
   if (req.headers['x-admin-password'] !== process.env.ADMIN_SYNC_PASSWORD) {
     return res.status(401).json({ error: 'Incorrect admin password' });
   }
+  if (process.env.GOOGLE_LEGACY_CONTENT_APPROVED !== 'true') return res.status(503).json({error:'Legacy Google import disabled'});
   if (!process.env.GOOGLE_PLACES_KEY) {
     return res.status(500).json({ error: 'GOOGLE_PLACES_KEY is not configured on the server' });
   }
@@ -56,7 +58,7 @@ export default async function handler(req, res) {
   }
   const isNightlifeRebuild = categoryFilter === 'nightlife';
 
-  const { rows: allRows, byCategory, errors, skippedChains, skippedNonBar, skippedBlockedType } = await runSearch(activeGroups);
+  const { rows: allRows, byCategory, errors, skippedChains, skippedNonBar, skippedBlockedType } = await runSearch(activeGroups,reserveGoogleApiUse);
 
   if (!allRows.length) {
     return res.status(200).json({ success: true, added_to_queue: 0, already_live: 0, skipped: 0, totalFetched: 0, byCategory, skippedChains, skippedNonBar, skippedBlockedType, errors });
@@ -208,7 +210,7 @@ export default async function handler(req, res) {
       return !(existing?.google_reviews?.length) && !(existing?.google_photo_refs?.length);
     });
     console.log(`[sync] nightlife rebuild: ${pendingCandidates.length} new bars + ${needsEnrichment.length}/${liveUpdateCandidates.length} already-live bars need Place Details (rest already have reviews/photos).`);
-    const enrichmentErrors = await enrichWithPlaceDetails([...pendingCandidates, ...needsEnrichment], supabaseAdmin);
+    const enrichmentErrors = await enrichWithPlaceDetails([...pendingCandidates, ...needsEnrichment], supabaseAdmin,reserveGoogleApiUse);
 
     return res.status(200).json({
       success: true,

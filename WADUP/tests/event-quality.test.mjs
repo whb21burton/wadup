@@ -7,6 +7,7 @@ import {canRunLegacyCron} from '../lib/cron-auth.js';
 import {CATEGORY_CHIPS,venueMatchesChip} from '../lib/data.js';
 import {verifyTicket} from '../lib/ticket-verifier.js';
 import {renderEventPopup} from '../lib/event-popup.js';
+import {fetchOfficialSchedule} from '../lib/venue-schedule-fetch.js';
 import {matchEventVenue} from '../lib/event-venues.js';
 import {fetchSongbirdsEvents} from '../lib/songbirdsEvents.mjs';
 test('reported Lupita duplicate is suppressed only when replacement exists',()=>{
@@ -125,6 +126,17 @@ test('coffee and shopping filters reuse existing categories and exclude incompat
  assert.equal(venueMatchesChip('shopping',{category:'shopping',name:'Walgreens'}),false);
  assert.equal(venueMatchesChip('shopping',{category:'shopping',subcategory:'clothing store',name:'Vintage Boutique'}),true);
 });
+test('owner-approved categories preserve Events ordering, combined cuisine, and deferred categories',()=>{
+ const categories=Object.fromEntries(CATEGORY_CHIPS.map(chip=>[chip.id,chip.subcategories.map(sub=>sub.id)]));
+ assert.deepEqual(Object.keys(categories).sort(),['activities','bars','coffee','events','must-see','outdoors','restaurant','shopping']);
+ assert.deepEqual(categories.events,['Sports','Music','Theater','Comedy','Festivals & Markets']);
+ for(const choice of ['Sports Bar','Speakeasy','Dance Club','Dive Bar','Karaoke Bar','Pool Hall'])assert.ok(categories.bars.includes(choice));
+ for(const removed of ['Live Music','Wine Bar','Cocktail Bar','Community'])assert.ok(!categories.bars.includes(removed));
+ assert.ok(categories.restaurant.includes('Italian/Greek'));
+ assert.ok(!categories.activities.includes('Disc Golf'));
+ for(const removed of ['Bike Trail','Outdoor Shop'])assert.ok(!categories.outdoors.includes(removed));
+ assert.deepEqual(categories.coffee,['Local','Chain']);
+});
 test('The Signal uses the first published time for a performance crossing midnight',()=>{
  const html='<article class="eventlist-event"><a href="/tickets/neon-nye-2026" class="eventlist-title-link">Neon Moon</a>'+
   '<time class="event-time-localized" datetime="2026-12-31">9:00 PM</time>'+
@@ -170,4 +182,20 @@ test('rendered event popup orders links by showtime and labels official selector
  assert.equal(hrefs[2],selector);
  assert.match(html,/Choose a performance on the official site/);
  assert.match(html,/&lt;Test&gt;/);
+});
+test('a failed Alliance production leaves the successful showtime and reports a partial scrape',async()=>{
+ const site='https://www.alliancetheatre.org';
+ const first='/production/2099-00/first/', second='/production/2099-00/second/';
+ const fetcher=async address=>{
+  const path=new URL(address).pathname;
+  if(path==='/shows/')return new Response(`<a href="${first}">First</a><a href="${second}">Second</a>`);
+  if(path===second)return new Response(null,{status:503});
+  if(path===first)return new Response('<div class="js-tnew-buy-tickets-widget-injection" data-ajax-post-id="1" data-production-seasons-id="2"></div>'+
+   `<script type="application/ld+json">${JSON.stringify({name:'First',url:site+first,startDate:'2099-12-01T00:00:00',endDate:'2099-12-30T00:00:00'})}</script>`);
+  return Response.json({html:'<a href="https://my.alliancetheatre.org/2/1" aria-label="Buy Tickets for the performance on Dec 5 at 2:00 PM">2:00 PM</a>'});
+ };
+ const result=await fetchOfficialSchedule('atlanta-alliance-theatre',fetcher);
+ assert.equal(result.status,'partial');
+ assert.equal(result.rows.length,1);
+ assert.equal(result.rows[0].timeStr,'14:00:00');
 });

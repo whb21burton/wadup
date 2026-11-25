@@ -2386,8 +2386,16 @@ export default function WadUp() {
     if (mapInitStarted.current) return;
     mapInitStarted.current = true;
 
-    const initMap = () => {
+    let cancelled = false;
+    const initMap = async () => {
       if (!mapRef.current || !window.google?.maps) return;
+      const reservation = await fetch('/api/google-map-session', {method:'POST'}).catch(() => null);
+      if (cancelled) return;
+      if (!reservation?.ok) {
+        setMapLoadError('Map usage is temporarily unavailable.');
+        setShowSplash(false);
+        return;
+      }
       setMapLoadError('');
 
       const map = new window.google.maps.Map(mapRef.current, {
@@ -2629,6 +2637,7 @@ export default function WadUp() {
       locationWatchRef.current = watchId;
     }
     return () => {
+      cancelled = true;
       if (locationWatchRef.current != null) navigator.geolocation?.clearWatch(locationWatchRef.current);
       locationWatchRef.current = null;
       const map = mapObj.current;
