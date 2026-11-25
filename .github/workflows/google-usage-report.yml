@@ -1,0 +1,48 @@
+name: Google API usage reporting
+
+on:
+  schedule:
+    - cron: '17 */2 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: google-api-usage-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: github.ref == 'refs/heads/main' && vars.GOOGLE_USAGE_QUERY_APPROVED == 'true'
+    runs-on: ubuntu-latest
+    environment: google-usage-reporting
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GOOGLE_USAGE_OIDC_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_USAGE_REPORTER_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GOOGLE_USAGE_QUERY_PROJECT }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Publish billing usage report
+        shell: bash
+        working-directory: WADUP
+        env:
+          GOOGLE_USAGE_QUERY_APPROVED: ${{ vars.GOOGLE_USAGE_QUERY_APPROVED }}
+          GOOGLE_USAGE_BILLING_ACCOUNT: ${{ vars.GOOGLE_USAGE_BILLING_ACCOUNT }}
+          GOOGLE_USAGE_EXPORT_TABLE: ${{ vars.GOOGLE_USAGE_EXPORT_TABLE }}
+          GOOGLE_USAGE_QUERY_PROJECT: ${{ vars.GOOGLE_USAGE_QUERY_PROJECT }}
+          GOOGLE_USAGE_QUERY_MAX_BYTES: ${{ vars.GOOGLE_USAGE_QUERY_MAX_BYTES }}
+          GOOGLE_USAGE_RECEIVER: ${{ vars.GOOGLE_USAGE_RECEIVER }}
+          GOOGLE_USAGE_FEED_SECRET: ${{ secrets.GOOGLE_USAGE_FEED_SECRET }}
+        run: |
+          node scripts/read-google-billing-export.mjs --query | node scripts/publish-google-usage.mjs - --send
