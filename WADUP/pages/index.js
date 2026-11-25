@@ -1913,13 +1913,21 @@ export default function WadUp() {
 
       tmAreaCache.current = {...area,at:Date.now()};
       tmAreaPending.current = null;
-      // Refresh retained popup data when the cache changes.
-      for (const [id,entry] of Object.entries(tmMarkers.current)) {
-        entry.marker.setMap(null);
-        entry.overlay?.setMap(null);
+      // Keep visually unchanged pins mounted and refresh the data their popups read.
+      const nextById = new Map(tmEventsRef.current.map(event => [event.id, event]));
+      for (const [id,mounted] of Object.entries(tmMarkers.current)) {
+        const previous = pinRegistry.current.get(id)?.event;
+        const next = nextById.get(id);
+        if (previous && next && previous.lat === next.lat && previous.lng === next.lng &&
+            previous.name === next.name && previous.price === next.price && specificEventEmoji(previous) === specificEventEmoji(next)) {
+          Object.assign(previous, next);
+          continue;
+        }
+        mounted.marker.setMap(null);
+        mounted.overlay?.setMap(null);
+        delete tmMarkers.current[id];
         pinRegistry.current.delete(id);
       }
-      tmMarkers.current = {};
       filterPins();
       setFeedRevision(v => v + 1);
     } catch (e) {

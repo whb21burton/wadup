@@ -5,6 +5,7 @@ import {allianceProduction,parseAllianceShowtimes,parseFoxShowings,parseSignalSc
 import {reconcileVenuePerformances} from '../lib/reconcile-venue-performances.js';
 import {canRunLegacyCron} from '../lib/cron-auth.js';
 import {CATEGORY_CHIPS,venueMatchesChip} from '../lib/data.js';
+import {verifyTicket} from '../lib/ticket-verifier.js';
 import {matchEventVenue} from '../lib/event-venues.js';
 import {fetchSongbirdsEvents} from '../lib/songbirdsEvents.mjs';
 test('reported Lupita duplicate is suppressed only when replacement exists',()=>{
@@ -129,4 +130,15 @@ test('The Signal uses the first published time for a performance crossing midnig
   '<time class="event-time-localized" datetime="2027-01-01">12:59 PM</time></article>';
  const [event]=parseSignalSchedule(html,{id:'signal',website:'https://www.thesignaltn.com/'});
  assert.deepEqual([event.dateStr,event.timeStr,event.officialUrl],['2026-12-31','21:00:00','https://www.thesignaltn.com/tickets/neon-nye-2026']);
+});
+test('ticket verification treats access blocks and temporary failures as inconclusive',async()=>{
+ const url='https://www.ticketmaster.com/event/ABC123';
+ const failure=status=>async()=>new Response(null,{status});
+ assert.equal((await verifyTicket({url},null,failure(403))).status,'unknown');
+ assert.equal((await verifyTicket({url},null,failure(503))).status,'unknown');
+ const first=await verifyTicket({url},null,failure(404));
+ const second=await verifyTicket({url},{...first,expires_at:'2000-01-01'},failure(404));
+ assert.equal(first.status,'unknown');
+ assert.equal(second.status,'dead');
+ assert.equal((await verifyTicket({url},{...second,expires_at:'2000-01-01'},failure(403))).status,'dead');
 });
