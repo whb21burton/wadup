@@ -29,6 +29,7 @@ const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default async function handler(req, res) {
+  if (process.env.VERCEL_ENV !== 'production') return res.status(401).json({ error: 'Unauthorized' });
   const authHeader = req.headers.authorization;
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}` &&
       req.headers['x-admin-password'] !== process.env.ADMIN_SYNC_PASSWORD) {

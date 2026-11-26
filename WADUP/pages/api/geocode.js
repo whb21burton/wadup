@@ -2,7 +2,8 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const { address, latlng } = req.query;
-  const key = process.env.GMAPS_KEY || 'AIzaSyBoXf6UAa_SckH9gxfbiOK9OPpaySNH76w';
+  const key = process.env.GMAPS_KEY;
+  if (!key) return res.status(503).json({ error: 'Geocoding is not configured' });
 
   const qs = address
     ? `address=${encodeURIComponent(address)}&key=${key}`

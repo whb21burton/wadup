@@ -16,7 +16,7 @@ import MapCoverEditor from '../components/MapCoverEditor';
 
 
 
-const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY || 'AIzaSyBoXf6UAa_SckH9gxfbiOK9OPpaySNH76w';
+const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY;
 // Falls back to the real Impact affiliate ID (not a placeholder) so this
 // works today even before NEXT_PUBLIC_TM_AFFILIATE_ID is set on Vercel.
 const TM_AFFILIATE_ID = process.env.NEXT_PUBLIC_TM_AFFILIATE_ID || '7691820';
@@ -2418,6 +2418,10 @@ export default function WadUp() {
     if (window.google?.maps?.Map) {
       initMap();
     } else {
+      if (!GMAPS_KEY) {
+        setMapLoadError('Google Maps is not configured for this deployment.');
+        return;
+      }
       window.__wadupMapInit = initMap;
       window.gm_authFailure = () => {
         setMapLoadError('Google Maps rejected this website or API key. Check the Maps JavaScript API referrer restrictions for ' + window.location.hostname + '.');

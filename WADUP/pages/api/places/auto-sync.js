@@ -32,6 +32,9 @@ export const config = {
 };
 
 export default async function handler(req, res) {
+  if (process.env.VERCEL_ENV !== 'production') {
+    return res.status(200).json({ enabled: false, message: 'Automatic Places sync is disabled outside production' });
+  }
   const { data, error } = await supabaseAdmin
     .from('venues')
     .select('last_google_sync')

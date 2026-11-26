@@ -88,6 +88,7 @@ const distance = t => {
 };
 
 export default async function handler(req, res) {
+  if (process.env.VERCEL_ENV !== 'production') return res.status(200).json({ enabled: false });
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`)
     return res.status(401).json({ error: 'Unauthorized' });
