@@ -51,7 +51,7 @@ export default function UserProfile() {
   useEffect(() => {
     if (!session?.user) { setViewerProfile(null); return; }
     let cancelled = false;
-    supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    supabase.from('profiles').select('id').eq('id', session.user.id).single()
       .then(({ data, error }) => { if (!cancelled && !error) setViewerProfile(data); });
     return () => { cancelled = true; };
   }, [session]);
@@ -68,7 +68,7 @@ export default function UserProfile() {
     setNotFound(false);
 
     const { data: profileData, error } = await supabase
-      .from('profiles').select('*').eq('username', username).single();
+      .from('profiles').select('id, username, city, is_local').eq('username', username).single();
     if (error || !profileData) { setNotFound(true); setLoading(false); return; }
     setProfile(profileData);
 

@@ -244,7 +244,7 @@ export default function Discover() {
   useEffect(() => {
     if (!session?.user) { setProfile(null); return; }
     let cancelled = false;
-    supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    supabase.from('profiles').select('city').eq('id', session.user.id).single()
       .then(({ data, error }) => { if (!cancelled && !error) setProfile(data); });
     return () => { cancelled = true; };
   }, [session]);

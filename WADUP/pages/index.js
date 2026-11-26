@@ -470,7 +470,7 @@ export default function WadUp() {
     let cancelled = false;
     supabase
       .from('profiles')
-      .select('*')
+      .select('id, username, city, account_type')
       .eq('id', session.user.id)
       .single()
       .then(({ data, error }) => {

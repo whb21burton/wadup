@@ -7,6 +7,7 @@ on:
       - '.github/workflows/local-supabase-auth.yml'
       - 'WADUP/tests/fixtures/auth.*'
       - 'WADUP/tests/browser-scenarios.mjs'
+      - 'WADUP/sql/profile-contact-privacy.sql'
 
 permissions:
   contents: read
@@ -44,6 +45,7 @@ jobs:
           eval "$(printf '%s\n' "$fixture_env" | sed -n -E '/^(API_URL|DB_URL|ANON_KEY|SERVICE_ROLE_KEY)=/p')"
           [[ "$API_URL" == http://127.0.0.1:* && "$DB_URL" == *@127.0.0.1:* && -n "$ANON_KEY" && -n "$SERVICE_ROLE_KEY" ]]
           psql "$DB_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/auth.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f sql/profile-contact-privacy.sql
           export NEXT_PUBLIC_SUPABASE_URL="$API_URL" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
           export WADUP_TEST_SUPABASE_URL="$API_URL" WADUP_LOCAL_AUTH_ISOLATED=true
           export WADUP_PLAYWRIGHT_ENTRY="$PWD/.wadup-browser/node_modules/playwright-core/index.mjs"

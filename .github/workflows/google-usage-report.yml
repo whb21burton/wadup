@@ -38,11 +38,19 @@ jobs:
           service_account: ${{ vars.GOOGLE_USAGE_REPORTER_SERVICE_ACCOUNT }}
           project_id: ${{ vars.GOOGLE_USAGE_QUERY_PROJECT || vars.GOOGLE_USAGE_EXPORT_PROJECT }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Inspect billing export metadata
+        if: inputs.metadata_only
+        working-directory: WADUP
+        env:
+          GOOGLE_USAGE_BILLING_ACCOUNT: ${{ vars.GOOGLE_USAGE_BILLING_ACCOUNT }}
+          GOOGLE_USAGE_EXPORT_PROJECT: ${{ vars.GOOGLE_USAGE_EXPORT_PROJECT }}
+          GOOGLE_USAGE_EXPORT_DATASET: ${{ vars.GOOGLE_USAGE_EXPORT_DATASET }}
+        run: node scripts/read-google-billing-export.mjs --inspect
       - name: Publish billing usage report
+        if: ${{ !inputs.metadata_only && vars.GOOGLE_USAGE_QUERY_APPROVED == 'true' }}
         shell: bash
         working-directory: WADUP
         env:
-          GOOGLE_USAGE_METADATA_ONLY: ${{ inputs.metadata_only }}
           GOOGLE_USAGE_QUERY_APPROVED: ${{ vars.GOOGLE_USAGE_QUERY_APPROVED }}
           GOOGLE_USAGE_BILLING_ACCOUNT: ${{ vars.GOOGLE_USAGE_BILLING_ACCOUNT }}
           GOOGLE_USAGE_EXPORT_PROJECT: ${{ vars.GOOGLE_USAGE_EXPORT_PROJECT }}
@@ -52,10 +60,6 @@ jobs:
           GOOGLE_USAGE_RECEIVER: ${{ vars.GOOGLE_USAGE_RECEIVER }}
           GOOGLE_USAGE_FEED_SECRET: ${{ secrets.GOOGLE_USAGE_FEED_SECRET }}
         run: |
-          if [[ "$GOOGLE_USAGE_METADATA_ONLY" == "true" ]]; then
-            node scripts/read-google-billing-export.mjs --inspect
-            exit
-          fi
           report="$(node scripts/read-google-billing-export.mjs --query)"
           if [[ -n "$report" ]]; then
             printf '%s' "$report" | node scripts/publish-google-usage.mjs - --send

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
+import {createClient} from '@supabase/supabase-js';
 
 const base = new URL(process.env.WADUP_BROWSER_URL);
 const localhost = url => ['127.0.0.1','localhost'].includes(url.hostname);
@@ -151,11 +152,64 @@ async function localAuth(viewport, expectedCount) {
   assert.deepEqual(faults,[]);
   console.log(`Isolated signup, sign-out, sign-in, profile and rating passed at ${viewport.width}px`);
   await page.close();
+  return {username,email,password};
+}
+
+async function profilePrivacy(first, second) {
+  const anonKey=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const options={auth:{persistSession:false,autoRefreshToken:false}};
+  const guest=createClient(staging.href,anonKey,options);
+  const member=createClient(staging.href,anonKey,options);
+  const signIn=await member.auth.signInWithPassword({email:first.email,password:first.password});
+  assert.ifError(signIn.error);
+  for (const client of [guest,member]) {
+    const {data,error}=await client.from('profiles')
+      .select('id,username,city,is_local').eq('username',second.username).single();
+    assert.ifError(error);
+    assert.equal(data.username,second.username);
+    for (const column of ['email','phone']) {
+      const direct=await client.from('profiles').select(column).eq('id',data.id);
+      assert.equal(direct.error?.code,'42501');
+      const filter=await client.from('profiles').select('id').not(column,'is',null);
+      assert.equal(filter.error?.code,'42501');
+    }
+  }
+  const contacts = (token, action, query) => fetch(new URL('/api/admin/ambassador-contacts',base),{
+    method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},
+    body:JSON.stringify({action,query})});
+  assert.equal((await contacts(null,'list')).status,403);
+  assert.equal((await contacts(signIn.data.session.access_token,'search',second.email)).status,403);
+
+  const service=createClient(staging.href,process.env.SUPABASE_SERVICE_ROLE_KEY,options);
+  const {data: target,error: lookupError} = await service.from('profiles')
+    .select('id,email,phone').eq('username',second.username).single();
+  assert.ifError(lookupError);
+  assert.equal(target.email,second.email);
+  assert.equal(target.phone,'4235550100');
+  const {error: grantError} = await service.from('admin_roles').insert([
+    {user_id:signIn.data.user.id,role:'super_admin'},
+    {user_id:target.id,role:'ambassador',assigned_cities:['Chattanooga']}
+  ]);
+  assert.ifError(grantError);
+  const result=await contacts(signIn.data.session.access_token,'search',second.email);
+  assert.equal(result.status,200);
+  assert.equal(result.headers.get('cache-control'),'no-store');
+  const {users}=await result.json();
+  assert.deepEqual(users.map(user=>user.email),[second.email]);
+  assert.equal('phone' in users[0],false);
+  const roster=await contacts(signIn.data.session.access_token,'list');
+  assert.equal(roster.status,200);
+  assert.deepEqual((await roster.json()).users.map(user=>user.profiles.email),[second.email]);
+  console.log('Profile contact privacy passed for guest, ordinary user and authorized super admin');
 }
 
 try {
   const sizes=[{width:1440,height:900},{width:390,height:844}];
-  if(mode==='local-auth') for (const [index,viewport] of sizes.entries()) await localAuth(viewport,index+1);
+  if(mode==='local-auth') {
+    const accounts=[];
+    for (const [index,viewport] of sizes.entries()) accounts.push(await localAuth(viewport,index+1));
+    await profilePrivacy(...accounts);
+  }
   else for (const viewport of sizes) {
     if(mode==='preview-shell') for (const zone of ['America/New_York','Pacific/Kiritimati']) await shell(viewport,zone);
     else for(const city of fixtures.cities) await mapScenario(viewport,city);
