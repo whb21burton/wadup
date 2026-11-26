@@ -1,5 +1,5 @@
-// pages/api/places/auto-sync.js — called (fire-and-forget) from pages/index.js
-// on every map load. Checks how long it's been since venues.last_google_sync
+// pages/api/places/auto-sync.js — authenticated legacy bulk sync trigger.
+// Checks how long it's been since venues.last_google_sync
 // was touched for Chattanooga; if it's been 7+ days (or never synced at
 // all), it triggers the real sync (pages/api/places/sync.js) itself,
 // server-to-server, using the same ADMIN_SYNC_PASSWORD the admin page's
@@ -17,6 +17,8 @@
 // call except the rare one that actually triggers a sync, which can take up
 // to the sync route's own 60s budget — that's fine here, since the CLIENT
 // call in pages/index.js doesn't wait on this response either.
+import { canRunLegacyCron, loadCronDatabase } from '../../../lib/cron-auth';
+
 const SYNC_INTERVAL_DAYS = 7;
 
 function resolveAppUrl() {
@@ -33,7 +35,9 @@ export default async function handler(req, res) {
   if (process.env.VERCEL_ENV !== 'production') {
     return res.status(200).json({ enabled: false, message: 'Automatic Places sync is disabled outside production' });
   }
-  const { supabaseAdmin } = await import('../supabase-admin');
+  if (!canRunLegacyCron(req.headers)) return res.status(401).json({ error: 'Unauthorized' });
+  const supabaseAdmin = await loadCronDatabase();
+  if (!supabaseAdmin) return res.status(503).json({ error: 'Cron database is not configured for this environment' });
   const { data, error } = await supabaseAdmin
     .from('venues')
     .select('last_google_sync')

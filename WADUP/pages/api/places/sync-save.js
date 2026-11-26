@@ -20,6 +20,7 @@ export default async function handler(req, res) {
 
   const auth = await requireAdmin(req);
   if (!auth) return res.status(403).json({ error: 'Not authorized' });
+  if (process.env.GOOGLE_LEGACY_CONTENT_APPROVED !== 'true') return res.status(503).json({error:'Legacy Google import disabled'});
 
   const { venues, rejected } = req.body || {};
   if (!Array.isArray(venues)) {

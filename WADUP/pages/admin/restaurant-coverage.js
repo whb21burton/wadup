@@ -43,7 +43,7 @@ export default function RestaurantCoverage() {
       <AdminSidebar adminRole={role} />
       <main className="admin-main">
         <h1 className="admin-page-title">Restaurant Coverage</h1>
-        <p className="admin-page-sub">Nationwide import progress, overnight runs and review queue.</p>
+        <p className="admin-page-sub">Google API usage and venue discovery progress.</p>
         <button onClick={refresh} disabled={loading} style={{ padding: '9px 16px', marginBottom: 18, cursor: 'pointer' }}>
           {loading ? 'Refreshing…' : 'Refresh dashboard'}
         </button>
@@ -54,9 +54,10 @@ export default function RestaurantCoverage() {
               ['Restaurants on map', data.restaurantCount],
               ['Pending approval', data.pendingCount],
               ['Tiles completed', c.done || 0],
-              ['Tiles remaining', (c.queued || 0) + (c.running || 0)],
+              ['Tiles queued', c.queued || 0],
+              ['Tiles running', c.running || 0],
               ['Tiles with errors', c.error || 0],
-              ['New listings staged', data.stagedFromCoverage],
+              ['Candidate place IDs', data.googleUsage.candidateIds ?? 0],
             ].map(([label, value]) => <div key={label} style={panel}>
               <div style={{ fontSize: 28, fontWeight: 700 }}>{value.toLocaleString()}</div>
               <div style={{ opacity: .75, fontSize: 13 }}>{label}</div>
@@ -79,13 +80,29 @@ export default function RestaurantCoverage() {
             })}
           </section>
           <section style={{ ...panel, marginTop: 20 }}>
-            <h2 style={{ marginTop: 0 }}>Importer status</h2>
-            <p style={{ color: '#fbbf24' }}>{data.billingGuard}</p>
-            <p>Overnight worker scheduled for 3–7 AM Eastern. Discovery is staged for approval, not automatically published.</p>
+            <h2 style={{ marginTop: 0 }}>Discovery status</h2>
+            <p style={{ color: '#fbbf24' }}>{data.googleUsage.discoveryEligible ? 'Eligible to resume on the next scheduled run, subject to SKU and slot limits.' : 'Paused. Discovery requires a fresh billing feed and verified provider limits.'}</p>
+            <p>Every {data.googleUsage.slotMinutes} minutes · Up to {data.googleUsage.searchesPerSlot} category searches per run · Eight categories per tile</p>
+            <p>{data.googleUsage.regions.join(' → ') || 'Region unconfigured'}</p>
+            <p>Discovery saves candidate IDs for independent venue verification.</p>
             <Link href="/admin/venues">Review pending restaurants</Link>
           </section>
           <section style={{ ...panel, marginTop: 20, overflowX: 'auto' }}>
-            <h2 style={{ marginTop: 0 }}>Recent overnight runs</h2>
+            <h2 style={{ marginTop: 0 }}>Monthly Google usage · {data.googleUsage.month}</h2>
+            <p>{data.googleUsage.receivedAt ? `Latest report received ${new Date(data.googleUsage.receivedAt).toLocaleString()}.` : 'No billing report received.'} Estimates use global list prices and include WADUP reservations after the reporting cutoff where tracked.</p>
+            <table style={{ width: '100%', textAlign: 'left', borderSpacing: '0 10px' }}>
+              <thead><tr><th>SKU</th><th>Reported</th><th>Outstanding</th><th>Free cap</th><th>Reserve</th><th>Remaining</th><th>Estimated cost</th></tr></thead>
+              <tbody>{data.googleUsage.skus.map(sku => <tr key={sku.id}>
+                <td>{sku.name}</td><td>{sku.reported?.toLocaleString() ?? 'Unknown'}</td>
+                <td>{sku.pending?.toLocaleString() ?? 'Untracked'}</td><td>{sku.freeCap.toLocaleString()}</td>
+                <td>{sku.reserve.toLocaleString()}</td>
+                <td>{data.googleUsage.feedAvailable ? sku.remaining?.toLocaleString() ?? 'Unknown' : 'Unknown'}</td>
+                <td>{sku.estimatedUsd == null ? 'Unknown' : `$${sku.estimatedUsd.toFixed(2)}`}</td>
+              </tr>)}</tbody>
+            </table>
+          </section>
+          <section style={{ ...panel, marginTop: 20, overflowX: 'auto' }}>
+            <h2 style={{ marginTop: 0 }}>Recent discovery runs</h2>
             {!data.recentRuns.length ? <p>No importer runs recorded yet.</p> :
               <table style={{ width: '100%', textAlign: 'left', borderSpacing: '0 10px' }}>
                 <thead><tr><th>Started</th><th>Tile</th><th>Status</th><th>API calls</th><th>Staged</th></tr></thead>

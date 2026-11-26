@@ -1,12 +1,9 @@
-// Conservative, resumable Chattanooga-outward venue discovery.
-// One Google Nearby Search (Pro field mask) per run; eight runs/day = <=248/month.
-// Bounded by local daily/monthly request counters; Google may bill these calls.
-import { searchNearby, mapPlaceToRow, isChain, isBlockedPrimaryType } from '../../../lib/placesSync';
+// Work outward within each configured city, reserving each search before sending it.
+import { loadCronDatabase } from '../../../lib/cron-auth';
+import { searchNearby, isChain, isBlockedPrimaryType } from '../../../lib/placesSync';
+import { DISCOVERY_SEARCHES_PER_SLOT, DISCOVERY_SLOT_MINUTES, discoveryRegions, tileDistance } from '../../../lib/google-discovery-plan';
 
 export const config = { maxDuration: 60 };
-const CENTER = { lat: 35.0456, lng: -85.3096 };
-const MONTHLY_LIMIT = 250;
-const DAILY_LIMIT = 8;
 const TYPES = [
   { type: 'restaurant', category: 'restaurant' },
   { type: 'bar', category: 'nightlife' },
@@ -39,165 +36,93 @@ function categoryFor(place, searched) {
   // Avoid misclassifying a result from a broad Google includedTypes match.
   return primary ? null : searched;
 }
-// Recheck existing Chattanooga restaurants each run at no additional Places API cost.
-// Only strong, explicit sports-viewing evidence is auto-published; ambiguous
-// references to a TV, a bar, or a grill are not sufficient.
-function sportsBarEvidence(v) {
-  const name = String(v.name || '');
-  const description = String(v.description || '');
-  if (/\b(sports? bar|sports? pub|sports? grill)\b/i.test(name)) return 'explicit_sports_venue_name';
-  if (/\b(sports? bar|sports? pub|sports? grill|dedicated sports viewing|watch (?:the |live )?games?|game.day watch parties|multiple (?:big.screen )?(?:tvs|televisions))\b/i.test(description))
-    return 'explicit_sports_viewing_description';
-  const reviews = Array.isArray(v.google_reviews) ? v.google_reviews : [];
-  const matching = reviews.filter(r => /\b(watch(?:ed|ing)? (?:the |a )?(?:game|football|basketball|baseball)|sports bar|plenty of (?:tvs|televisions)|tvs? (?:everywhere|all around))\b/i.test(String(r?.text?.text || r?.text || '')));
-  return matching.length >= 2 ? 'two_independent_sports_viewing_reviews' : null;
-}
-async function classifyChattanoogaSportsBars(supabaseAdmin) {
-  const { data, error } = await supabaseAdmin.from('venues')
-    .select('id,name,description,google_reviews,category,subcategory,categories,subcategories,is_claimed,is_hidden,is_private')
-    .eq('city', 'Chattanooga').eq('category', 'restaurant').eq('is_claimed', false)
-    .eq('is_hidden', false).eq('is_private', false).limit(1000);
-  if (error) throw error;
-  let updated = 0;
-  const reviewCandidates = [];
-  for (const v of data || []) {
-    if ((v.categories || []).includes('nightlife') && (v.subcategories || []).includes('Sports Bar')) continue;
-    const evidence = sportsBarEvidence(v);
-    if (!evidence) {
-      if (/\b(?:sports|game.day|televisions|tvs?)\b/i.test([v.name,v.description].join(' ')))
-        reviewCandidates.push(v.name);
-      continue;
-    }
-    const categories = [...new Set([...(v.categories || [v.category]), 'nightlife'])];
-    const subcategories = [...new Set([...(v.subcategories || [v.subcategory]).filter(Boolean), 'Sports Bar'])];
-    // Protect owner edits, and re-check the previous category membership.
-    const { data: saved, error: saveError } = await supabaseAdmin.from('venues')
-      .update({ categories, subcategories }).eq('id', v.id)
-      .eq('is_claimed', false).eq('category', 'restaurant')
-      .select('id');
-    if (saveError) throw saveError;
-    updated += saved?.length || 0;
+async function readRegionQueue(supabaseAdmin, center, now) {
+  const region = center.name;
+  // A lost worker keeps its budget reservation. Recover its tile with a
+  // cooldown rather than repeating the same search immediately.
+  const { error: recoveryError } = await supabaseAdmin.from('restaurant_coverage_tiles')
+    .update({ status: 'queued', last_error: 'Interrupted worker' })
+    .eq('region', region).eq('status', 'running').lt('started_at', new Date(now - 15 * 60000).toISOString());
+  if (recoveryError) return { error: 'tile_recovery_failed' };
+
+  const candidates = [];
+  for (let from = 0; ; from += 500) {
+    const { data, error } = await supabaseAdmin.from('restaurant_coverage_tiles')
+      .select('id,lat,lng,radius_m,attempts').eq('region', region).eq('status', 'queued')
+      .or(`last_error.is.null,started_at.lte.${new Date(now - 6 * 3600000).toISOString()}`)
+      .order('id').range(from, from + 499);
+    if (error) return { error: 'tile_query_failed' };
+    candidates.push(...data);
+    if (data.length < 500) break;
   }
-  return { updated, needsReview: reviewCandidates.slice(0, 20) };
+  if (candidates.length) return { candidates: candidates.sort((a, b) =>
+    tileDistance(a, center) - tileDistance(b, center) || a.id - b.id) };
+  const { count, error } = await supabaseAdmin.from('restaurant_coverage_tiles')
+    .select('id', { count: 'exact', head: true }).eq('region', region).neq('status', 'done');
+  if (error || count == null) return { error: 'tile_query_failed' };
+  return { waiting: count > 0 };
 }
-const distance = t => {
-  const dLat = (Number(t.lat) - CENTER.lat) * 111.2;
-  const dLng = (Number(t.lng) - CENTER.lng) * 91.2;
-  return dLat * dLat + dLng * dLng;
-};
+
+async function runCategory(supabaseAdmin, tile, key) {
+  const { data: job, error: reserveError } = await supabaseAdmin.rpc('reserve_places_discovery', { p_tile_id: tile.id });
+  if (reserveError || !job) return { status: 'usage_reservation_failed', code: 503 };
+  if (job.status !== 'reserved') return { status: job.status };
+  const task = TYPES[job.category_cursor];
+  if (!task) return { status: 'invalid_category_cursor', code: 503 };
+
+  let ids = [];
+  let failure = null;
+  try {
+    const places = await searchNearby([task.type], { lat:tile.lat, lng:tile.lng, radius:tile.radius_m },
+      { discoveryOnly:true, apiKey:key, signal:AbortSignal.timeout(15000) });
+    ids = [...new Set(places.filter(place => place.id && !isChain(place.displayName?.text) && categoryFor(place, task.category)).map(place => place.id))];
+  } catch (error) {
+    failure = [401, 403, 429].includes(error?.status)
+      ? 'Nearby Search access or quota rejected'
+      : 'Nearby Search did not complete';
+  }
+  const { data: result, error } = await supabaseAdmin.rpc('finish_places_discovery', {
+    p_run_id:job.id, p_place_ids:ids, p_error:failure,
+  });
+  if (error || !result) return { status: 'tile_completion_failed', code: 503 };
+  return { ...result, code: failure ? 502 : 200, tile: tile.id, category: task.category };
+}
 
 export default async function handler(req, res) {
-  if (process.env.VERCEL_ENV !== 'production') return res.status(200).json({ enabled: false });
+  if (process.env.VERCEL_ENV === 'preview') return res.status(200).json({ enabled: false });
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET required' });
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`)
     return res.status(401).json({ error: 'Unauthorized' });
-  if (!process.env.GOOGLE_PLACES_KEY)
-    return res.status(503).json({ status: 'missing_google_places_key' });
-  const { supabaseAdmin } = await import('../supabase-admin');
+  if (process.env.GOOGLE_PLACES_FREE_BUDGET_VERIFIED !== 'true')
+    return res.json({ status: 'google_budget_not_verified' });
+  const key = process.env.GOOGLE_DISCOVERY_KEY;
+  const regions = discoveryRegions(process.env.GOOGLE_DISCOVERY_REGIONS, process.env.GOOGLE_DISCOVERY_REGION);
+  if (!key || !regions.length) return res.status(503).json({ status: 'discovery_scope_unconfigured' });
+  const supabaseAdmin = await loadCronDatabase();
+  if (!supabaseAdmin) return res.status(503).json({ status: 'cron_database_unavailable' });
 
-  // Classification does not consume a Google search request. It continues
-  // even if the separate discovery search budget is exhausted.
-  let sportsBarAudit;
-  try { sportsBarAudit = await classifyChattanoogaSportsBars(supabaseAdmin); }
-  catch (error) { sportsBarAudit = { error: String(error.message).slice(0, 180) }; }
+  const now = Date.now();
+  const slotDuration = DISCOVERY_SLOT_MINUTES * 60000;
+  const slotEnd = (Math.floor(now / slotDuration) + 1) * slotDuration;
+  for (const region of regions) {
+    const queue = await readRegionQueue(supabaseAdmin, region, now);
+    if (queue.error) return res.status(503).json({ status: queue.error });
+    if (queue.waiting) return res.json({ status: 'region_waiting_for_retry', region: region.name });
+    if (!queue.candidates) continue;
 
-  const now = new Date();
-  const month = now.toISOString().slice(0, 7);
-  const monthStart = `${month}-01T00:00:00.000Z`;
-  const dayStart = new Date(now);
-  dayStart.setUTCHours(0, 0, 0, 0);
-  // Track our own API requests. This is a usage limit, NOT a guarantee of
-  // zero Google Cloud charges (other clients can share the same API key).
-  const [monthResult, dayResult] = await Promise.all([
-    supabaseAdmin.from('restaurant_coverage_runs').select('api_calls').gte('started_at', monthStart),
-    supabaseAdmin.from('restaurant_coverage_runs').select('api_calls').gte('started_at', dayStart.toISOString()),
-  ]);
-  if (monthResult.error || dayResult.error)
-    return res.status(503).json({ status: 'usage_counter_unavailable' });
-  const monthCalls = (monthResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
-  const dayCalls = (dayResult.data || []).reduce((sum, r) => sum + (r.api_calls || 0), 0);
-  if (monthCalls >= MONTHLY_LIMIT)
-    return res.json({ status: 'monthly_limit_reached', monthlyLimit: MONTHLY_LIMIT, sportsBarAudit });
-  if (dayCalls >= DAILY_LIMIT)
-    return res.json({ status: 'daily_limit_reached', dailyLimit: DAILY_LIMIT, sportsBarAudit });
-
-  // Recover stale interrupted tiles; attempts is the next category cursor (0..7).
-  await supabaseAdmin.from('restaurant_coverage_tiles').update({ status: 'queued' })
-    .eq('status', 'running').lt('started_at', new Date(now.getTime() - 15 * 60000).toISOString());
-  const { data: tiles, error: tileError } = await supabaseAdmin
-    .from('restaurant_coverage_tiles').select('id,lat,lng,radius_m,attempts,status,discovered,staged')
-    .eq('status', 'queued').limit(1000);
-  if (tileError) return res.status(503).json({ status: 'tile_query_failed' });
-  const tile = (tiles || []).sort((a,b) => distance(a) - distance(b) || a.id - b.id)[0];
-  if (!tile) return res.json({ status: 'all_tiles_processed', sportsBarAudit });
-  const cursor = Math.min(Number(tile.attempts || 0), TYPES.length - 1);
-  const task = TYPES[cursor];
-  const { data: claimed, error: claimError } = await supabaseAdmin
-    .from('restaurant_coverage_tiles').update({ status: 'running', started_at: now.toISOString() })
-    .eq('id', tile.id).eq('status', 'queued').select('id');
-  if (claimError || !claimed?.length) return res.status(409).json({ status: 'tile_already_claimed' });
-  // Reserve one API call before issuing it, including if Google later errors.
-  const { data: run, error: runError } = await supabaseAdmin
-    .from('restaurant_coverage_runs').insert({ tile_id: tile.id, api_calls: 1 })
-    .select('id').single();
-  if (runError) {
-    await supabaseAdmin.from('restaurant_coverage_tiles').update({ status: 'queued' }).eq('id', tile.id);
-    return res.status(503).json({ status: 'usage_reservation_failed' });
-  }
-  try {
-    const places = await searchNearby([task.type],
-      { lat: Number(tile.lat), lng: Number(tile.lng), radius: Number(tile.radius_m) },
-      { discoveryOnly: true });
-    const byId = new Map();
-    for (const place of places) {
-      if (!place.id || !place.location || isChain(place.displayName?.text)) continue;
-      const cat = categoryFor(place, task.category);
-      if (!cat) continue;
-      if (!byId.has(place.id)) byId.set(place.id, mapPlaceToRow(place, cat));
+    const results = [];
+    let status = 'done';
+    let code = 200;
+    for (let slot = 0; slot < DISCOVERY_SEARCHES_PER_SLOT && queue.candidates.length; slot++) {
+      if (Date.now() >= slotEnd) break;
+      const { code: attemptCode, ...result } = await runCategory(supabaseAdmin, queue.candidates[0], key);
+      status = result.status;
+      code = attemptCode || 200;
+      if (result.tile != null) results.push(result);
+      if (status === 'tile_already_claimed' || result.category_progress === TYPES.length) queue.candidates.shift();
+      if (status !== 'done' && status !== 'tile_already_claimed') break;
     }
-    const rows = [...byId.values()];
-    let staged = 0;
-    if (rows.length) {
-      const ids = rows.map(r => r.google_place_id);
-      const [live, pending, deleted] = await Promise.all([
-        supabaseAdmin.from('venues').select('google_place_id').in('google_place_id', ids),
-        supabaseAdmin.from('venues_pending').select('google_place_id,status').in('google_place_id', ids),
-        supabaseAdmin.from('deleted_venues').select('google_place_id').in('google_place_id', ids),
-      ]);
-      if (live.error || pending.error || deleted.error) throw Error(live.error?.message || pending.error?.message || deleted.error?.message);
-      const blocked = new Set([...(live.data || []), ...(deleted.data || [])].map(r => r.google_place_id));
-      // Previously rejected places must stay excluded; approved/pending places
-      // can be promoted automatically once, without overwriting curated venues.
-      const pendingById = new Map((pending.data || []).map(r => [r.google_place_id, r]));
-      const fresh = rows.filter(r => !blocked.has(r.google_place_id) && !pendingById.has(r.google_place_id));
-      if (fresh.length) {
-        const { error } = await supabaseAdmin.from('venues')
-          .upsert(fresh.map(r => ({ ...r, source: 'google_places', is_verified: false })),
-            { onConflict: 'google_place_id', ignoreDuplicates: true });
-        if (error) throw error;
-        staged = fresh.length;
-      }
-    }
-    const complete = cursor + 1 >= TYPES.length;
-    await supabaseAdmin.from('restaurant_coverage_tiles').update({
-      status: complete ? 'done' : 'queued', attempts: cursor + 1,
-      discovered: (Number(tile.discovered) || 0) + rows.length,
-      staged: (Number(tile.staged) || 0) + staged,
-      completed_at: complete ? new Date().toISOString() : null,
-      last_error: null,
-    }).eq('id', tile.id);
-    await supabaseAdmin.from('restaurant_coverage_runs').update({
-      status: 'done', discovered: rows.length, staged, finished_at: new Date().toISOString(),
-    }).eq('id', run.id);
-    return res.json({ status: 'done', tile: tile.id, categorySearched: task.category,
-      classified: rows.length, addedToMap: staged, sportsBarAudit, categoryProgress: cursor + 1, categoriesPerTile: TYPES.length });
-  } catch (e) {
-    await supabaseAdmin.from('restaurant_coverage_tiles').update({
-      status: 'queued', last_error: String(e.message).slice(0, 500),
-    }).eq('id', tile.id);
-    await supabaseAdmin.from('restaurant_coverage_runs').update({
-      status: 'error', error: String(e.message).slice(0, 500), finished_at: new Date().toISOString(),
-    }).eq('id', run.id);
-    return res.status(500).json({ status: 'error', category: task.category, error: String(e.message) });
+    return res.status(code).json({ status, region: region.name, results });
   }
+  return res.json({ status: 'no_ready_tiles' });
 }

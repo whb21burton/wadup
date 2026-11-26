@@ -10,7 +10,15 @@
     },
     {
       "path": "/api/cron/restaurant-coverage",
-      "schedule": "0 */3 * * *"
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-venue-schedules",
+      "schedule": "15 */6 * * *"
+    },
+    {
+      "path": "/api/cron/verify-event-tickets",
+      "schedule": "30 */2 * * *"
     }
   ]
 }

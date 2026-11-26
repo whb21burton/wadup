@@ -14,8 +14,9 @@ The production deployment at `f068691` is the source of truth for the experience
 
 - [x] Port the eight official adapters and event/ticket handling. Commit `7588835` passed the desktop/mobile real Maps smoke test and 21 event tests. Isolated public-feed ingestion persisted 466 performances from seven complete feeds. Replays, canonical coordinates, canceled/rescheduled behavior, 252-row pagination, and same-day links passed.
 - [ ] Reverify the live Tabernacle feed. Its request remained incomplete. Hosted event persistence awaits a safe database target and explicit authorization for migrations. The recovery preview keeps hosted event writing disabled.
-- [ ] Port event emoji, unified hover and selected marker priority, neighborhood-only staggering and map performance changes. Recheck both layouts after each group.
-- [ ] Port the tested email and phone access protections without changing profile UI or applying hosted migrations.
-- [ ] Recover the existing billing reader and the controlled 15-minute bulk discovery worker. Keep bulk discovery paused pending verified usage headroom. Ordinary map rendering uses the restricted browser key directly.
+- [x] Port event emoji, one-piece marker hover, selected-marker priority, neighborhood-only staggering, and map overlay reuse. Keep the original category, splash, and desktop sidebar markup. Recheck interactions on the final combined preview.
+- [x] Port the tested email and phone access protections and existing test workflow. Isolated SQL verified public denial, service-role access, and replay. The disposable Supabase Auth browser run `45828527737` passed on commit `6926ede`. The hosted grant migration is unapplied.
+- [x] Recover the existing billing reader and the controlled 15-minute bulk discovery worker. Local tests verified report freshness, conservative reserves, slot limits, retries and candidate ID storage. Ordinary map rendering uses the restricted browser key directly.
+- [ ] Keep hosted discovery paused until the billing source and spending headroom are verified. The signed feed receiver and reservation SQL require an approved hosted database migration before use.
 
 The original category data and desktop sidebar source match `f068691`. The inherited category-chip and desktop-sidebar hash checks report mismatches even against that production source. The expected hashes and the original source were left in place pending owner review.

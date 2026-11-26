@@ -216,8 +216,7 @@ export const FIELD_MASK = [
 // Discovery-only field mask: Pro tier, no Enterprise phone/website/hours/rating fields.
 // Enrich individual places later only when a separate SKU budget permits it.
 export const DISCOVERY_FIELD_MASK = [
-  'places.id', 'places.displayName', 'places.formattedAddress',
-  'places.location', 'places.primaryType', 'places.types',
+  'places.id', 'places.displayName', 'places.primaryType',
 ].join(',');
 
 // The search GROUP determines the category, full stop — no per-place
@@ -227,13 +226,15 @@ export const DISCOVERY_FIELD_MASK = [
 // classification work; isChain/isBlockedPrimaryType/BAR_PRIMARY_TYPES catch
 // what slips through.
 export async function searchNearby(types, center, options = {}) {
+  if (!options.discoveryOnly && !await options.reserve?.('772E-9975-BE34')) throw Error('Google Nearby Search budget unavailable');
   const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Goog-Api-Key': process.env.GOOGLE_PLACES_KEY,
+      'X-Goog-Api-Key': options.apiKey || process.env.GOOGLE_PLACES_KEY,
       'X-Goog-FieldMask': options.discoveryOnly ? DISCOVERY_FIELD_MASK : FIELD_MASK,
     },
+    signal: options.signal,
     body: JSON.stringify({
       includedTypes: types,
       maxResultCount: 20,
@@ -245,8 +246,13 @@ export async function searchNearby(types, center, options = {}) {
       },
     }),
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const error = new Error(data.error?.message || `Places API error (${res.status})`);
+    error.status = res.status;
+    throw error;
+  }
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || `Places API error (${res.status})`);
   return data.places || [];
 }
 
@@ -309,7 +315,8 @@ export function mapPlaceToRow(place, wadupCat) {
 // the chain/type filters, not on every raw search result.
 export const DETAILS_FIELD_MASK = 'reviews,photos,regularOpeningHours,currentOpeningHours,rating,userRatingCount';
 
-export async function fetchPlaceDetails(placeId) {
+export async function fetchPlaceDetails(placeId, reserve) {
+  if (!await reserve?.('EB23-5ECC-F753')) throw Error('Google Place Details budget unavailable');
   const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
     headers: {
       'X-Goog-Api-Key': process.env.GOOGLE_PLACES_KEY,
@@ -325,10 +332,10 @@ export async function fetchPlaceDetails(placeId) {
 // writes google_reviews/google_photo_refs/hours straight to `venues`.
 // Returns per-place error strings rather than throwing, so one bad place
 // doesn't take down the whole caller.
-export async function enrichWithPlaceDetails(rows, supabaseAdmin) {
+export async function enrichWithPlaceDetails(rows, supabaseAdmin, reserve) {
   const tasks = rows.map(row => async () => {
     try {
-      const details = await fetchPlaceDetails(row.google_place_id);
+      const details = await fetchPlaceDetails(row.google_place_id, reserve);
       const googleReviews = (details.reviews || []).slice(0, 5).map(r => ({
         authorName: r.authorAttribution?.displayName || 'Anonymous',
         authorPhoto: r.authorAttribution?.photoUri || null,
@@ -360,7 +367,7 @@ export async function enrichWithPlaceDetails(rows, supabaseAdmin) {
 // returns the deduped, filtered result rows plus counters — shared by
 // sync.js (which then writes them) and sync-preview.js (which just returns
 // them for admin review).
-export async function runSearch(activeGroups) {
+export async function runSearch(activeGroups, reserve) {
   const byCategory = {};
   const errors = [];
   const byPlaceId = new Map(); // dedupe places matched by more than one type group/center
@@ -373,7 +380,7 @@ export async function runSearch(activeGroups) {
     for (const center of SEARCH_CENTERS) {
       searchTasks.push(async () => {
         try {
-          return { group, places: await searchNearby(group.types, center) };
+          return { group, places: await searchNearby(group.types, center, {reserve}) };
         } catch (e) {
           return { group, places: [], error: `${group.types.join('/')} @ (${center.lat},${center.lng}): ${e.message}` };
         }
@@ -405,7 +412,7 @@ export async function runSearch(activeGroups) {
 // every result is annotated with isChain/isBlockedType so the Sync Manager
 // preview can show (and let an admin override) auto-rejected candidates
 // instead of silently dropping them.
-export async function runSearchForPreview(activeGroups) {
+export async function runSearchForPreview(activeGroups, reserve) {
   const errors = [];
   const byPlaceId = new Map();
 
@@ -414,7 +421,7 @@ export async function runSearchForPreview(activeGroups) {
     for (const center of SEARCH_CENTERS) {
       searchTasks.push(async () => {
         try {
-          return { group, places: await searchNearby(group.types, center) };
+          return { group, places: await searchNearby(group.types, center, {reserve}) };
         } catch (e) {
           return { group, places: [], error: `${group.types.join('/')} @ (${center.lat},${center.lng}): ${e.message}` };
         }
