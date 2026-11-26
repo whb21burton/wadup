@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {affiliateTicketUrl,ticketDestination,ticketFallback,ticketStatus,suppressTicketDuplicates} from '../lib/ticket-quality.js';
+import {affiliateTicketUrl,officialTicketLink,ticketDestination,ticketFallback,ticketStatus,suppressTicketDuplicates} from '../lib/ticket-quality.js';
 import {allianceProduction,parseAllianceShowtimes,parseFoxShowings,parseSignalSchedule,parseTivoliSchedule,parseVenueSchedule,matchPerformance} from '../lib/venue-schedule.js';
 import {mergeOfficialEventRows,reconcileVenuePerformances} from '../lib/reconcile-venue-performances.js';
 import {canRunLegacyCron} from '../lib/cron-auth.js';
@@ -68,6 +68,12 @@ test('Songbirds retains each official start and its ticket link across calendar 
  assert.deepEqual(rows.map(row=>[row.timeStr,row.officialUrl]),[
   ['14:00:00','https://eventim.us/show-1'],['19:00:00','https://eventim.us/show-2'],
  ]);
+});
+test('Songbirds Eventim link variants stay direct ticket destinations',()=>{
+ for (const host of ['eventim.us','www.eventim.us']) {
+  const url=`https://${host}/event/songbirds-show/12345`;
+  assert.deepEqual(officialTicketLink(url,'https://venue.songbirds.org/','acct'),{url,label:'Get Tickets'});
+ }
 });
 test('cron authentication requires a configured matching secret',()=>{
  assert.equal(canRunLegacyCron({},{}),false);

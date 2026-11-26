@@ -35,7 +35,7 @@ export function officialTicketLink(officialUrl, venueWebsite, affiliateAccount) 
   if(url.href===venueWebsite||url.pathname==='/')return null;
   let label='View official event';
   if(url.hostname==='foxtheatre.evenue.net'&&/SEGet(?:Group|Event)List/i.test(url.pathname))label='Choose a performance on the official site';
-  else if(ticketDestination(url.href)||url.hostname==='eventim.us'||
+  else if(ticketDestination(url.href)||['eventim.us','www.eventim.us'].includes(url.hostname)||
     (url.hostname==='my.alliancetheatre.org'&&/^\/\d+\/\d+\/?$/.test(url.pathname))||
     (url.hostname==='foxtheatre.evenue.net'&&/^\/events\/[^/]+\/?$/.test(url.pathname)))label='Get Tickets';
   return {url:affiliateTicketUrl(url.href,affiliateAccount)||url.href,label};

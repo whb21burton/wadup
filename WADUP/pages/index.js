@@ -402,14 +402,6 @@ export default function WadUp() {
 
   const days = buildDays();
 
-  // ── Auto-sync Chattanooga venues from Google Places — fire-and-forget;
-  // the route itself checks venues.last_google_sync and only actually
-  // triggers a sync if it's been 7+ days, so this is nearly always a no-op
-  // network call on page load. ──
-  useEffect(() => {
-    fetch('/api/places/auto-sync').catch(() => {});
-  }, []);
-
   // ── Add-to-home-screen banner (mobile, not already installed, not dismissed) ──
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1014,17 +1006,21 @@ export default function WadUp() {
     if (map) {
       map.__wadupCloseEventHover?.();
       // Selection belongs to the venue ID, not the transient overlay DOM node.
-      const previous = map.__wadupSelectedPin;
-      if (previous && previous !== entry.el) {
-        previous.classList.remove('wu-pin-selected', 'wu-pin-front');
-        previous.dispatchEvent(new Event('wadup-restack'));
-      }
+      if (map.__wadupSelectedPin !== entry.el) clearPinSelection(map);
       map.__wadupSelectedVenueId = id;
       map.__wadupSelectedPin = entry.el;
       entry.el?.classList.add('wu-pin-selected', 'wu-pin-front');
       if (entry.el) entry.el.style.zIndex = '2147483000';
     }
     entry.openPopup();
+  }
+
+  function clearPinSelection(map) {
+    const selected = map.__wadupSelectedPin;
+    map.__wadupSelectedPin = null;
+    map.__wadupSelectedVenueId = null;
+    selected?.classList.remove('wu-pin-selected', 'wu-pin-front');
+    selected?.dispatchEvent(new Event('wadup-restack'));
   }
 
   // Bars/nightlife get their own pin treatment (dropBarPin, below) — flame
@@ -1349,16 +1345,6 @@ export default function WadUp() {
       el.addEventListener('pointerleave', syncStack);
       el.addEventListener('focusin', syncStack);
       el.addEventListener('focusout', () => requestAnimationFrame(syncStack));
-      el.addEventListener('click', () => {
-        map.__wadupSelectedPin?.classList.remove('wu-pin-selected');
-        if (map.__wadupSelectedPin && map.__wadupSelectedPin !== el) {
-          map.__wadupSelectedPin.dispatchEvent(new Event('wadup-restack'));
-        }
-        map.__wadupSelectedPin = el;
-        map.__wadupSelectedVenueId = v.id;
-        el.classList.add('wu-pin-selected');
-        syncStack();
-      });
       el.addEventListener('wadup-restack', syncStack);
       const previousRemove = overlay.onRemove;
       overlay.onRemove = function() {
@@ -1640,15 +1626,6 @@ export default function WadUp() {
     el.addEventListener('pointerleave', syncStack);
     el.addEventListener('focusin', syncStack);
     el.addEventListener('focusout', () => requestAnimationFrame(syncStack));
-    el.addEventListener('click', () => {
-      map.__wadupSelectedPin?.classList.remove('wu-pin-selected');
-      if (map.__wadupSelectedPin && map.__wadupSelectedPin !== el)
-        map.__wadupSelectedPin.dispatchEvent(new Event('wadup-restack'));
-      map.__wadupSelectedPin = el;
-      map.__wadupSelectedVenueId = v.id;
-      el.classList.add('wu-pin-selected');
-      syncStack();
-    });
     el.addEventListener('wadup-restack', syncStack);
     const previousRemove = overlay.onRemove;
     overlay.onRemove = function () {
@@ -2315,6 +2292,7 @@ export default function WadUp() {
 
       mapObj.current     = map;
       infoWindow.current = new window.google.maps.InfoWindow({ maxWidth: 240 });
+      infoWindow.current.addListener('closeclick', () => clearPinSelection(map));
 
       // Restore the map position/chip/date a visit to a venue page left
       // behind (see the beforeunload handler below) — one-shot, so a later
@@ -2415,10 +2393,7 @@ export default function WadUp() {
       // whatever popup is currently open.
       map.addListener('click', () => {
         map.__wadupCloseEventHover?.();
-        map.__wadupSelectedPin?.classList.remove('wu-pin-selected');
-        map.__wadupSelectedPin?.dispatchEvent(new Event('wadup-restack'));
-        map.__wadupSelectedPin = null;
-        map.__wadupSelectedVenueId = null;
+        clearPinSelection(map);
         infoWindow.current?.close();
       });
 
@@ -2573,12 +2548,16 @@ export default function WadUp() {
 
   // ── Day change ──
   const onDayClick = (iso) => {
-    mapObj.current?.__wadupCloseEventHover?.();
+    const map = mapObj.current;
+    map?.__wadupCloseEventHover?.();
     activeDateRef.current = iso;
     setActiveDate(iso);
     // Close the old event popup so it cannot display the previous day's shows.
-    const selected = pinRegistry.current.get(mapObj.current?.__wadupSelectedVenueId);
-    if (selected?.type === 'tm') infoWindow.current?.close();
+    const selected = pinRegistry.current.get(map?.__wadupSelectedVenueId);
+    if (selected?.type === 'tm') {
+      clearPinSelection(map);
+      infoWindow.current?.close();
+    }
     filterPins();
     if (mapObj.current) void fetchTM();
   };
