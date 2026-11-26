@@ -9,7 +9,7 @@ export const GOOGLE_SKUS = [
   ['6E05-E1C3-8D85', 'Place Details Essentials', 10000, 5],
   ['4ED6-464A-2AFC', 'Place Details Pro', 5000, 17],
   ['2D9A-3DE0-3766', 'Place Details Enterprise', 1000, 20],
-  ['EB23-5ECC-0EF7', 'Place Details Enterprise + Atmosphere', 1000, 25],
+  ['EB23-5ECC-F753', 'Place Details Enterprise + Atmosphere', 1000, 25],
   ['DCD1-FE97-8C71', 'Place Details Photos', 1000, 7],
 ];
 

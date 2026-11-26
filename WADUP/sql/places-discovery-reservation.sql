@@ -6,18 +6,23 @@ create index if not exists restaurant_coverage_tiles_region_status_idx on public
 create or replace function public.reserve_places_discovery(p_tile_id bigint)
 returns jsonb language plpgsql set search_path = '' as $$
 declare
-  checked_at timestamptz := clock_timestamp();
-  active_month text := to_char(checked_at at time zone 'America/Los_Angeles', 'YYYY-MM');
-  month_start timestamptz := date_trunc('month', checked_at at time zone 'America/Los_Angeles') at time zone 'America/Los_Angeles';
-  day_start timestamptz := date_trunc('day', checked_at at time zone 'America/Los_Angeles') at time zone 'America/Los_Angeles';
+  checked_at timestamptz;
+  active_month text;
+  month_start timestamptz;
+  slot_start timestamptz;
   snapshot public.google_usage_reports%rowtype;
   reported bigint;
   monthly bigint;
-  daily bigint;
+  slot_calls bigint;
   pending bigint;
   reservation bigint;
+  category_cursor integer;
 begin
   perform pg_advisory_xact_lock(412721, 1);
+  checked_at := clock_timestamp();
+  active_month := to_char(checked_at at time zone 'America/Los_Angeles', 'YYYY-MM');
+  month_start := date_trunc('month', checked_at at time zone 'America/Los_Angeles') at time zone 'America/Los_Angeles';
+  slot_start := date_bin(interval '15 minutes', checked_at, '2000-01-01 00:00:00+00'::timestamptz);
   select s.* into snapshot from public.google_usage_reports s
   where s.billing_month = active_month
   order by s.covered_through desc, s.received_at desc limit 1;
@@ -32,27 +37,35 @@ begin
   from public.google_usage_reports s where s.billing_month = active_month;
 
   select coalesce(sum(api_calls), 0),
-    coalesce(sum(api_calls) filter (where started_at >= day_start), 0),
+    coalesce(sum(api_calls) filter (where started_at >= slot_start), 0),
     coalesce(sum(api_calls) filter (where started_at >= snapshot.covered_through or status = 'running'), 0)
-  into monthly, daily, pending
+  into monthly, slot_calls, pending
   from public.restaurant_coverage_runs where started_at >= month_start;
 
   if reported + pending >= 4500 then
     return jsonb_build_object('status', 'google_budget_target_reached');
-  elsif monthly >= 250 then
+  elsif monthly >= 4500 then
     return jsonb_build_object('status', 'monthly_limit_reached');
-  elsif daily >= 8 then
-    return jsonb_build_object('status', 'daily_limit_reached');
+  elsif slot_calls >= 2 then
+    return jsonb_build_object('status', 'slot_limit_reached');
+  end if;
+
+  if exists (select 1 from public.restaurant_coverage_runs
+    where started_at >= checked_at - interval '1 hour' and status='error'
+      and error='Nearby Search access or quota rejected') then
+    return jsonb_build_object('status', 'provider_cooldown');
   end if;
 
   update public.restaurant_coverage_tiles set status = 'running', started_at = checked_at
   where id = p_tile_id and status = 'queued'
-    and (last_error is null or started_at <= checked_at - interval '6 hours');
+    and attempts between 0 and 7
+    and (last_error is null or started_at <= checked_at - interval '6 hours')
+  returning attempts into category_cursor;
   if not found then return jsonb_build_object('status', 'tile_already_claimed'); end if;
 
   insert into public.restaurant_coverage_runs (tile_id, api_calls, started_at, status)
   values (p_tile_id, 1, checked_at, 'running') returning id into reservation;
-  return jsonb_build_object('status', 'reserved', 'id', reservation);
+  return jsonb_build_object('status', 'reserved', 'id', reservation, 'category_cursor', category_cursor);
 end;
 $$;
 

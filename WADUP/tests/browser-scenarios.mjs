@@ -101,7 +101,7 @@ async function mapScenario(viewport, city) {
     for (const [index,name] of city.rankNames.entries()) {
       const ranked=restaurants.locator('#map .wu-pill').filter({hasText:name}).first();
       await ranked.waitFor({state:'visible'});
-      assert.match(await ranked.textContent(),new RegExp(`#${index+1}\b`));
+      assert.match(await ranked.textContent(),new RegExp(`#${index+1}\\b`));
       assert.equal(await ranked.evaluate(el=>getComputedStyle(el).backgroundColor),colors[index]);
     }
     await restaurants.close();

@@ -81,8 +81,9 @@ export default function RestaurantCoverage() {
           </section>
           <section style={{ ...panel, marginTop: 20 }}>
             <h2 style={{ marginTop: 0 }}>Discovery status</h2>
-            <p style={{ color: '#fbbf24' }}>{data.googleUsage.discoveryEligible ? 'Eligible to resume on the next scheduled run, subject to daily and monthly reservation limits.' : 'Paused. Discovery requires a fresh billing feed and verified provider limits.'}</p>
-            <p>Every three hours · {data.googleUsage.region || 'Region unconfigured'} · One category search per run</p>
+            <p style={{ color: '#fbbf24' }}>{data.googleUsage.discoveryEligible ? 'Eligible to resume on the next scheduled run, subject to SKU and slot limits.' : 'Paused. Discovery requires a fresh billing feed and verified provider limits.'}</p>
+            <p>Every {data.googleUsage.slotMinutes} minutes · Up to {data.googleUsage.searchesPerSlot} category searches per run · Eight categories per tile</p>
+            <p>{data.googleUsage.regions.join(' → ') || 'Region unconfigured'}</p>
             <p>Discovery saves candidate IDs for independent venue verification.</p>
             <Link href="/admin/venues">Review pending restaurants</Link>
           </section>

@@ -246,8 +246,13 @@ export async function searchNearby(types, center, options = {}) {
       },
     }),
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const error = new Error(data.error?.message || `Places API error (${res.status})`);
+    error.status = res.status;
+    throw error;
+  }
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || `Places API error (${res.status})`);
   return data.places || [];
 }
 
@@ -311,7 +316,7 @@ export function mapPlaceToRow(place, wadupCat) {
 export const DETAILS_FIELD_MASK = 'reviews,photos,regularOpeningHours,currentOpeningHours,rating,userRatingCount';
 
 export async function fetchPlaceDetails(placeId, reserve) {
-  if (!await reserve?.('EB23-5ECC-0EF7')) throw Error('Google Place Details budget unavailable');
+  if (!await reserve?.('EB23-5ECC-F753')) throw Error('Google Place Details budget unavailable');
   const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
     headers: {
       'X-Goog-Api-Key': process.env.GOOGLE_PLACES_KEY,

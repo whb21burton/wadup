@@ -37,7 +37,7 @@ begin
     when 'BAC8-4E68-E261' then 9000 -- Geocoding
     when '772E-9975-BE34' then 900 -- Nearby Search Enterprise
     when 'E967-44BC-B44D' then 900 -- Text Search Enterprise
-    when 'EB23-5ECC-0EF7' then 900 -- Place Details Enterprise + Atmosphere
+    when 'EB23-5ECC-F753' then 900 -- Place Details Enterprise + Atmosphere
     when 'DCD1-FE97-8C71' then 900 -- Place Details Photos
     else 0 end;
   if allowed=0 then return false; end if;
