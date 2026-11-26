@@ -25,7 +25,7 @@ export default async function handler(req,res){
    }
    if(verify){
     const venue=EVENT_VENUES.find(venue=>venue.id===venueId);
-    results.push({venue:venueId,status,count:unique.size,complete:complete===true,
+    results.push({venue:venueId,status,reason,count:unique.size,complete:complete===true,
      hasCanonicalLocation:Number.isFinite(venue?.location?.lat)&&Number.isFinite(venue?.location?.lng)});
     continue;
    }

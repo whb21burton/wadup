@@ -112,8 +112,7 @@ async function mapScenario(viewport, city) {
   }
 }
 
-async function localAuth() {
-  const viewport={width:1440,height:900};
+async function localAuth(viewport, expectedCount) {
   const {page,faults}=await openPage(viewport,{lat:35.0456,lng:-85.3096,zoom:13});
   const username=`fixture_${randomUUID().slice(0,8)}`;
   const email=`${username}@example.test`;
@@ -145,17 +144,18 @@ async function localAuth() {
   const saved=await posted;
   assert.equal(saved.ok(),true);
   const payload=await saved.json();
-  assert.equal(payload.venue.weighted_rating_count,1);
+  assert.equal(payload.venue.weighted_rating_count,expectedCount);
   assert.equal(Number(payload.venue.weighted_rating),8);
   await page.reload();
   await page.getByText(review,{exact:true}).waitFor();
   assert.deepEqual(faults,[]);
+  console.log(`Isolated signup, sign-out, sign-in, profile and rating passed at ${viewport.width}px`);
   await page.close();
 }
 
 try {
   const sizes=[{width:1440,height:900},{width:390,height:844}];
-  if(mode==='local-auth') await localAuth();
+  if(mode==='local-auth') for (const [index,viewport] of sizes.entries()) await localAuth(viewport,index+1);
   else for (const viewport of sizes) {
     if(mode==='preview-shell') for (const zone of ['America/New_York','Pacific/Kiritimati']) await shell(viewport,zone);
     else for(const city of fixtures.cities) await mapScenario(viewport,city);

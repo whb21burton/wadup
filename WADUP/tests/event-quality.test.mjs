@@ -196,6 +196,19 @@ test('a failed Alliance production leaves the successful showtime and reports a 
  };
  const result=await fetchOfficialSchedule('atlanta-alliance-theatre',fetcher);
  assert.equal(result.status,'partial');
+ assert.equal(result.complete,false);
  assert.equal(result.rows.length,1);
  assert.equal(result.rows[0].timeStr,'14:00:00');
+});
+
+test('a nonempty official calendar can retire stale rows, but a rate-limited calendar cannot', async()=>{
+ const event={'@type':'MusicEvent',name:'Fixture Tour',startDate:'2099-12-04T19:00:00',
+  url:'https://www.ticketmaster.com/event/ABCD'};
+ const healthy=await fetchOfficialSchedule('atlanta-tabernacle',async()=>new Response(
+  `<script type="application/ld+json">${JSON.stringify(event)}</script>`));
+ assert.equal(healthy.complete,true);
+ assert.equal(healthy.rows.length,1);
+ const blocked=await fetchOfficialSchedule('atlanta-tabernacle',async()=>new Response(null,{status:429}));
+ assert.equal(blocked.complete===true,false);
+ assert.equal(blocked.reason,'HTTP 429');
 });

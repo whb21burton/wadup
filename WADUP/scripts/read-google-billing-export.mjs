@@ -10,6 +10,7 @@ const month = pacificMonth(now);
 const hour = 3600000;
 const coveredThrough = new Date(Math.floor(now.getTime()/hour)*hour-48*hour).toISOString();
 const account = process.env.GOOGLE_USAGE_BILLING_ACCOUNT;
+const accountIdPattern = /^[A-Z0-9]{6}(?:-[A-Z0-9]{6}){2}$/;
 const project = process.env.GOOGLE_USAGE_EXPORT_PROJECT;
 const dataset = process.env.GOOGLE_USAGE_EXPORT_DATASET || 'wadup_billing';
 const quotaProject = process.env.GOOGLE_USAGE_QUERY_PROJECT || project;
@@ -33,12 +34,10 @@ try {
         (query && process.env.GOOGLE_USAGE_QUERY_APPROVED !== 'true') ||
         !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project || '') || dataset !== 'wadup_billing' ||
         !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(quotaProject || '') ||
-        !/^[A-Za-z0-9]{6}(?:-[A-Za-z0-9]{6}){2}$/.test(account || '') ||
+        ((!inspect || account) && !accountIdPattern.test(account || '')) ||
         !/^[1-9]\d{0,9}$/.test(maxBytes) || Number(maxBytes)>2**30) {
       throw Error('Approved and bounded billing query configuration is required');
     }
-    const exportTable = `gcp_billing_export_v1_${account.toUpperCase().replaceAll('-','_')}`;
-    const table = `${project}.${dataset}.${exportTable}`;
     const datasetMetadata = JSON.parse(bq(['show',`${project}:${dataset}`]).stdout);
     if (datasetMetadata.location !== 'US' || datasetMetadata.defaultTableExpirationMs ||
         datasetMetadata.defaultPartitionExpirationMs || datasetMetadata.storageBillingModel === 'PHYSICAL') {
@@ -46,13 +45,20 @@ try {
     }
     const tables = JSON.parse(bq(['ls','--max_results=1000',`${project}:${dataset}`]).stdout || '[]');
     if (!Array.isArray(tables) || tables.length >= 1000) throw Error('Could not verify the export table listing');
-    const entry = tables.find(item => item.tableReference?.tableId === exportTable);
+    const exportTables = tables.map(item => item.tableReference?.tableId)
+      .filter(name => /^gcp_billing_export_v1_[A-Z0-9]{6}(?:_[A-Z0-9]{6}){2}$/.test(name || ''));
+    const matchingTables = account
+      ? exportTables.filter(name => name === `gcp_billing_export_v1_${account.replaceAll('-','_')}`)
+      : exportTables;
     function pending(status) {
       if (query) console.error(status);
       else console.log(JSON.stringify({status,location:'US'}));
       process.exit(0);
     }
-    if (!entry) pending('export_table_pending');
+    if (!matchingTables.length) pending('export_table_pending');
+    if (matchingTables.length !== 1) throw Error('More than one Standard export exists. Configure the billing account.');
+    const [exportTable] = matchingTables;
+    const table = `${project}.${dataset}.${exportTable}`;
     const metadata = JSON.parse(bq(['show',`${project}:${dataset}.${exportTable}`]).stdout);
     const bytes = Number(metadata.numTotalLogicalBytes ?? metadata.numBytes);
     if (metadata.location !== 'US' || metadata.type !== 'TABLE' ||

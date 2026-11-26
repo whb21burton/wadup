@@ -33,17 +33,23 @@ async function fetchAllianceShowings(html, venue, fetcher, today) {
 }
 
 async function fetchFoxShowings(html, venue, fetcher) {
- const paths=[...new Set([...html.matchAll(/href="(?:https:\/\/www\.foxtheatre\.org)?(\/events\/detail\/[\w%-]+)"/gi)].map(match=>match[1]))].slice(0,50);
+ const paths=[...new Set([...html.matchAll(/href="(?:https:\/\/www\.foxtheatre\.org)?(\/events\/detail\/[\w%-]+)"/gi)].map(match=>match[1]))];
+ const selected=paths.slice(0,50);
  const rows=[];
+ let partial=selected.length<paths.length;
  const signal=AbortSignal.timeout(8000);
- for(let i=0;i<paths.length&&!signal.aborted;i+=5){
-  const batch=await Promise.allSettled(paths.slice(i,i+5).map(async path=>{
+ for(let i=0;i<selected.length&&!signal.aborted;i+=5){
+  const batch=await Promise.allSettled(selected.slice(i,i+5).map(async path=>{
    const response=await fetcher(new URL(path,venue.website).href,{redirect:'error',signal});
-   return response.ok ? parseFoxShowings(await response.text(),venue.id) : [];
+   if(!response.ok)throw Error('Fox performance unavailable');
+   return parseFoxShowings(await response.text(),venue.id);
   }));
-  for(const result of batch)if(result.status==='fulfilled')rows.push(...result.value);
+  for(const result of batch){
+   if(result.status==='fulfilled')rows.push(...result.value);
+   else partial=true;
+  }
  }
- return rows;
+ return {rows,partial:partial||signal.aborted};
 }
 
 async function fetchEasternEvents(venueId, fetcher) {
@@ -89,11 +95,11 @@ export async function fetchOfficialSchedule(venueId, fetcher=fetch) {
   let performances;
   let partial=false;
   if(venue.id==='chattanooga-the-signal') performances=parseSignalSchedule(html,venue);
-  else if(venue.id==='atlanta-fox') performances=await fetchFoxShowings(html,venue,fetcher);
+  else if(venue.id==='atlanta-fox') ({rows:performances,partial}=await fetchFoxShowings(html,venue,fetcher));
   else if(venue.id==='atlanta-alliance-theatre') ({rows:performances,partial}=await fetchAllianceShowings(html,venue,fetcher,today));
   else if(venue.sharedSchedule) performances=parseTivoliSchedule(html,venue);
   else performances=parseVenueSchedule(html,venue);
   const rows=performances.filter(row=>row.dateStr>=today);
-  return {venueId,status:rows.length?(partial?'partial':'parsed'):'unknown',reason:partial?'official schedule returned a partial result':rows.length?null:'no structured performances found',rows,checkedAt:new Date().toISOString()};
+  return {venueId,status:rows.length?(partial?'partial':'parsed'):'unknown',reason:partial?'official schedule returned a partial result':rows.length?null:'no structured performances found',rows,complete:rows.length>0&&!partial,checkedAt:new Date().toISOString()};
  }catch{return {venueId,status:'unknown',reason:'fetch failed',rows:[]};}
 }

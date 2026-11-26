@@ -15,8 +15,8 @@ const result=await fetch(endpoint,{method:'POST',headers:{...headers,Authorizati
 const data=await result.json();
 assert.equal(data.mode,'verification','Response must attest that only adapter verification was executed');
 assert.deepEqual(data.results.map(row=>row.venue),EVENT_VENUES.map(venue=>venue.id));
-for (const {venue,status,count,complete,hasCanonicalLocation} of data.results) {
-  console.log(JSON.stringify({venue,status,count,complete,hasCanonicalLocation}));
+for (const {venue,status,reason,count,complete,hasCanonicalLocation} of data.results) {
+  console.log(JSON.stringify({venue,status,reason,count,complete,hasCanonicalLocation}));
 }
 assert.equal(result.status,200,'At least one hosted adapter was incomplete');
 assert.ok(data.results.every(row=>row.complete && row.count>0 && row.hasCanonicalLocation));

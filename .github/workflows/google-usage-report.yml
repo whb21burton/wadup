@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '17 */2 * * *'
   workflow_dispatch:
+    inputs:
+      metadata_only:
+        description: 'Check export metadata without starting a data query'
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -13,7 +18,7 @@ concurrency:
 
 jobs:
   report:
-    if: github.ref == 'refs/heads/main' && vars.GOOGLE_USAGE_QUERY_APPROVED == 'true'
+    if: github.ref == 'refs/heads/main' && (inputs.metadata_only || vars.GOOGLE_USAGE_QUERY_APPROVED == 'true')
     runs-on: ubuntu-latest
     environment: google-usage-reporting
     timeout-minutes: 8
@@ -37,6 +42,7 @@ jobs:
         shell: bash
         working-directory: WADUP
         env:
+          GOOGLE_USAGE_METADATA_ONLY: ${{ inputs.metadata_only }}
           GOOGLE_USAGE_QUERY_APPROVED: ${{ vars.GOOGLE_USAGE_QUERY_APPROVED }}
           GOOGLE_USAGE_BILLING_ACCOUNT: ${{ vars.GOOGLE_USAGE_BILLING_ACCOUNT }}
           GOOGLE_USAGE_EXPORT_PROJECT: ${{ vars.GOOGLE_USAGE_EXPORT_PROJECT }}
@@ -46,6 +52,10 @@ jobs:
           GOOGLE_USAGE_RECEIVER: ${{ vars.GOOGLE_USAGE_RECEIVER }}
           GOOGLE_USAGE_FEED_SECRET: ${{ secrets.GOOGLE_USAGE_FEED_SECRET }}
         run: |
+          if [[ "$GOOGLE_USAGE_METADATA_ONLY" == "true" ]]; then
+            node scripts/read-google-billing-export.mjs --inspect
+            exit
+          fi
           report="$(node scripts/read-google-billing-export.mjs --query)"
           if [[ -n "$report" ]]; then
             printf '%s' "$report" | node scripts/publish-google-usage.mjs - --send
