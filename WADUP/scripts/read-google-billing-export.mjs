@@ -1,5 +1,5 @@
 // Optional producer for an already-enabled Standard Cloud Billing export.
-// --preflight reads metadata and dry-runs SQL. --query submits a bounded data query.
+// --inspect reads metadata. --preflight also dry-runs SQL. --query submits a bounded data query.
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {GOOGLE_SKUS, pacificMonth} from '../lib/google-sku-budget.js';
@@ -10,11 +10,13 @@ const month = pacificMonth(now);
 const hour = 3600000;
 const coveredThrough = new Date(Math.floor(now.getTime()/hour)*hour-48*hour).toISOString();
 const account = process.env.GOOGLE_USAGE_BILLING_ACCOUNT;
-const table = process.env.GOOGLE_USAGE_EXPORT_TABLE;
-const quotaProject = process.env.GOOGLE_USAGE_QUERY_PROJECT;
+const project = process.env.GOOGLE_USAGE_EXPORT_PROJECT;
+const dataset = process.env.GOOGLE_USAGE_EXPORT_DATASET || 'wadup_billing';
+const quotaProject = process.env.GOOGLE_USAGE_QUERY_PROJECT || project;
 const maxBytes = process.env.GOOGLE_USAGE_QUERY_MAX_BYTES || String(2**30);
 const query = process.argv.includes('--query');
 const preflight = process.argv.includes('--preflight');
+const inspect = process.argv.includes('--inspect');
 
 function bq(args, input) {
   const result = spawnSync('bq',['--location=US','--format=json',`--project_id=${quotaProject}`,...args],
@@ -24,16 +26,33 @@ function bq(args, input) {
 }
 
 try {
-  if (!query && !preflight) {
+  if (!query && !preflight && !inspect) {
     console.log('No query submitted. This producer requires an approved existing export and --query.');
   } else {
-    if ((query && (preflight || process.env.GOOGLE_USAGE_QUERY_APPROVED !== 'true')) ||
-        !/^[a-z][a-z0-9-]+\.wadup_billing\.gcp_billing_export_v1_[A-Za-z0-9_]+$/.test(table || '') ||
-        !/^[A-Za-z0-9-]+$/.test(quotaProject || '') || !/^[A-Za-z0-9-]+$/.test(account || '') ||
-        !/^[1-9]\d{0,9}$/.test(maxBytes) || Number(maxBytes)>2**30 ||
-        !table.endsWith(`_${account.replaceAll('-','_')}`)) throw Error('Approved and bounded billing query configuration is required');
-    if (query && pacificMonth(new Date(coveredThrough)) !== month) throw Error('New billing month is within the reporting-delay window');
-    const [project, dataset, exportTable] = table.split('.');
+    if (Number(query) + Number(preflight) + Number(inspect) !== 1 ||
+        (query && process.env.GOOGLE_USAGE_QUERY_APPROVED !== 'true') ||
+        !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project || '') || dataset !== 'wadup_billing' ||
+        !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(quotaProject || '') ||
+        !/^[A-Za-z0-9]{6}(?:-[A-Za-z0-9]{6}){2}$/.test(account || '') ||
+        !/^[1-9]\d{0,9}$/.test(maxBytes) || Number(maxBytes)>2**30) {
+      throw Error('Approved and bounded billing query configuration is required');
+    }
+    const exportTable = `gcp_billing_export_v1_${account.toUpperCase().replaceAll('-','_')}`;
+    const table = `${project}.${dataset}.${exportTable}`;
+    const datasetMetadata = JSON.parse(bq(['show',`${project}:${dataset}`]).stdout);
+    if (datasetMetadata.location !== 'US' || datasetMetadata.defaultTableExpirationMs ||
+        datasetMetadata.defaultPartitionExpirationMs || datasetMetadata.storageBillingModel === 'PHYSICAL') {
+      throw Error('Export dataset must use US logical storage without automatic expiration');
+    }
+    const tables = JSON.parse(bq(['ls','--max_results=1000',`${project}:${dataset}`]).stdout || '[]');
+    if (!Array.isArray(tables) || tables.length >= 1000) throw Error('Could not verify the export table listing');
+    const entry = tables.find(item => item.tableReference?.tableId === exportTable);
+    function pending(status) {
+      if (query) console.error(status);
+      else console.log(JSON.stringify({status,location:'US'}));
+      process.exit(0);
+    }
+    if (!entry) pending('export_table_pending');
     const metadata = JSON.parse(bq(['show',`${project}:${dataset}.${exportTable}`]).stdout);
     const bytes = Number(metadata.numTotalLogicalBytes ?? metadata.numBytes);
     if (metadata.location !== 'US' || metadata.type !== 'TABLE' ||
@@ -41,6 +60,14 @@ try {
         metadata.expirationTime || metadata.timePartitioning?.expirationMs) {
       throw Error('Export metadata has an unexpected region, storage size, or expiration policy');
     }
+    if (!Number.isSafeInteger(Number(metadata.numRows)) || Number(metadata.numRows) < 0)
+      throw Error('Export row-count metadata could not be verified');
+    if (Number(metadata.numRows) === 0) pending('export_rows_pending');
+    if (inspect) {
+      console.log(JSON.stringify({status:'export_table_detected',location:'US',tableLogicalBytes:bytes}));
+      process.exit(0);
+    }
+    if (query && pacificMonth(new Date(coveredThrough)) !== month) pending('reporting_window_pending');
     const skuIds=GOOGLE_SKUS.map(([id])=>`'${id}'`).join(',');
     const sql=`WITH account_rows AS (
       SELECT sku.id AS sku_id, usage.amount AS amount, LOWER(usage.unit) AS unit, usage_end_time, export_time

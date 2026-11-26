@@ -15,7 +15,7 @@ if (mode==='local-auth' && (!localhost(base)||!staging||!localhost(staging)||pro
 if (mode==='live-map' && process.env.WADUP_MAP_TEST_APPROVED!=='true') throw Error('Live Maps tests require explicit verified budget approval');
 const fixtures=mode==='live-map'||mode==='local-auth' ? JSON.parse(await readFile(process.env.WADUP_BROWSER_FIXTURES,'utf8')) : {};
 const {chromium}=await import(pathToFileURL(process.env.WADUP_PLAYWRIGHT_ENTRY).href);
-const browser=await chromium.launch({channel:'msedge',headless:true,args:['--disable-background-networking']});
+const browser=await chromium.launch({channel:process.platform==='win32'?'msedge':undefined,headless:true,args:['--disable-background-networking']});
 const token=process.env.VERCEL_OIDC_TOKEN;
 
 async function openPage(viewport, state, timezoneId) {
@@ -129,6 +129,7 @@ async function localAuth() {
   await form.getByPlaceholder('This becomes your local city').fill('Chattanooga');
   await form.getByRole('button',{name:'Create Account',exact:true}).click();
   await page.getByRole('button',{name:'Log Out',exact:true}).click();
+  await page.locator('.auth-tabs').getByRole('button',{name:'Log In',exact:true}).click();
   await form.locator('input[type=email]').fill(email);
   await form.locator('input[type=password]').fill(password);
   await form.getByRole('button',{name:'Log In',exact:true}).click();
@@ -141,7 +142,11 @@ async function localAuth() {
   await page.getByPlaceholder('What was it like?').fill(review);
   const posted=page.waitForResponse(r=>r.url().endsWith('/api/reviews/submit')&&r.request().method()==='POST');
   await page.getByRole('button',{name:'Submit Rating',exact:true}).click();
-  assert.equal((await posted).ok(),true);
+  const saved=await posted;
+  assert.equal(saved.ok(),true);
+  const payload=await saved.json();
+  assert.equal(payload.venue.weighted_rating_count,1);
+  assert.equal(Number(payload.venue.weighted_rating),8);
   await page.reload();
   await page.getByText(review,{exact:true}).waitFor();
   assert.deepEqual(faults,[]);

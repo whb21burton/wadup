@@ -1,0 +1,57 @@
+name: Isolated Supabase Auth browser checks
+
+on:
+  push:
+    branches: [development/official-event-integrations]
+    paths:
+      - '.github/workflows/local-supabase-auth.yml'
+      - 'WADUP/tests/fixtures/auth.*'
+      - 'WADUP/tests/browser-scenarios.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  local-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: WADUP
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3
+        with:
+          version: '3.4.0'
+      - name: Install app and browser
+        run: |
+          npm install
+          npm install --prefix .wadup-browser --no-save playwright-core@1.65.1
+          node .wadup-browser/node_modules/playwright-core/cli.js install --with-deps chromium
+      - name: Run browser tests against a disposable stack
+        run: |
+          supabase init
+          supabase start >/dev/null
+          fixture_env="$(supabase status -o env)"
+          eval "$(printf '%s\n' "$fixture_env" | sed -n -E '/^(API_URL|DB_URL|ANON_KEY|SERVICE_ROLE_KEY)=/p')"
+          [[ "$API_URL" == http://127.0.0.1:* && "$DB_URL" == *@127.0.0.1:* && -n "$ANON_KEY" && -n "$SERVICE_ROLE_KEY" ]]
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/auth.sql
+          export NEXT_PUBLIC_SUPABASE_URL="$API_URL" NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+          export WADUP_TEST_SUPABASE_URL="$API_URL" WADUP_LOCAL_AUTH_ISOLATED=true
+          export WADUP_PLAYWRIGHT_ENTRY="$PWD/.wadup-browser/node_modules/playwright-core/index.mjs"
+          export WADUP_BROWSER_FIXTURES="$PWD/tests/fixtures/auth.json" WADUP_BROWSER_URL=http://127.0.0.1:4427
+          npm run build
+          npm run start -- --hostname 127.0.0.1 --port 4427 &
+          for i in {1..30}; do
+            if curl --fail --silent "$WADUP_BROWSER_URL" >/dev/null; then break; fi
+            sleep 1
+          done
+          node tests/browser-scenarios.mjs local-auth

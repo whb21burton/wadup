@@ -31,7 +31,7 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GOOGLE_USAGE_OIDC_PROVIDER }}
           service_account: ${{ vars.GOOGLE_USAGE_REPORTER_SERVICE_ACCOUNT }}
-          project_id: ${{ vars.GOOGLE_USAGE_QUERY_PROJECT }}
+          project_id: ${{ vars.GOOGLE_USAGE_QUERY_PROJECT || vars.GOOGLE_USAGE_EXPORT_PROJECT }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
       - name: Publish billing usage report
         shell: bash
@@ -39,10 +39,14 @@ jobs:
         env:
           GOOGLE_USAGE_QUERY_APPROVED: ${{ vars.GOOGLE_USAGE_QUERY_APPROVED }}
           GOOGLE_USAGE_BILLING_ACCOUNT: ${{ vars.GOOGLE_USAGE_BILLING_ACCOUNT }}
-          GOOGLE_USAGE_EXPORT_TABLE: ${{ vars.GOOGLE_USAGE_EXPORT_TABLE }}
+          GOOGLE_USAGE_EXPORT_PROJECT: ${{ vars.GOOGLE_USAGE_EXPORT_PROJECT }}
+          GOOGLE_USAGE_EXPORT_DATASET: ${{ vars.GOOGLE_USAGE_EXPORT_DATASET }}
           GOOGLE_USAGE_QUERY_PROJECT: ${{ vars.GOOGLE_USAGE_QUERY_PROJECT }}
           GOOGLE_USAGE_QUERY_MAX_BYTES: ${{ vars.GOOGLE_USAGE_QUERY_MAX_BYTES }}
           GOOGLE_USAGE_RECEIVER: ${{ vars.GOOGLE_USAGE_RECEIVER }}
           GOOGLE_USAGE_FEED_SECRET: ${{ secrets.GOOGLE_USAGE_FEED_SECRET }}
         run: |
-          node scripts/read-google-billing-export.mjs --query | node scripts/publish-google-usage.mjs - --send
+          report="$(node scripts/read-google-billing-export.mjs --query)"
+          if [[ -n "$report" ]]; then
+            printf '%s' "$report" | node scripts/publish-google-usage.mjs - --send
+          fi
