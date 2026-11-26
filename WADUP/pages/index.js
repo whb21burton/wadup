@@ -13,6 +13,11 @@ import { getAdminRole } from '../lib/admin';
 import AuthSidebar from '../components/AuthSidebar';
 import AdminEditPanel from '../components/AdminEditPanel';
 import MapCoverEditor from '../components/MapCoverEditor';
+import { escapeHtml, renderEventPopup } from '../lib/event-popup';
+import { EVENT_VENUES, matchEventVenue } from '../lib/event-venues';
+import { mergeOfficialEventRows } from '../lib/reconcile-venue-performances';
+import { preferredTicketRecord, suppressTicketDuplicates } from '../lib/ticket-quality';
+import { matchPerformance } from '../lib/venue-schedule';
 
 
 
@@ -20,39 +25,6 @@ const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY;
 // Falls back to the real Impact affiliate ID (not a placeholder) so this
 // works today even before NEXT_PUBLIC_TM_AFFILIATE_ID is set on Vercel.
 const TM_AFFILIATE_ID = process.env.NEXT_PUBLIC_TM_AFFILIATE_ID || '7691820';
-const TM_CAMPAIGN_ID = '264167';
-const TM_ADVERTISER_ID = '4272';
-
-// ── Wrap an outbound Ticketmaster URL in Impact's affiliate tracking link
-// (replaces the old ?camefrom= param, which didn't actually attribute
-// clicks/commissions through Impact) ──
-function withTMAffiliateTracking(ticketUrl) {
-  if (!ticketUrl) return null;
-  try {
-    let url = new URL(ticketUrl);
-
-    // Ticketmaster's Discovery API — for an API key tied to an approved
-    // affiliate account, which ours is — already returns event.url values
-    // PRE-WRAPPED in Impact's evyy.net redirect format (generic "APP"
-    // affiliate id, but the same real campaign/advertiser ids as below).
-    // Wrapping that again nests one Impact redirect inside another, which
-    // is exactly what produced the "malformed link" error: unwrap to the
-    // real ticketmaster.com destination first when that's what we're given.
-    if (url.hostname === 'ticketmaster.evyy.net') {
-      const inner = url.searchParams.get('u');
-      if (!inner) return null;
-      url = new URL(inner);
-    }
-
-    if (!url.hostname.includes('ticketmaster') && !url.hostname.includes('livenation')) {
-      return url.toString();
-    }
-
-    return `https://ticketmaster.evyy.net/c/${TM_AFFILIATE_ID}/${TM_CAMPAIGN_ID}/${TM_ADVERTISER_ID}?u=${encodeURIComponent(url.toString())}`;
-  } catch (e) {
-    return null;
-  }
-}
 
 function restaurantFoodIcon(v) {
   // Only the primary category controls the map icon; a secondary bar tag
@@ -194,18 +166,6 @@ function tmMatchesSportFilter(ev, selected) {
 }
 
 
-// Popups are built as raw HTML strings for Google's InfoWindow — escape any
-// text that ultimately comes from an API response or (eventually) user input.
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 // ── Day strip helpers ──
 function buildDays() {
   const days = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
@@ -322,6 +282,8 @@ export default function WadUp() {
   const tmMarkers    = useRef({});
   const overlays     = useRef({});
   const tmEventsRef  = useRef([]);
+  const tmCacheRef = useRef(null);
+  const tmRequestRef = useRef(0);
   const venuesRef    = useRef([]);
   const trendingVenueIds = useRef(new Set());
   const bestRatedVenueIds = useRef(new Set());
@@ -368,7 +330,7 @@ export default function WadUp() {
   const matchesSelectedVenue = (venue, date) => {
     const chip = activeCategoryRef.current;
     return chip === 'wadup'
-      ? venueEventsRef.current.some(e => e.venue_id === venue.id && (e.start_time || '').slice(0, 10) === date && !['happy_hour', 'specials'].includes(e.event_type) && (date !== localIsoDate() || !e.end_time || new Date(e.end_time.replace(' ', 'T')).getTime() >= Date.now()))
+      ? venueEventsRef.current.some(e => e.venue_id === venue.id && (e.start_time || '').slice(0, 10) === date && !isReplacedLegacyEvent(e) && !['happy_hour', 'specials'].includes(e.event_type) && (date !== localIsoDate() || !e.end_time || new Date(e.end_time.replace(' ', 'T')).getTime() >= Date.now()))
       : venueMatchesChip(chip, venue, chip === 'events' ? [] : (activeSubcategoryRef.current[chip] || [])) &&
         (chip !== 'events' || (() => { const event = getVenueEventForDay(venue.id, date); return !!event && matchesEventSubcategories({ ...event, name: event.name || event.title || venue.name }, activeSubcategoryRef.current.events || []); })());
   };
@@ -967,7 +929,7 @@ export default function WadUp() {
   // Prefers whichever entry is live right now; otherwise the day's earliest.
   function getVenueEventForDay(venueId, dayIso) {
     const rows = venueEventsRef.current.filter(
-      e => e.venue_id === venueId && (e.start_time || '').slice(0, 10) === dayIso
+      e => e.venue_id === venueId && (e.start_time || '').slice(0, 10) === dayIso && !isReplacedLegacyEvent(e)
     );
     if (!rows.length) return null;
     if (dayIso !== todayIsoStr()) {
@@ -976,6 +938,16 @@ export default function WadUp() {
     const stillOn = rows.filter(e => !isEventOverToday(e));
     if (!stillOn.length) return null;
     return stillOn.find(isEventLive) || stillOn.slice().sort((a, b) => a.start_time.localeCompare(b.start_time))[0];
+  }
+  function isReplacedLegacyEvent(event) {
+    if (event.source !== 'scraped' || !event.start_time) return false;
+    const storedVenue = venuesRef.current.find(venue => venue.id === event.venue_id);
+    const venue = EVENT_VENUES.find(item => item.legacyVenueId === event.venue_id) ||
+      (storedVenue && matchEventVenue({ ...storedVenue, venue_name: storedVenue.name }));
+    if (!venue) return false;
+    return tmEventsRef.current.some(group => group.venueId === venue.id && group.showings.some(show =>
+      show.isOfficial && matchPerformance(show, { venueId: venue.id, name: event.title,
+        dateStr: event.start_time.slice(0, 10), timeStr: event.start_time.slice(11, 16) })));
   }
   function isEventOverToday(ev) {
     if (!ev.end_time) return false;
@@ -1218,6 +1190,7 @@ export default function WadUp() {
         ${todayEvent.performer ? `<div class="popup-performer">${isLiveEvent ? '<span class="wu-live-music-note">🎵</span>' : getEventIcon(todayEvent.event_type)} ${escapeHtml(todayEvent.performer)}</div>` : ''}
         ${todayEvent.title ? `<div class="popup-event-name">${escapeHtml(todayEvent.title)}</div>` : ''}
         <div class="popup-event-time">${isLiveEvent ? '<span class="live-now-text">🔴 LIVE NOW</span>' : `🕐 ${escapeHtml(formatTime((todayEvent.start_time || '').slice(11, 16)))}`}</div>
+        ${/^https:\/\//i.test(todayEvent.ticket_url || '') ? `<a class="popup-link" href="${escapeHtml(todayEvent.ticket_url)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets →</a>` : ''}
       ` : '';
 
     const canEditPhoto = Boolean(adminRoleRef.current || (sessionRef.current?.user?.id && v.owner_id === sessionRef.current.user.id));
@@ -1568,6 +1541,7 @@ export default function WadUp() {
         ${todayEvent.performer ? `<div class="popup-performer">${isLiveEvent ? '<span class="wu-live-music-note">🎵</span>' : getEventIcon(todayEvent.event_type)} ${escapeHtml(todayEvent.performer)}</div>` : ''}
         ${todayEvent.title ? `<div class="popup-event-name">${escapeHtml(todayEvent.title)}</div>` : ''}
         <div class="popup-event-time">${isLiveEvent ? '<span class="live-now-text">🔴 LIVE NOW</span>' : `🕐 ${escapeHtml(formatTime((todayEvent.start_time || '').slice(11, 16)))}`}</div>
+        ${/^https:\/\//i.test(todayEvent.ticket_url || '') ? `<a class="popup-link" href="${escapeHtml(todayEvent.ticket_url)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets →</a>` : ''}
       ` : '';
 
     const iwHtml = `
@@ -1726,29 +1700,7 @@ export default function WadUp() {
     // Ticketmaster performance retains its own date, time and ticket URL.
     // The date picker decides whether a production's pin is visible.
     // Build popup at click time using the currently selected calendar day.
-    const buildTMPopup = () => {
-    const selectedDay = activeDateRef.current || todayIsoStr();
-    const performances = (Array.isArray(ev.showings) && ev.showings.length ? ev.showings : [ev])
-      .filter(show => show && show.dateStr === selectedDay)
-      .sort((a,b) => ((a.dateStr || '') + 'T' + (a.timeStr || '')).localeCompare((b.dateStr || '') + 'T' + (b.timeStr || '')));
-    const showingRows = performances.map(show => {
-      const day = show.dateStr ? new Date(show.dateStr + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : 'Date TBD';
-      const ticketLink = show.url?.startsWith('http') ? withTMAffiliateTracking(show.url) : null;
-      return `<div style="padding:10px 0;border-top:1px solid #e4e7eb">
-        <div class="popup-row"><span class="popup-stat">📅 ${escapeHtml(day)} · ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : 'Time TBD')}</span>
-        ${show.price ? `<span class="popup-stat popup-price">${escapeHtml(show.price)}</span>` : ''}</div>
-        ${ticketLink ? `<a class="popup-link" href="${escapeHtml(ticketLink)}" target="_blank" rel="noopener noreferrer">🎟️ Get Tickets for ${escapeHtml(show.timeStr ? formatTime(show.timeStr) : day)} →</a>` : '<span style="color:#777">Tickets unavailable</span>'}
-      </div>`;
-    }).join('');
-
-    return `
-      <div class="gm-iw">
-        <div class="popup-name">${icon} ${escapeHtml(ev.name)}</div>
-        <div class="popup-type">${escapeHtml(CATEGORY_LABELS[ev.cat] || ev.cat)}${ev.city ? ' · ' + escapeHtml(ev.city) + ', ' + escapeHtml(ev.state) : ''}</div>
-        <div class="tm-showtimes" style="max-height:300px;overflow-y:auto;overscroll-behavior:contain">${showingRows || '<div style="padding:10px 0">No performances scheduled for this day.</div>'}</div>
-        <div class="popup-source">via Ticketmaster</div>
-      </div>`;
-    };
+    const buildTMPopup = () => renderEventPopup(ev, activeDateRef.current || todayIsoStr(), icon, TM_AFFILIATE_ID);
 
     const offsetPos = getOffsetPosition(ev.lat, ev.lng);
     const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
@@ -1791,89 +1743,84 @@ export default function WadUp() {
   // vercel.json), not fetched live per pageview. cat/sportEmoji are already
   // computed at cache-write time, so no classification-parsing happens here.
   const fetchTM = useCallback(async () => {
+    const today = localIsoDate();
+    const day = activeDateRef.current || today;
+    const request = ++tmRequestRef.current;
+    let cache = tmCacheRef.current;
+    if (!cache || cache.day !== today || Date.now() - cache.started > 300000) {
+      const rows = (async () => {
+        const events = [];
+        // Keep the existing regional search coverage and paginate in a stable order.
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await supabase.from('tm_events_cache').select('*')
+            .gte('date_str', today)
+            .gte('lat', 35.0456 - 7.25).lte('lat', 35.0456 + 7.25)
+            .gte('lng', -85.3096 - 8.85).lte('lng', -85.3096 + 8.85)
+            .order('date_str').order('tm_id').range(from, from + 999);
+          if (error) throw error;
+          events.push(...(data || []));
+          if (!data || data.length < 1000) return events;
+        }
+      })();
+      cache = { day: today, started: Date.now(), rows, officialByDate: new Map() };
+      tmCacheRef.current = cache;
+    }
+    let official = cache.officialByDate.get(day);
+    if (!official) {
+      official = fetch('/api/venue-performances?date=' + encodeURIComponent(day))
+        .then(async response => {
+          if (!response.ok) throw Error('Official venue schedule unavailable');
+          const body = await response.json();
+          return Array.isArray(body.performances) ? body.performances : [];
+        })
+        .catch(() => { cache.officialByDate.delete(day); return []; });
+      cache.officialByDate.set(day, official);
+    }
     try {
-      // tm_events_cache is a NATIONWIDE cache (see sync-tm-events.js's
-      // TM_REGIONS — ~43 metro areas, not just this city) shared across
-      // whatever cities WadUp eventually covers; this map only ever shows
-      // Chattanooga, so an unscoped query pulls in every other region's
-      // events too. A 150-mile box previously fixed the 1000-row-cap bug
-      // (2026-09-11 alone had 1218 unfiltered rows, almost all irrelevant),
-      // but panning/zooming out further than that legitimately wants to see
-      // more than just the immediate metro area — so this is widened to
-      // 500 miles instead of dropped entirely: dropTMPin creates a real,
-      // fairly expensive OverlayView DOM element per event immediately
-      // (visibility toggling for the viewport happens afterward, in
-      // filterPins), so loading the full ~5,900-row nationwide cache as
-      // live pins on every page load isn't free — at 500mi (~2,400 rows,
-      // still over the 1000-row cap) this pages through with .range()
-      // instead of just raising .limit() past the cap.
-      const CHATT_LAT = 35.0456, CHATT_LNG = -85.3096;
-      const LAT_SPAN = 7.25, LNG_SPAN = 8.85; // ~500 miles
-      // Local date, not UTC — tm_events_cache.date_str is Ticketmaster's
-      // localDate, and a UTC "today" is already tomorrow from 8pm Eastern
-      // onward, which excluded every one of today's rows from this query
-      // during exactly the hours the Events chip matters most.
-      const todayStr = localIsoDate();
-      const PAGE_SIZE = 1000;
-      let events = [];
-      for (let from = 0; ; from += PAGE_SIZE) {
-        const { data: page, error } = await supabase
-          .from('tm_events_cache')
-          .select('*')
-          .gte('date_str', todayStr) // only future events
-          .gte('lat', CHATT_LAT - LAT_SPAN).lte('lat', CHATT_LAT + LAT_SPAN)
-          .gte('lng', CHATT_LNG - LNG_SPAN).lte('lng', CHATT_LNG + LNG_SPAN)
-          .order('date_str', { ascending: true })
-          .range(from, from + PAGE_SIZE - 1);
-        if (error) throw error;
-        events = events.concat(page || []);
-        if (!page || page.length < PAGE_SIZE) break;
-      }
-
-      Object.entries(tmMarkers.current).forEach(([id, entry]) => {
-        entry.marker.setMap(null);
-        if (entry.overlay) entry.overlay.setMap(null);
-        pinRegistry.current.delete(id);
-      });
-      tmMarkers.current = {};
-      tmEventsRef.current = [];
-
-      const groupedShows = new Map();
-      (events || []).forEach((ev) => {
-        const norm = {
-          id: 'tm_' + ev.tm_id, _isTM: true,
-          name: ev.name, cat: 'events',
-          segment: ev.segment, genre: ev.genre, subGenre: ev.sub_genre,
-          sportEmoji: ev.sport_emoji || undefined,
-          address: ev.address || '',
-          city: ev.city || '', state: ev.state || '',
-          lng: ev.lng, lat: ev.lat,
-          dateStr: ev.date_str || '', timeStr: ev.time_str || '',
-          price: ev.price || '', img: ev.image_url || '', url: ev.url || '',
-          live: true,
+      const [ticketRows, officialRows] = await Promise.all([cache.rows, official]);
+      if (request !== tmRequestRef.current) return;
+      const events = mergeOfficialEventRows(officialRows, ticketRows);
+      const grouped = new Map();
+      for (const row of suppressTicketDuplicates(events)) {
+        const venue = matchEventVenue(row);
+        const location = venue?.location;
+        const show = {
+          id: 'tm_' + row.tm_id, _isTM: true, name: row.name, cat: 'events',
+          venueId: venue?.id, venueType: venue?.type, venueWebsite: venue?.website,
+          officialUrl: row.official_url, isOfficial: row.is_official, venueName: venue?.name || row.venue_name,
+          segment: row.segment, genre: row.genre, subGenre: row.sub_genre, sportEmoji: row.sport_emoji,
+          address: location?.address || row.address || '', city: row.city || '', state: row.state || '',
+          lng: location?.lng ?? row.lng, lat: location?.lat ?? row.lat,
+          dateStr: row.date_str || '', timeStr: row.time_str || '', price: row.price || '',
+          img: row.image_url || '', url: row.url || '', live: true, ticket_verification: row.ticket_verification,
         };
-        // Same production and venue across dates = one pin, multiple showtimes.
-        // Coordinates alone are insufficient: unrelated events can share a venue.
-        const groupKey = [norm.name.trim().toLowerCase().replace(/\\s+/g, ' '),
-          norm.address.trim().toLowerCase(), norm.city.trim().toLowerCase(),
-          norm.state.trim().toLowerCase(), Number(norm.lat).toFixed(4), Number(norm.lng).toFixed(4)].join('|');
-        if (!groupedShows.has(groupKey)) groupedShows.set(groupKey, []);
-        groupedShows.get(groupKey).push(norm);
-      });
-      for (const shows of groupedShows.values()) {
-        shows.sort((a,b) => (a.timeStr || '').localeCompare(b.timeStr || ''));
-        const representative = { ...shows[0], showings: shows };
-        tmEventsRef.current.push(representative);
-        dropTMPin(representative);
+        const venueKey = show.venueId || [show.address.toLowerCase(), show.city.toLowerCase(),
+          show.state.toLowerCase(), Number(show.lat).toFixed(4), Number(show.lng).toFixed(4)].join('|');
+        const groupKey = show.name.trim().toLowerCase().replace(/\s+/g, ' ') + '|' + venueKey;
+        if (!grouped.has(groupKey)) grouped.set(groupKey, []);
+        const group = grouped.get(groupKey);
+        const duplicate = group.findIndex(item => item.id === show.id || (show.dateStr === item.dateStr &&
+          show.timeStr && show.timeStr === item.timeStr && show.url === item.url && show.officialUrl === item.officialUrl));
+        if (duplicate === -1) group.push(show);
+        else group[duplicate] = preferredTicketRecord(group[duplicate], show);
       }
-
+      for (const [id, entry] of Object.entries(tmMarkers.current)) {
+        entry.marker.setMap(null);
+        entry.overlay?.setMap(null);
+        pinRegistry.current.delete(id);
+      }
+      tmMarkers.current = {};
+      tmEventsRef.current = Array.from(grouped.values(), shows => {
+        shows.sort((a, b) => a.dateStr.localeCompare(b.dateStr) || a.timeStr.localeCompare(b.timeStr) || a.id.localeCompare(b.id));
+        return { ...shows[0], showings: shows };
+      });
+      tmEventsRef.current.forEach(dropTMPin);
       filterPins();
-      setFeedRevision(v => v + 1);
-    } catch (e) {
-      // Leave whatever was showing, but don't swallow this silently — an
-      // empty Events chip with a clean console is indistinguishable from
-      // "there genuinely are no events today", which cost real debugging time.
-      console.error('Ticketmaster cache read failed:', e.message || e);
+      setFeedRevision(revision => revision + 1);
+    } catch (error) {
+      if (request !== tmRequestRef.current) return;
+      tmCacheRef.current = null;
+      console.error('Ticketmaster cache read failed:', error.message || error);
     }
   }, [dropTMPin, filterPins]);
 
@@ -2544,6 +2491,7 @@ export default function WadUp() {
     const selected = pinRegistry.current.get(mapObj.current?.__wadupSelectedVenueId);
     if (selected?.type === 'tm') infoWindow.current?.close();
     filterPins();
+    if (mapObj.current) void fetchTM();
   };
 
   // ── Fly to venue ──

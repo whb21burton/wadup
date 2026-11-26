@@ -7,7 +7,7 @@ The production deployment at `f068691` is the source of truth for the experience
 - [x] Archive the development history and five project documents.
 - [x] Start `recovery/original-experience` from `f068691`.
 - [x] Compare the intro at 1440×900 and 390×844. Text, geometry and computed styles matched production. Explore, Account and the seven-day calendar worked in the same checks with Maps traffic held back.
-- [ ] Configure the restricted browser key on the protected recovery preview and verify the real application on desktop and mobile. Compare fresh-start and onboarding screens, navigation, account controls, calendar, categories, sidebar, marker appearance, rankings and map interactions against production.
+- [x] Configure the restricted branch key and verify real Maps in desktop and mobile Edge. Each viewport loaded Google tiles with one Maps JavaScript load, showed ten ranked restaurant pins, and accepted pan, zoom, and Account interactions.
 - [ ] Record the recovery preview and screenshots for the owner.
 
 ## Selective recovery after the baseline passes

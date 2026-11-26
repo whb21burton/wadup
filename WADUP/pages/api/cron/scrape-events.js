@@ -6,6 +6,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { canRunLegacyCron, loadCronDatabase } from '../../../lib/cron-auth';
+import { matchEventVenue } from '../../../lib/event-venues';
 
 const EVENT_TYPES = ['live_music', 'trivia', 'dj', 'comedy', 'karaoke', 'other'];
 
@@ -18,6 +20,7 @@ const EventSchema = z.object({
   event_date: z.string().nullable(), // YYYY-MM-DD
   event_time: z.string().nullable(), // HH:MM, 24hr
   performer: z.string().nullable(),
+  event_url: z.string().nullable(),
   event_type: z.enum(EVENT_TYPES),
   description: z.string().nullable(),
   confidence: z.number().int().min(0).max(100),
@@ -29,16 +32,15 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default async function handler(req, res) {
   if (process.env.VERCEL_ENV !== 'production') return res.status(401).json({ error: 'Unauthorized' });
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` &&
-      req.headers['x-admin-password'] !== process.env.ADMIN_SYNC_PASSWORD) {
+  if (!canRunLegacyCron(req.headers)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  const supabaseAdmin = await loadCronDatabase();
+  if (!supabaseAdmin) return res.status(503).json({ error: 'Cron database is not configured for this environment' });
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
   }
 
-  const { supabaseAdmin } = await import('../supabase-admin');
   const { data: venues, error: venuesError } = await supabaseAdmin
     .from('venues')
     .select('id, name, scraping_url, city, state')
@@ -55,6 +57,7 @@ export default async function handler(req, res) {
   const results = { scraped: 0, events_found: 0, saved_live: 0, saved_pending: 0, errors: [] };
 
   for (const venue of venues) {
+    if (process.env.VENUE_SYNC_ENABLED === '1' && matchEventVenue({...venue, venue_name:venue.name})) continue;
     try {
       const pageRes = await fetch(venue.scraping_url, {
         headers: { 'User-Agent': 'WadUp Event Bot/1.0' },
@@ -71,6 +74,8 @@ export default async function handler(req, res) {
         .trim()
         .slice(0, 8000); // keep the request small — this is a cost-bounded bulk cron, not a one-off
 
+      const links = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m => { try { const u = new URL(m[1], venue.scraping_url); return u.protocol === 'https:' && !u.username && !u.password ? u.href : null; } catch { return null; } }).filter(Boolean);
+      const allowedLinks = new Set(links);
       const response = await client.messages.parse({
         model: 'claude-sonnet-5',
         max_tokens: 4096,
@@ -84,7 +89,10 @@ Today's date: ${todayIso}
 Website text:
 ${text}
 
-Only include FUTURE events (strictly after today's date). If a date can't be determined, use null for event_date rather than guessing. If no events are found, return an empty events array.`,
+Available page links (select only a matching individual event page; otherwise null):
+${[...allowedLinks].slice(0,200).join('\n').slice(0,12000)}
+
+Only include FUTURE events (strictly after today's date). If a date can't be determined, use null for event_date rather than guessing. Use the actual performance start time, not doors opening time. If the performance time cannot be determined, return null for event_time; never guess. If no events are found, return an empty events array.`,
         }],
         output_config: { format: zodOutputFormat(EventsSchema) },
       });
@@ -95,14 +103,15 @@ Only include FUTURE events (strictly after today's date). If a date can't be det
         if (!ev.event_date || !DATE_RE.test(ev.event_date) || ev.event_date <= todayIso) continue;
         const validTime = ev.event_time && TIME_RE.test(ev.event_time) ? ev.event_time : null;
 
-        if (ev.confidence >= 80) {
+        if (ev.confidence >= 80 && validTime) {
           const { error } = await supabaseAdmin.from('venue_events').upsert({
             venue_id: venue.id,
             title: ev.event_name || ev.performer || 'Event',
             description: ev.description || '',
             event_type: ev.event_type,
             performer: ev.performer || null,
-            start_time: `${ev.event_date}T${validTime || '20:00'}:00`,
+            start_time: `${ev.event_date}T${validTime}:00`,
+            ticket_url: allowedLinks.has(ev.event_url) ? ev.event_url : venue.scraping_url,
             is_free: false,
             source: 'scraped',
           }, { onConflict: 'venue_id,start_time' });
