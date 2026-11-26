@@ -2592,15 +2592,12 @@ export default function WadUp() {
 
     const loadMap = async () => {
       if (cancelled) return;
-      if (!GMAPS_KEY) {
-        setMapLoadError('Google Maps is not configured for this deployment.');
-        setShowSplash(false);
-        return;
-      }
       const reservation = await fetch('/api/google-map-session', {method:'POST'}).catch(() => null);
+      const details = reservation && reservation.status !== 204 ? await reservation.json().catch(() => null) : null;
       if (cancelled) return;
-      if (!reservation?.ok) {
-        setMapLoadError('Map usage is temporarily unavailable.');
+      const key = reservation?.status === 200 ? details?.key : GMAPS_KEY;
+      if (!reservation?.ok || !key) {
+        setMapLoadError(details?.error || 'Map usage is temporarily unavailable.');
         setShowSplash(false);
         return;
       }
@@ -2618,7 +2615,7 @@ export default function WadUp() {
       if (!existing) {
         const script = document.createElement('script');
         script.dataset.wadupMaps = 'true';
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&callback=__wadupMapInit&v=weekly&loading=async`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=__wadupMapInit&v=weekly&loading=async`;
         script.async = true;
         script.defer = true;
         script.onerror = () => {
