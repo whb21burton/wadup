@@ -8,11 +8,12 @@ The production deployment at `f068691` is the source of truth for the experience
 - [x] Start `recovery/original-experience` from `f068691`.
 - [x] Compare the intro at 1440×900 and 390×844. Text, geometry and computed styles matched production. Explore, Account and the seven-day calendar worked in the same checks with Maps traffic held back.
 - [x] Configure the restricted branch key and verify real Maps in desktop and mobile Edge. Each viewport loaded Google tiles with one Maps JavaScript load, showed ten ranked restaurant pins, and accepted pan, zoom, and Account interactions.
-- [ ] Record the recovery preview and screenshots for the owner.
+- [x] Capture production and recovery desktop/mobile introductions and Maps baselines. The introductions matched pixel for pixel. The protected recovery site uses the stable `whb21burton-wadup-git-recovery-ori-68fe98-whb21burtons-projects.vercel.app` alias.
 
 ## Selective recovery after the baseline passes
 
-- [ ] Port the eight official adapters and test selected-date showtimes, exact and affiliate purchase links, broken-link fallbacks, canonical coordinates and source reconciliation against isolated data.
+- [x] Port the eight official adapters and event/ticket handling. Commit `7588835` passed the desktop/mobile real Maps smoke test and 21 event tests. Isolated public-feed ingestion persisted 466 performances from seven complete feeds. Replays, canonical coordinates, canceled/rescheduled behavior, 252-row pagination, and same-day links passed.
+- [ ] Reverify the live Tabernacle feed. Its request remained incomplete. Hosted event persistence awaits a safe database target and explicit authorization for migrations. The recovery preview keeps hosted event writing disabled.
 - [ ] Port event emoji, unified hover and selected marker priority, neighborhood-only staggering and map performance changes. Recheck both layouts after each group.
 - [ ] Port the tested email and phone access protections without changing profile UI or applying hosted migrations.
 - [ ] Recover the existing billing reader and the controlled 15-minute bulk discovery worker. Keep bulk discovery paused pending verified usage headroom. Ordinary map rendering uses the restricted browser key directly.

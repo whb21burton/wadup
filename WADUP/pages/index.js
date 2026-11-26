@@ -126,6 +126,8 @@ function eventKind(ev) {
   if (/theat|theater|theatre|broadway|musical|opera|ballet|dance performance|performing arts|play\b/.test(all)) return 'Theater';
   if (/festival|farmers.market|market|fair\b|expo|parade|food.truck|craft.show|art.show/.test(all)) return 'Festivals & Markets';
   if (/music|concert|live_music|dj|band|singer|karaoke|rock|country|hip.hop|jazz|blues|pop\b/.test(all)) return 'Music';
+  if (ev.venueType === 'theater') return 'Theater';
+  if (ev.venueType === 'music') return 'Music';
   return 'Festivals & Markets';
 }
 function specificEventEmoji(ev) {
@@ -143,14 +145,14 @@ function specificEventEmoji(ev) {
     [/rodeo/, '🤠'], [/pickleball/, '🏓'],
     [/farmers.market|farmers market/, '🥕'], [/food festival|food.truck/, '🍔'],
     [/art festival|art fair|craft fair/, '🎨'], [/holiday market|christmas market/, '🎄'],
-    [/comedy|comedian|stand.up|improv/, '🎤'],
+    [/comedy|comedian|stand.up|improv/, '😂'], [/karaoke/, '🎤'],
     [/opera/, '🎼'], [/ballet/, '🩰'], [/theat|theater|theatre|broadway|musical|stage play/, '🎭'],
     // Consistent music pins: genre-specific microphones/instruments looked
     // like unrelated categories. Every Ticketmaster music event uses 🎵.
     [/jazz|rock concert|rock music|dj\b|electronic|edm|country music|country concert|hip.hop|rap concert|concert|live.music|live music|music|band|singer/, '🎵'],
     [/festival|fair\b|market|expo/, '🎪'],
   ];
-  return icons.find(([re]) => re.test(all))?.[1] || ({ Sports:'🏆', Music:'🎵', Theater:'🎭', Comedy:'🎤', 'Festivals & Markets':'🎪' }[eventKind(ev)] || '🎟️');
+  return icons.find(([re]) => re.test(all))?.[1] || ({ Sports:'🏆', Music:'🎵', Theater:'🎭', Comedy:'😂', 'Festivals & Markets':'🎪' }[eventKind(ev)] || '🎟️');
 }
 function matchesEventSubcategories(ev, selected) {
   return !selected?.length || selected.some(s => s.toLowerCase() === eventKind(ev).toLowerCase());
@@ -303,6 +305,7 @@ export default function WadUp() {
   // this session (see the dropVenuePin/openEditPanel fix).
   const dropVenuePinRef = useRef(null);
   const dropBarPinRef = useRef(null);
+  const dropTMPinRef = useRef(null);
   const updateAreaRanksRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -570,7 +573,7 @@ export default function WadUp() {
     });
 
     Object.entries(tmMarkers.current).forEach(([id, entry]) => {
-      const ev = tmEventsRef.current.find(e => e.id === id);
+      const ev = entry.event;
       if (!ev) return;
       const show = matchesSelectedTM(ev, date || todayIsoStr());
       entry.marker.setMap(show ? map : null);
@@ -631,7 +634,8 @@ export default function WadUp() {
     const inViewport = eligible.filter(v =>
       v.lat != null && v.lng != null && bounds && bounds.contains(new window.google.maps.LatLng(v.lat, v.lng))
     );
-    const outsideViewport = eligible.filter(v => !inViewport.includes(v));
+    const viewportIds = new Set(inViewport.map(venue => venue.id));
+    const outsideViewport = eligible.filter(venue => !viewportIds.has(venue.id));
 
     // Events chip ranks live-right-now venues first, then the rest by the
     // admin's manual event_rank order (see pages/admin/venues.js's Event
@@ -684,16 +688,31 @@ export default function WadUp() {
     // and only ever considered for the Events/Sports chips — same cat===chip
     // gate filterPins uses for TM pins, plus the same day+3hr-showable window
     // (isTMEventVisibleForDay) filterPins applies to actual pin visibility.
-    const tmInBounds = (selected.includes('events') || selected.includes('wadup'))
-      ? tmEventsRef.current
-          .filter(ev => matchesSelectedTM(ev, dayIso) && (!bounds || bounds.contains(new window.google.maps.LatLng(ev.lat, ev.lng))))
+    const visibleEvents = bounds && (chip === 'events' || chip === 'wadup') ? tmEventsRef.current.filter(event =>
+      matchesSelectedTM(event, dayIso) && bounds.contains(new window.google.maps.LatLng(event.lat, event.lng))) : [];
+    const visibleEventIds = new Set(visibleEvents.map(event => event.id));
+    for (const [id, mounted] of Object.entries(tmMarkers.current)) {
+      if (visibleEventIds.has(id) || (map.__wadupSelectedVenueId === id && matchesSelectedTM(mounted.event, dayIso))) continue;
+      mounted.marker.setMap(null);
+      mounted.overlay?.setMap(null);
+      delete tmMarkers.current[id];
+      pinRegistry.current.delete(id);
+    }
+    for (const event of visibleEvents) {
+      if (!tmMarkers.current[event.id]) dropTMPinRef.current?.(event);
+    }
+    const tmInBounds = visibleEvents
+          .map(event => {
+            const shows = event.showings.filter(show => isTMEventVisibleForDay(show, dayIso));
+            const showing = shows.find(isTMEventLiveNow) || shows[0];
+            return { ...event, dateStr: showing.dateStr, timeStr: showing.timeStr };
+          })
           .sort((a, b) => {
             const aLive = isTMEventLiveNow(a), bLive = isTMEventLiveNow(b);
             if (aLive !== bLive) return aLive ? -1 : 1;
             return (a.timeStr || '').localeCompare(b.timeStr || '');
           })
-          .map(ev => ({ ...ev, _type: 'tm' }))
-      : [];
+          .map(ev => ({ ...ev, _type: 'tm' }));
 
     let combined;
     if (selected.length === 1 && selected[0] === 'events') {
@@ -732,45 +751,48 @@ export default function WadUp() {
     const tmPins = [...pinRegistry.current.values()]
       .filter(e => e.type === 'tm' && e.overlay?.getMap?.() === map && e.el?.isConnected)
       .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-    // At city/regional zoom, events must remain at their real map positions.
-    // Stagger whole event pins only at neighborhood/street zoom, as with
-    // restaurant labels; reset previous shifts when zooming back out.
-    const staggerEvents = (map.getZoom() || 0) >= 17;
-    if (!staggerEvents) {
-      for (const entry of tmPins) entry.el.style.translate = 'none';
-    }
-    const tmOccupied = [];
-    const offsets = [[0,0]];
-    for (let ring = 1; ring <= 7; ring++) {
-      const n = Math.max(8, ring * 10);
-      for (let i = 0; i < n; i++) {
-        const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
-        offsets.push([Math.round(Math.cos(angle) * ring * 86), Math.round(Math.sin(angle) * ring * 64)]);
-      }
-    }
-    for (const entry of (staggerEvents ? tmPins : [])) {
-      const el = entry.el;
-      // Measure the unshifted whole pin, not just its text label.
-      el.style.translate = 'none';
-      const base = el.getBoundingClientRect();
-      if (!base.width || !base.height) continue;
-      let chosen = offsets[0], best = Infinity;
-      for (const [dx, dy] of offsets) {
-        const rect = { left:base.left+dx-5, right:base.right+dx+5,
-          top:base.top+dy-5, bottom:base.bottom+dy+5 };
-        let overlap = 0;
-        for (const q of tmOccupied) {
-          overlap += Math.max(0, Math.min(rect.right,q.right)-Math.max(rect.left,q.left))
-            * Math.max(0, Math.min(rect.bottom,q.bottom)-Math.max(rect.top,q.top));
+    // At regional zoom, keep the true map positions. At neighborhood zoom,
+    // avoid overlapping screen bounds, including different nearby venues.
+    const zoom = map.getZoom() || 0;
+    for (const entry of tmPins) entry.el.style.translate = 'none';
+    if (zoom >= 17) {
+      const day = activeDateRef.current || todayIsoStr();
+      const firstTime = entry => (entry.event.showings || [entry.event])
+        .filter(show => show.dateStr === day && show.timeStr)
+        .map(show => show.timeStr).sort()[0] || '99:99';
+      const offsets = [[0, 0]];
+      for (let ring = 1; ring <= 7; ring++) {
+        const count = Math.max(8, ring * 10);
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
+          offsets.push([Math.round(Math.cos(angle) * ring * 86), Math.round(Math.sin(angle) * ring * 64)]);
         }
-        const score = overlap * 10000 + Math.hypot(dx,dy);
-        if (score < best) { best = score; chosen = [dx,dy]; }
-        if (overlap === 0) break;
       }
-      const [dx,dy] = chosen;
-      el.style.translate = dx + 'px ' + dy + 'px';
-      tmOccupied.push({left:base.left+dx-5,right:base.right+dx+5,
-        top:base.top+dy-5,bottom:base.bottom+dy+5});
+      const ordered = tmPins.map(entry => ({entry, time:firstTime(entry)}))
+        .sort((a,b) => b.time.localeCompare(a.time) || String(b.entry.id).localeCompare(String(a.entry.id)));
+      const measurements = ordered.map(({entry}) => ({el:entry.el, rect:entry.el.getBoundingClientRect()}));
+      const placed = [];
+      for (const {el,rect} of measurements) {
+        if (!rect.width || !rect.height) continue;
+        let best = Infinity;
+        let chosen;
+        for (const [dx,dy] of offsets) {
+          const bounds = {left:rect.left+dx-5,right:rect.right+dx+5,top:rect.top+dy-5,bottom:rect.bottom+dy+5};
+          let overlap = 0;
+          for (const previous of placed) {
+            overlap += Math.max(0, Math.min(bounds.right,previous.right)-Math.max(bounds.left,previous.left))
+              * Math.max(0, Math.min(bounds.bottom,previous.bottom)-Math.max(bounds.top,previous.top));
+          }
+          const score = overlap * 10000 + Math.hypot(dx,dy);
+          if (score < best) {
+            best = score;
+            chosen = {dx,dy,...bounds};
+          }
+          if (overlap === 0) break;
+        }
+        placed.push(chosen);
+        el.style.translate = `${chosen.dx}px ${chosen.dy}px`;
+      }
     }
     // At very close zoom, spread overlapping ranked restaurant emoji+label pairs together.
     const rankedPairs = [...(pinRegistry.current?.values() || [])].filter(e => e.overlay?.__attachedEmojiShell && e.overlay?.getMap?.() === map);
@@ -802,10 +824,9 @@ export default function WadUp() {
       .sort((a,b) => (b.__labelPriority || 0) - (a.__labelPriority || 0) || String(a.__labelId).localeCompare(String(b.__labelId)));
     const occupied = [];
     const candidates = [0,-24,24,-48,48,-72,72,-96,96];
-    for (const o of items) {
-      const label = o.__labelEl;
-      label.style.translate = 'none';
-      const r = label.getBoundingClientRect();
+    for (const overlay of items) overlay.__labelEl.style.translate = 'none';
+    const labels = items.map(({__labelEl: label}) => ({label, r: label.getBoundingClientRect()}));
+    for (const {label, r} of labels) {
       if (!r.width || !r.height) continue;
       let best = { x:0, y:0, score:Infinity };
       for (const y of candidates) {
@@ -828,10 +849,10 @@ export default function WadUp() {
     }
   }
   function queueMapLabelLayout(map) {
-    if (map.__wadupLabelFrame) return;
+    if (map.__wadupMoving || map.__wadupLabelFrame) return;
     map.__wadupLabelFrame = requestAnimationFrame(() => {
       map.__wadupLabelFrame = null;
-      layoutMapLabels(map);
+      if (!map.__wadupMoving) layoutMapLabels(map);
     });
   }
 
@@ -991,6 +1012,7 @@ export default function WadUp() {
     if (!entry) return;
     const map = mapObj.current;
     if (map) {
+      map.__wadupCloseEventHover?.();
       // Selection belongs to the venue ID, not the transient overlay DOM node.
       const previous = map.__wadupSelectedPin;
       if (previous && previous !== entry.el) {
@@ -1009,11 +1031,22 @@ export default function WadUp() {
   // status + a compact beer-icon pin outside the top ranks — everything else
   // keeps the standard rank pill/discovery dot (dropVenuePin).
   function dropPinForVenue(v, areaRank) {
+    const map = mapObj.current;
+    const day = activeDateRef.current || todayIsoStr();
+    const event = getVenueEventForDay(v.id, day);
+    const { _areaRank, _todayEvent, _isLive, ...venue } = v;
+    const signature = JSON.stringify([venue, Math.min(areaRank ?? 0, 11), activeCategoryRef.current, day, event,
+      isEventLive(event), adminRoleRef.current, sessionRef.current?.user?.id, trendingVenueIds.current.has(v.id),
+      bestRatedVenueIds.current.has(v.id), eventVenueIdsTodayRef.current.has(v.id), map?.getZoom()]);
+    const previous = pinRegistry.current.get(v.id);
+    if (previous?.renderSignature === signature && previous.overlay?.getMap() === map) return;
     if (venueCategories(v).includes('nightlife') && !venueCategories(v).includes('restaurant')) {
       dropBarPinRef.current?.(v, areaRank);
     } else {
       dropVenuePinRef.current?.(v, areaRank);
     }
+    const created = pinRegistry.current.get(v.id);
+    if (created) created.renderSignature = signature;
   }
 
   // Smooth, zoom-aware discovery markers: small at regional scale, gradually
@@ -1296,7 +1329,7 @@ export default function WadUp() {
     while (el.firstChild) hoverVisual.appendChild(el.firstChild);
     el.appendChild(hoverVisual);
     const setHoverScale = (hovered) => {
-      hoverVisual.style.transform = hovered ? 'scale(1.18)' : 'scale(1)';
+      hoverVisual.style.transform = hovered ? 'scale(1.12)' : 'scale(1)';
     };
     el.addEventListener('pointerenter', () => setHoverScale(true));
     el.addEventListener('pointerleave', () => setHoverScale(false));
@@ -1309,7 +1342,7 @@ export default function WadUp() {
       const syncStack = () => {
         const active = el.classList.contains('wu-pin-selected');
         const hovered = el.matches(':hover') || el.matches(':focus-within');
-        el.style.zIndex = hovered ? '2147483600' : active ? '2147483000' : restingZ;
+        el.style.zIndex = active ? '2147483000' : hovered ? '2147482000' : restingZ;
         el.classList.toggle('wu-pin-front', active || hovered);
       };
       el.addEventListener('pointerenter', syncStack);
@@ -1599,9 +1632,9 @@ export default function WadUp() {
     const syncStack = () => {
       const active = el.classList.contains('wu-pin-selected');
       const hovered = el.matches(':hover') || el.matches(':focus-within');
-      el.style.zIndex = hovered ? '2147483600' : active ? '2147483000' : restingZ;
+      el.style.zIndex = active ? '2147483000' : hovered ? '2147482000' : restingZ;
       el.classList.toggle('wu-pin-front', active || hovered);
-      hoverVisual.style.transform = hovered ? 'scale(1.18)' : 'scale(1)';
+      hoverVisual.style.transform = hovered ? 'scale(1.12)' : 'scale(1)';
     };
     el.addEventListener('pointerenter', syncStack);
     el.addEventListener('pointerleave', syncStack);
@@ -1702,7 +1735,7 @@ export default function WadUp() {
     // Build popup at click time using the currently selected calendar day.
     const buildTMPopup = () => renderEventPopup(ev, activeDateRef.current || todayIsoStr(), icon, TM_AFFILIATE_ID);
 
-    const offsetPos = getOffsetPosition(ev.lat, ev.lng);
+    const offsetPos = { lat: ev.lat, lng: ev.lng };
     const pos    = new window.google.maps.LatLng(offsetPos.lat, offsetPos.lng);
     const marker = new window.google.maps.Marker({
       position: pos, map,
@@ -1726,17 +1759,51 @@ export default function WadUp() {
     const syncEventStack = () => {
       const selected = map.__wadupSelectedVenueId === ev.id;
       el.style.zIndex = selected ? '2147483000' : el.matches(':hover') ? '2147482000' : '';
-      contentEl.style.transform = el.matches(':hover') ? 'scale(1.15)' : 'scale(1)';
+      contentEl.style.transform = el.matches(':hover') ? 'scale(1.12)' : 'scale(1)';
     };
     el.addEventListener('pointerenter', syncEventStack);
     el.addEventListener('pointerleave', syncEventStack);
     el.addEventListener('wadup-restack', syncEventStack);
+    if (ev.venueId === 'chattanooga-songbirds') {
+      let closeTimer;
+      const cancelClose = () => clearTimeout(closeTimer);
+      const scheduleClose = () => {
+        cancelClose();
+        closeTimer = setTimeout(() => {
+          if (map.__wadupHoveredEvent === ev.id) map.__wadupCloseEventHover?.();
+        }, 350);
+      };
+      el.addEventListener('pointerenter', event => {
+        if (event.pointerType !== 'mouse' || map.__wadupSelectedPin || map.__wadupMoving) return;
+        if (map.__wadupHoveredEvent === ev.id) { cancelClose(); return; }
+        map.__wadupCloseEventHover?.();
+        const popup = new window.google.maps.InfoWindow({ maxWidth: 240, disableAutoPan: true });
+        map.__wadupHoveredEvent = ev.id;
+        map.__wadupCloseEventHover = () => {
+          cancelClose();
+          popup.close();
+          map.__wadupHoveredEvent = null;
+          map.__wadupCloseEventHover = null;
+        };
+        const content = document.createElement('div');
+        content.innerHTML = buildTMPopup();
+        content.addEventListener('pointerenter', cancelClose);
+        content.addEventListener('pointerleave', scheduleClose);
+        popup.setContent(content);
+        popup.open(map, marker);
+        popup.addListener('closeclick', () => {
+          if (map.__wadupHoveredEvent === ev.id) map.__wadupCloseEventHover?.();
+        });
+      });
+      el.addEventListener('pointerleave', scheduleClose);
+    }
 
-    tmMarkers.current[ev.id] = { marker, overlay };
+    tmMarkers.current[ev.id] = { marker, overlay, event: ev };
 
-    const entry = { id: ev.id, type: 'tm', marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
+    const entry = { id: ev.id, type: 'tm', event: ev, marker, overlay, el, lat: offsetPos.lat, lng: offsetPos.lng, openPopup };
     pinRegistry.current.set(ev.id, entry);
   }, [zoomClass]);
+  useEffect(() => { dropTMPinRef.current = dropTMPin; }, [dropTMPin]);
 
   // ── Load Ticketmaster events from the server-side cache ── populated by
   // pages/api/cron/sync-tm-events.js (a 2-hourly Vercel Cron job — see
@@ -1804,17 +1871,24 @@ export default function WadUp() {
         if (duplicate === -1) group.push(show);
         else group[duplicate] = preferredTicketRecord(group[duplicate], show);
       }
-      for (const [id, entry] of Object.entries(tmMarkers.current)) {
-        entry.marker.setMap(null);
-        entry.overlay?.setMap(null);
-        pinRegistry.current.delete(id);
-      }
-      tmMarkers.current = {};
       tmEventsRef.current = Array.from(grouped.values(), shows => {
         shows.sort((a, b) => a.dateStr.localeCompare(b.dateStr) || a.timeStr.localeCompare(b.timeStr) || a.id.localeCompare(b.id));
         return { ...shows[0], showings: shows };
       });
-      tmEventsRef.current.forEach(dropTMPin);
+      const nextById = new Map(tmEventsRef.current.map(event => [event.id, event]));
+      for (const [id, mounted] of Object.entries(tmMarkers.current)) {
+        const previous = mounted.event;
+        const next = nextById.get(id);
+        if (next && previous.lat === next.lat && previous.lng === next.lng && previous.name === next.name &&
+            previous.price === next.price && specificEventEmoji(previous) === specificEventEmoji(next)) {
+          Object.assign(previous, next);
+          continue;
+        }
+        mounted.marker.setMap(null);
+        mounted.overlay?.setMap(null);
+        delete tmMarkers.current[id];
+        pinRegistry.current.delete(id);
+      }
       filterPins();
       setFeedRevision(revision => revision + 1);
     } catch (error) {
@@ -1822,7 +1896,7 @@ export default function WadUp() {
       tmCacheRef.current = null;
       console.error('Ticketmaster cache read failed:', error.message || error);
     }
-  }, [dropTMPin, filterPins]);
+  }, [filterPins]);
 
   // Pin placement reuses the SAME map as discovery. No second map page,
   // separate Google Maps instance, or duplicated Maps script is necessary.
@@ -2318,17 +2392,21 @@ export default function WadUp() {
 
       // Zoom listener
       map.addListener('zoom_changed', () => {
-        const z = map.getZoom();
-        const zc = z < 7 ? 'zoom-far' : z < 11 ? 'zoom-mid' : 'zoom-near';
-        setZoomClass(zc);
-        document.querySelectorAll('.wu-pin').forEach(el => {
-          el.classList.remove('zoom-far','zoom-mid','zoom-near');
-          el.classList.add(zc);
-        });
-        // Keep sparse discovery dots smaller at regional zoom levels.
-        document.querySelectorAll('.wu-pin-discovery').forEach(el => {
-          el.style.setProperty('--wu-dot-size', `${discoveryDotSize(z)}px`);
-          el.classList.toggle('wu-discovery-named', z >= 16);
+        if (map.__wadupZoomFrame) return;
+        map.__wadupZoomFrame = requestAnimationFrame(() => {
+          map.__wadupZoomFrame = null;
+          if (mapObj.current !== map || !mapRef.current) return;
+          const z = map.getZoom();
+          const zc = z < 7 ? 'zoom-far' : z < 11 ? 'zoom-mid' : 'zoom-near';
+          setZoomClass(zc);
+          mapRef.current.querySelectorAll('.wu-pin').forEach(el => {
+            el.classList.remove('zoom-far','zoom-mid','zoom-near');
+            el.classList.add(zc);
+          });
+          mapRef.current.querySelectorAll('.wu-pin-discovery').forEach(el => {
+            el.style.setProperty('--wu-dot-size', `${discoveryDotSize(z)}px`);
+            el.classList.toggle('wu-discovery-named', z >= 16);
+          });
         });
       });
 
@@ -2336,6 +2414,7 @@ export default function WadUp() {
       // calls e.stopPropagation(), so this never fires for those) closes
       // whatever popup is currently open.
       map.addListener('click', () => {
+        map.__wadupCloseEventHover?.();
         map.__wadupSelectedPin?.classList.remove('wu-pin-selected');
         map.__wadupSelectedPin?.dispatchEvent(new Event('wadup-restack'));
         map.__wadupSelectedPin = null;
@@ -2346,7 +2425,16 @@ export default function WadUp() {
       // Re-rank only when the map settles. bounds_changed fires repeatedly
       // during pan/zoom and rebuilding every pin while tiles load can make
       // Google Maps feel slow or unresponsive.
-      map.addListener('idle', () => { updateAreaRanks(); setFeedRevision(v => v + 1); });
+      map.addListener('bounds_changed', () => {
+        map.__wadupMoving = true;
+        map.__wadupCloseEventHover?.();
+      });
+      map.addListener('idle', () => {
+        map.__wadupMoving = false;
+        updateAreaRanks();
+        queueMapLabelLayout(map);
+        setFeedRevision(v => v + 1);
+      });
 
       setMapReady(true);
 
@@ -2485,6 +2573,7 @@ export default function WadUp() {
 
   // ── Day change ──
   const onDayClick = (iso) => {
+    mapObj.current?.__wadupCloseEventHover?.();
     activeDateRef.current = iso;
     setActiveDate(iso);
     // Close the old event popup so it cannot display the previous day's shows.
