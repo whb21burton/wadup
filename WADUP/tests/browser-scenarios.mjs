@@ -18,8 +18,8 @@ const {chromium}=await import(pathToFileURL(process.env.WADUP_PLAYWRIGHT_ENTRY).
 const browser=await chromium.launch({channel:'msedge',headless:true,args:['--disable-background-networking']});
 const token=process.env.VERCEL_OIDC_TOKEN;
 
-async function openPage(viewport, state) {
-  const page=await browser.newPage({viewport,serviceWorkers:'block'});
+async function openPage(viewport, state, timezoneId) {
+  const page=await browser.newPage({viewport,timezoneId,serviceWorkers:'block'});
   await page.route('**/*',route=>{
     const request=route.request();
     const url=new URL(request.url());
@@ -42,12 +42,16 @@ async function openPage(viewport, state) {
   return {page,faults};
 }
 
-async function shell(viewport) {
-  const {page,faults}=await openPage(viewport,{lat:35.0456,lng:-85.3096,zoom:13});
+async function shell(viewport, timezoneId) {
+  const {page,faults}=await openPage(viewport,{lat:35.0456,lng:-85.3096,zoom:13},timezoneId);
   const controls=page.locator(viewport.width>600?'.sidebar-categories':'.chips').first();
   for (const text of ['Events','Bars & Nightlife','Restaurants','Outdoors','Coffee','Shopping','Activities']) {
     assert.equal(await controls.getByRole('button',{name:new RegExp(text)}).first().isVisible(),true);
   }
+  const calendar=page.locator(viewport.width>600?'.sidebar-days':'.day-strip').first();
+  await calendar.locator('.day-btn.active').waitFor({state:'attached'});
+  assert.equal(await calendar.locator('.day-btn').count(),7);
+  assert.equal(await calendar.locator('.day-btn.active .day-num').textContent(),await page.evaluate(()=>String(new Date().getDate())));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   assert.deepEqual(faults,[]);
   await page.close();
@@ -148,7 +152,7 @@ try {
   const sizes=[{width:1440,height:900},{width:390,height:844}];
   if(mode==='local-auth') await localAuth();
   else for (const viewport of sizes) {
-    if(mode==='preview-shell') await shell(viewport);
+    if(mode==='preview-shell') for (const zone of ['America/New_York','Pacific/Kiritimati']) await shell(viewport,zone);
     else for(const city of fixtures.cities) await mapScenario(viewport,city);
   }
   console.log(`${mode} browser checks passed`);

@@ -322,13 +322,19 @@ export default function WadUp() {
   const [userPos,        setUserPos]        = useState({lat:35.0456, lng:-85.3096});
   const [activeChip,     setActiveChip]     = useState('wadup');
   const [hasMustSeeInView, setHasMustSeeInView] = useState(false);
-  const [activeDate,     setActiveDate]     = useState(localIsoDate());
+  const [activeDate,     setActiveDate]     = useState(null);
   // filterPins reads these refs, not the state above, so it always sees the
   // current value regardless of when its own closure was created — the
   // state setters below update the ref SYNCHRONOUSLY, in the same click
   // handler, rather than waiting a render cycle for a useEffect to catch up.
   const activeCategoryRef = useRef('wadup');
-  const activeDateRef = useRef(localIsoDate());
+  const activeDateRef = useRef(null);
+  useEffect(() => {
+    // Static HTML may be built on a different day than the visitor's local day.
+    const today = localIsoDate();
+    activeDateRef.current = today;
+    setActiveDate(today);
+  }, []);
   // Desktop sidebar's category dropdown — see onCategoryClick/onSubcategoryClick
   // and renderDesktopCategoryList. Same synchronous-ref pattern as
   // activeCategoryRef: filterPins always reads the ref, never the state.
@@ -404,7 +410,7 @@ export default function WadUp() {
   const sheetTouchDeltaY = useRef(0);
   const deferredInstallPrompt = useRef(null);
 
-  const days = buildDays();
+  const days = activeDate ? buildDays() : [];
 
   // ── Auto-sync Chattanooga venues from Google Places — fire-and-forget;
   // the route itself checks venues.last_google_sync and only actually
