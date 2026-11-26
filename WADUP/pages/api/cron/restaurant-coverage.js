@@ -1,7 +1,6 @@
 // Conservative, resumable Chattanooga-outward venue discovery.
 // One Google Nearby Search (Pro field mask) per run; eight runs/day = <=248/month.
 // Bounded by local daily/monthly request counters; Google may bill these calls.
-import { supabaseAdmin } from '../supabase-admin';
 import { searchNearby, mapPlaceToRow, isChain, isBlockedPrimaryType } from '../../../lib/placesSync';
 
 export const config = { maxDuration: 60 };
@@ -53,7 +52,7 @@ function sportsBarEvidence(v) {
   const matching = reviews.filter(r => /\b(watch(?:ed|ing)? (?:the |a )?(?:game|football|basketball|baseball)|sports bar|plenty of (?:tvs|televisions)|tvs? (?:everywhere|all around))\b/i.test(String(r?.text?.text || r?.text || '')));
   return matching.length >= 2 ? 'two_independent_sports_viewing_reviews' : null;
 }
-async function classifyChattanoogaSportsBars() {
+async function classifyChattanoogaSportsBars(supabaseAdmin) {
   const { data, error } = await supabaseAdmin.from('venues')
     .select('id,name,description,google_reviews,category,subcategory,categories,subcategories,is_claimed,is_hidden,is_private')
     .eq('city', 'Chattanooga').eq('category', 'restaurant').eq('is_claimed', false)
@@ -94,11 +93,12 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   if (!process.env.GOOGLE_PLACES_KEY)
     return res.status(503).json({ status: 'missing_google_places_key' });
+  const { supabaseAdmin } = await import('../supabase-admin');
 
   // Classification does not consume a Google search request. It continues
   // even if the separate discovery search budget is exhausted.
   let sportsBarAudit;
-  try { sportsBarAudit = await classifyChattanoogaSportsBars(); }
+  try { sportsBarAudit = await classifyChattanoogaSportsBars(supabaseAdmin); }
   catch (error) { sportsBarAudit = { error: String(error.message).slice(0, 180) }; }
 
   const now = new Date();

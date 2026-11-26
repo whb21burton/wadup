@@ -17,8 +17,6 @@
 // call except the rare one that actually triggers a sync, which can take up
 // to the sync route's own 60s budget — that's fine here, since the CLIENT
 // call in pages/index.js doesn't wait on this response either.
-import { supabaseAdmin } from '../supabase-admin';
-
 const SYNC_INTERVAL_DAYS = 7;
 
 function resolveAppUrl() {
@@ -35,6 +33,7 @@ export default async function handler(req, res) {
   if (process.env.VERCEL_ENV !== 'production') {
     return res.status(200).json({ enabled: false, message: 'Automatic Places sync is disabled outside production' });
   }
+  const { supabaseAdmin } = await import('../supabase-admin');
   const { data, error } = await supabaseAdmin
     .from('venues')
     .select('last_google_sync')

@@ -5,7 +5,6 @@
 // affordable: 43 TM API calls every 2 hours from this one cron run, not 43
 // calls from every single visitor's browser (which is what the coverage
 // expansion would have cost before this).
-import { supabaseAdmin } from '../supabase-admin';
 import { TM_REGIONS, tmSegmentToCat, tmSportEmoji } from '../../../lib/data';
 
 export default async function handler(req, res) {
@@ -15,6 +14,7 @@ export default async function handler(req, res) {
       req.headers['x-admin-password'] !== process.env.ADMIN_SYNC_PASSWORD) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  const { supabaseAdmin } = await import('../supabase-admin');
 
   // Same key pages/api/tm.js already uses in production (TM_KEY was never
   // actually set as an env var there either — this fallback literal IS the

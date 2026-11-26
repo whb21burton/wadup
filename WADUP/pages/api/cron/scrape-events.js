@@ -3,7 +3,6 @@
 // upcoming events from the page text. High-confidence events (>=80) go
 // straight into venue_events; everything else lands in
 // scraped_events_pending for an admin to review (see pages/admin/reports.js).
-import { supabaseAdmin } from '../supabase-admin';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
@@ -39,6 +38,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
   }
 
+  const { supabaseAdmin } = await import('../supabase-admin');
   const { data: venues, error: venuesError } = await supabaseAdmin
     .from('venues')
     .select('id, name, scraping_url, city, state')
