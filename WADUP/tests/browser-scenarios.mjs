@@ -53,6 +53,25 @@ async function shell(viewport, timezoneId) {
   await calendar.locator('.day-btn.active').waitFor({state:'attached'});
   assert.equal(await calendar.locator('.day-btn').count(),7);
   assert.equal(await calendar.locator('.day-btn.active .day-num').textContent(),await page.evaluate(()=>String(new Date().getDate())));
+  if (viewport.width>600) {
+    const sidebar=page.locator('aside.sidebar');
+    const wadup=sidebar.getByRole('button',{name:'WADUP happenings',exact:true});
+    const feed=sidebar.getByText('HAPPENING TODAY',{exact:true});
+    await feed.waitFor({state:'visible'});
+    await wadup.click();
+    await feed.waitFor({state:'hidden'});
+    await wadup.click();
+    await feed.waitFor({state:'visible'});
+    const events=controls.getByRole('button',{name:/Events/}).first();
+    await events.click();
+    assert.equal(await events.getAttribute('aria-pressed'),'true');
+    await events.click();
+    assert.equal(await events.getAttribute('aria-expanded'),'true');
+    await events.click();
+    assert.equal(await events.getAttribute('aria-expanded'),'false');
+  }
+  await page.getByRole('button',{name:'Account',exact:true}).click();
+  await page.locator('.right-sidebar.open').getByRole('button',{name:'Log In',exact:true}).first().waitFor();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   assert.deepEqual(faults,[]);
   await page.close();

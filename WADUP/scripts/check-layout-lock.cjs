@@ -5,7 +5,8 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '..', 'pages', 'index.js'), 'utf8').replace(/\r\n/g, '\n');
 const checks = [
   ['seven-day calendar', 'function buildDays()', '\n// ── "🔥 Trending Now"', '0bc41a5f'],
-  ['desktop WADUP sidebar', '          <div className="sidebar-header">', '        </aside>', '21081b47']
+  // Byte-for-byte production sidebar at f068691, including feed collapse.
+  ['desktop WADUP sidebar', '          <div className="sidebar-header">', '        </aside>', '06e5f794']
 ];
 function fingerprint(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16).padStart(8, '0'); }
 let failed = false;

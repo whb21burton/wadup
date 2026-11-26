@@ -371,6 +371,7 @@ export default function WadUp() {
     try { if (window.sessionStorage.getItem('wadup_map_state')) setShowSplash(false); } catch (e) { /* storage unavailable */ }
   }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [wadupFeedExpanded, setWadupFeedExpanded] = useState(true);
   const [zoomClass,      setZoomClass]      = useState('zoom-near');
   const [showAddBanner,  setShowAddBanner]  = useState(false);
   const [sheetExpanded,  setSheetExpanded]  = useState(false);
@@ -754,8 +755,8 @@ export default function WadUp() {
     const tmPins = [...pinRegistry.current.values()]
       .filter(e => e.type === 'tm' && e.overlay?.getMap?.() === map && e.el?.isConnected)
       .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-    // Stable chronological stacks: use geographic proximity, not changing
-    // screen collision candidates. No event swaps slots during zoom.
+    // At regional zoom, keep the true map positions. At neighborhood zoom,
+    // avoid overlapping screen bounds, including different nearby venues.
     const zoom = map.getZoom() || 0;
     for (const entry of tmPins) entry.el.style.translate = 'none';
     if (zoom >= 17) {
@@ -763,39 +764,39 @@ export default function WadUp() {
       const firstTime = entry => (entry.event.showings || [entry.event])
         .filter(show => show.dateStr === day && show.timeStr)
         .map(show => show.timeStr).sort()[0] || '99:99';
-      const groups = [];
-      const cells = new Map();
-      const cellSize = 12;
-      const eastScale = 111320 * Math.cos((map.getCenter()?.lat() || 0) * Math.PI / 180);
+      const offsets = [[0, 0]];
+      for (let ring = 1; ring <= 7; ring++) {
+        const count = Math.max(8, ring * 10);
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
+          offsets.push([Math.round(Math.cos(angle) * ring * 86), Math.round(Math.sin(angle) * ring * 64)]);
+        }
+      }
       const ordered = tmPins.map(entry => ({entry, time:firstTime(entry)}))
-        .sort((a,b) => a.time.localeCompare(b.time) || String(a.entry.id).localeCompare(String(b.entry.id)));
-      for (const {entry} of ordered) {
-        const lat = Number(entry.event.lat), lng = Number(entry.event.lng);
-        const x = Math.floor(lng * eastScale / cellSize), y = Math.floor(lat * 111320 / cellSize);
-        let group;
-        for (let dx = -1; dx <= 1 && !group; dx++) for (let dy = -1; dy <= 1 && !group; dy++) {
-          group = cells.get(`${x+dx}:${y+dy}`)?.find(g => Math.hypot((lat-g.lat)*111320,(lng-g.lng)*eastScale) <= cellSize);
+        .sort((a,b) => b.time.localeCompare(a.time) || String(b.entry.id).localeCompare(String(a.entry.id)));
+      const measurements = ordered.map(({entry}) => ({el:entry.el, rect:entry.el.getBoundingClientRect()}));
+      const placed = [];
+      for (const {el,rect} of measurements) {
+        if (!rect.width || !rect.height) continue;
+        let best = Infinity;
+        let chosen;
+        for (const [dx,dy] of offsets) {
+          const bounds = {left:rect.left+dx-5,right:rect.right+dx+5,top:rect.top+dy-5,bottom:rect.bottom+dy+5};
+          let overlap = 0;
+          for (const previous of placed) {
+            overlap += Math.max(0, Math.min(bounds.right,previous.right)-Math.max(bounds.left,previous.left))
+              * Math.max(0, Math.min(bounds.bottom,previous.bottom)-Math.max(bounds.top,previous.top));
+          }
+          const score = overlap * 10000 + Math.hypot(dx,dy);
+          if (score < best) {
+            best = score;
+            chosen = {dx,dy,...bounds};
+          }
+          if (overlap === 0) break;
         }
-        if (group) group.entries.push(entry);
-        else {
-          const cell = `${x}:${y}`;
-          if (!cells.has(cell)) cells.set(cell, []);
-          const newGroup = {lat,lng,entries:[entry]};
-          cells.get(cell).push(newGroup);
-          groups.push(newGroup);
-        }
+        placed.push(chosen);
+        el.style.translate = `${chosen.dx}px ${chosen.dy}px`;
       }
-      const layouts = [];
-      for (const group of groups) {
-        if (group.entries.length < 2) continue;
-        let offset = 0;
-        for (let i = group.entries.length - 1; i >= 0; i--) {
-          const entry = group.entries[i];
-          layouts.push([entry.el, offset]);
-          offset -= entry.el.offsetHeight + 3;
-        }
-      }
-      for (const [el, offset] of layouts) el.style.translate = '0px ' + offset + 'px';
     }
     // At very close zoom, spread overlapping ranked restaurant emoji+label pairs together.
     const rankedPairs = [...(pinRegistry.current?.values() || [])].filter(e => e.overlay?.__attachedEmojiShell && e.overlay?.getMap?.() === map);
@@ -1348,7 +1349,7 @@ export default function WadUp() {
       const syncStack = () => {
         const active = el.classList.contains('wu-pin-selected');
         const hovered = el.matches(':hover') || el.matches(':focus-within');
-        el.style.zIndex = hovered ? '2147483600' : active ? '2147483000' : restingZ;
+        el.style.zIndex = active ? '2147483000' : hovered ? '2147482000' : restingZ;
         el.classList.toggle('wu-pin-front', active || hovered);
       };
       el.addEventListener('pointerenter', syncStack);
@@ -1639,7 +1640,7 @@ export default function WadUp() {
     const syncStack = () => {
       const active = el.classList.contains('wu-pin-selected');
       const hovered = el.matches(':hover') || el.matches(':focus-within');
-      el.style.zIndex = hovered ? '2147483600' : active ? '2147483000' : restingZ;
+      el.style.zIndex = active ? '2147483000' : hovered ? '2147482000' : restingZ;
       el.classList.toggle('wu-pin-front', active || hovered);
       hoverVisual.style.transform = hovered ? 'scale(1.12)' : 'scale(1)';
     };
@@ -2393,15 +2394,8 @@ export default function WadUp() {
     mapInitStarted.current = true;
 
     let cancelled = false;
-    const initMap = async () => {
-      if (!mapRef.current || !window.google?.maps) return;
-      const reservation = await fetch('/api/google-map-session', {method:'POST'}).catch(() => null);
-      if (cancelled) return;
-      if (!reservation?.ok) {
-        setMapLoadError('Map usage is temporarily unavailable.');
-        setShowSplash(false);
-        return;
-      }
+    const initMap = () => {
+      if (cancelled || mapObj.current || !mapRef.current || !window.google?.maps?.Map) return;
       setMapLoadError('');
 
       const map = new window.google.maps.Map(mapRef.current, {
@@ -2596,15 +2590,24 @@ export default function WadUp() {
       setTimeout(() => fetchTM(), 300);
     };
 
-    // Load Google Maps once; navigating back from a venue can leave an
-    // in-flight script in the document, so reuse it instead of injecting a
-    // second copy (which can invalidate the callback and break the map).
-    if (window.google?.maps?.Map) {
-      initMap();
-    } else if (!GMAPS_KEY) {
-      setMapLoadError('Google Maps is not configured for this deployment.');
-      setShowSplash(false);
-    } else {
+    const loadMap = async () => {
+      if (!GMAPS_KEY) {
+        setMapLoadError('Google Maps is not configured for this deployment.');
+        setShowSplash(false);
+        return;
+      }
+      const reservation = await fetch('/api/google-map-session', {method:'POST'}).catch(() => null);
+      if (cancelled) return;
+      if (!reservation?.ok) {
+        setMapLoadError('Map usage is temporarily unavailable.');
+        setShowSplash(false);
+        return;
+      }
+      // Reuse the in-flight script when navigating back from a venue.
+      if (window.google?.maps?.Map) {
+        initMap();
+        return;
+      }
       window.__wadupMapInit = initMap;
       window.gm_authFailure = () => {
         setMapLoadError('Google Maps rejected this website or API key. Check the Maps JavaScript API referrer restrictions for ' + window.location.hostname + '.');
@@ -2623,7 +2626,8 @@ export default function WadUp() {
         };
         document.head.appendChild(script);
       }
-    }
+    };
+    loadMap();
 
     // Geolocation can resolve after the map has initialized. Update the
     // existing marker directly; React state alone does not move a Google marker.
@@ -3291,10 +3295,10 @@ export default function WadUp() {
 
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}>
             {renderDayStrip('sidebar-days')}
-            <button type="button" onClick={() => { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); setOpenDropdown(null); filterPins(); }}
+            <button type="button" onClick={() => { if (activeChip === 'wadup') { setWadupFeedExpanded(v => !v); } else { activeCategoryRef.current = 'wadup'; setActiveChip('wadup'); setWadupFeedExpanded(true); setOpenDropdown(null); filterPins(); } }}
               aria-label="WADUP happenings" aria-pressed={activeChip === 'wadup'}
               style={{ display: 'block', width: '100%', textAlign: 'center', border: 0, background: 'radial-gradient(ellipse at 50% 100%, #055b70 0%, #00313e 42%, #00101b 80%)', padding: '15px 12px 18px', cursor: 'pointer', color: '#e9ffff', fontSize: 46, letterSpacing: 3, fontWeight: 1000, lineHeight: 1.2, textShadow: '0 0 6px #3ef5ff, 0 0 18px #00d9f5, 0 0 32px #00b7dc', fontFamily: 'Impact, Arial Narrow, sans-serif' }}>WADUP</button>
-            {activeChip === 'wadup' && renderWadupFeed()}
+            {activeChip === 'wadup' && wadupFeedExpanded && renderWadupFeed()}
             {renderDesktopCategoryList()}
           </div>
         </aside>
