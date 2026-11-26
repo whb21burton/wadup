@@ -25,8 +25,7 @@ async function openPage(viewport, state, timezoneId) {
     const request=route.request();
     const url=new URL(request.url());
     if (url.origin===base.origin) {
-      if (request.method()!=='GET' && request.method()!=='HEAD' && mode!=='local-auth' &&
-          !(mode==='live-map'&&url.pathname==='/api/google-map-session'&&request.method()==='POST')) return route.abort();
+      if (request.method()!=='GET' && request.method()!=='HEAD' && mode!=='local-auth') return route.abort();
       if (/\/api\/(?:cron|places|geocode)\//.test(url.pathname)||url.pathname==='/api/geocode') return route.abort();
       return route.continue({headers:{...request.headers(),...(!localhost(base)&&token?{'x-vercel-trusted-oidc-idp-token':token}:{})}});
     }
