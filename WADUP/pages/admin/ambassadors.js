@@ -84,14 +84,15 @@ export default function AdminAmbassadors() {
 
   const loadAmbassadors = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('admin_roles')
-      .select('user_id, assigned_cities, profiles(username, email)')
-      .eq('role', 'ambassador')
-      .order('created_at', { ascending: false });
-    setAmbassadors(data || []);
-    setLoading(false);
-  }, []);
+    try {
+      const { users } = await authedFetch('/api/admin/ambassador-contacts', session, { action: 'list' });
+      setAmbassadors(users || []);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
 
   useEffect(() => { if (!checking) loadAmbassadors(); }, [checking, loadAmbassadors]);
 
@@ -104,12 +105,12 @@ export default function AdminAmbassadors() {
   const searchUsers = async () => {
     const q = userQuery.trim();
     if (!q) { setUserResults(null); return; }
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, username, email, account_type')
-      .or(`username.ilike.%${q}%,email.ilike.%${q}%`)
-      .limit(10);
-    setUserResults(data || []);
+    try {
+      const { users } = await authedFetch('/api/admin/ambassador-contacts', session, { action: 'search', query: q });
+      setUserResults(users || []);
+    } catch (error) {
+      setError(error.message);
+    }
   };
 
   const confirmPromote = async () => {
