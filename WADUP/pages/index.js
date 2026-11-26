@@ -2591,6 +2591,7 @@ export default function WadUp() {
     };
 
     const loadMap = async () => {
+      if (cancelled) return;
       if (!GMAPS_KEY) {
         setMapLoadError('Google Maps is not configured for this deployment.');
         setShowSplash(false);
@@ -2627,7 +2628,7 @@ export default function WadUp() {
         document.head.appendChild(script);
       }
     };
-    loadMap();
+    queueMicrotask(loadMap);
 
     // Geolocation can resolve after the map has initialized. Update the
     // existing marker directly; React state alone does not move a Google marker.
